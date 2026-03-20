@@ -40,10 +40,6 @@ import { PracticeService } from "./domain/practice-service.js";
 import { SpeakingRealtimeService } from "./domain/speaking-realtime-service.js";
 import { WritingService } from "./domain/writing-service.js";
 import { MockExamService } from "./domain/mock-exam-service.js";
-import { SubscriptionService } from "./domain/subscription-service.js";
-import { AdminService } from "./domain/admin-service.js";
-import { AdminOpsService } from "./domain/admin-ops-service.js";
-import { AdminReviewService } from "./domain/admin-review-service.js";
 import { AnalyticsService } from "./domain/analytics-service.js";
 import {
   InMemoryAnalyticsRepository,
@@ -51,15 +47,6 @@ import {
   type AnalyticsRepository
 } from "./domain/analytics-repository.js";
 import { ReminderService } from "./domain/reminder-service.js";
-import { ChurnService } from "./domain/churn-service.js";
-import { ProviderHealthService } from "./domain/provider-health-service.js";
-import { ReleaseService } from "./domain/release-service.js";
-import {
-  InMemoryReleaseRepository,
-  PostgresReleaseRepository,
-  SqliteReleaseRepository,
-  type ReleaseRepository
-} from "./domain/release-repository.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -100,12 +87,6 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   analyticsStorageConnectionString?: string;
   analyticsStorageSchema?: string;
   analyticsRepository?: AnalyticsRepository;
-  releaseStorageBackend?: "memory" | "sqlite" | "postgres";
-  releaseStoragePath?: string;
-  releaseStorageConnectionString?: string;
-  releaseStorageSchema?: string;
-  releaseRepository?: ReleaseRepository;
-  systemRbacEnforced?: boolean;
 };
 
 export const buildServer = (options?: BuildServerOptions): {
@@ -119,15 +100,8 @@ export const buildServer = (options?: BuildServerOptions): {
   speakingRealtimeService: SpeakingRealtimeService;
   writingService: WritingService;
   mockExamService: MockExamService;
-  subscriptionService: SubscriptionService;
-  adminService: AdminService;
-  adminOpsService: AdminOpsService;
-  adminReviewService: AdminReviewService;
   analyticsService: AnalyticsService;
   reminderService: ReminderService;
-  churnService: ChurnService;
-  providerHealthService: ProviderHealthService;
-  releaseService: ReleaseService;
   analyticsRepository: AnalyticsRepository;
   authAccountRepository: AuthAccountRepository;
   learnerStateRepository: LearnerStateRepository;
@@ -135,7 +109,6 @@ export const buildServer = (options?: BuildServerOptions): {
   speakingStateRepository: SpeakingStateRepository;
   writingStateRepository: WritingStateRepository;
   mockStateRepository: MockStateRepository;
-  releaseRepository: ReleaseRepository;
 } => {
   const config: ServiceConfig = {
     ...defaultConfig,
@@ -233,27 +206,8 @@ export const buildServer = (options?: BuildServerOptions): {
   const speakingRealtimeService = new SpeakingRealtimeService(store, onboardingService);
   const writingService = new WritingService(store, onboardingService);
   const mockExamService = new MockExamService(store);
-  const subscriptionService = new SubscriptionService(store, config.paymentRuntime);
-  const adminService = new AdminService(store);
-  const adminOpsService = new AdminOpsService(store, authService);
-  const adminReviewService = new AdminReviewService(store);
   const analyticsService = new AnalyticsService(store, analyticsRepository);
   const reminderService = new ReminderService(store);
-  const churnService = new ChurnService(store, reminderService);
-  const providerHealthService = new ProviderHealthService(store, config.aiRuntime);
-  const releaseRepository =
-    options?.releaseRepository ??
-    (options?.releaseStorageBackend === "sqlite"
-      ? new SqliteReleaseRepository({
-          dbPath: options.releaseStoragePath
-        })
-      : options?.releaseStorageBackend === "postgres"
-        ? new PostgresReleaseRepository({
-            connectionString: options.releaseStorageConnectionString,
-            schema: options.releaseStorageSchema
-          })
-        : new InMemoryReleaseRepository(store));
-  const releaseService = new ReleaseService(store, releaseRepository);
 
   const app = Fastify({
     logger: false
@@ -337,7 +291,6 @@ export const buildServer = (options?: BuildServerOptions): {
     await learnerStateRepository.close();
     await authAccountRepository.close();
     await analyticsRepository.close();
-    await releaseRepository.close();
   });
 
   app.addHook("onReady", async () => {
@@ -348,7 +301,6 @@ export const buildServer = (options?: BuildServerOptions): {
     await learnerStateRepository.ready();
     await authAccountRepository.ready();
     await analyticsRepository.ready();
-    await releaseRepository.ready();
   });
 
   return {
@@ -362,22 +314,14 @@ export const buildServer = (options?: BuildServerOptions): {
     speakingRealtimeService,
     writingService,
     mockExamService,
-    subscriptionService,
-    adminService,
-    adminOpsService,
-    adminReviewService,
     analyticsService,
     reminderService,
-    churnService,
-    providerHealthService,
-    releaseService,
     analyticsRepository,
     authAccountRepository,
     learnerStateRepository,
     practiceStateRepository,
     speakingStateRepository,
     writingStateRepository,
-    mockStateRepository,
-    releaseRepository
+    mockStateRepository
   };
 };

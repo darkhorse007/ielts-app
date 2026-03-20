@@ -3,7 +3,6 @@ set -euo pipefail
 
 RUN_E2E="${RELEASE_AUTOMATION_RUN_E2E:-false}"
 RUN_POSTGRES_SMOKE="${RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE:-false}"
-RUN_POSTGRES_CHAOS="${RELEASE_AUTOMATION_RUN_POSTGRES_CHAOS:-false}"
 RUN_FRONTEND_FULL_E2E="${RELEASE_AUTOMATION_RUN_FRONTEND_FULL_E2E:-false}"
 RUN_CLIENT_ARTIFACT="${RELEASE_AUTOMATION_RUN_CLIENT_ARTIFACT:-false}"
 RUN_CLIENT_PUBLISH="${RELEASE_AUTOMATION_RUN_CLIENT_PUBLISH:-false}"
@@ -204,12 +203,6 @@ if is_truthy "$RUN_POSTGRES_SMOKE"; then
   execute_step "postgres-e2e-local-smoke" npm run smoke:postgres:e2e-local
 else
   skip_step "postgres-e2e-local-smoke" "RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE=false"
-fi
-
-if is_truthy "$RUN_POSTGRES_CHAOS"; then
-  execute_step "postgres-chaos-drill-local" npm run drill:postgres-chaos:local
-else
-  skip_step "postgres-chaos-drill-local" "RELEASE_AUTOMATION_RUN_POSTGRES_CHAOS=false"
 fi
 
 if is_truthy "$RUN_FRONTEND_FULL_E2E"; then

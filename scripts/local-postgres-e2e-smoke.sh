@@ -154,7 +154,6 @@ else
 fi
 
 echo "[postgres-smoke] migrating postgres schema"
-npm run db:migrate:release:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 npm run db:migrate:auth-account:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 npm run db:migrate:learner-state:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 npm run db:migrate:practice-state:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
@@ -188,9 +187,6 @@ WRITING_STATE_STORAGE_SCHEMA=public \
 MOCK_STATE_STORAGE_BACKEND=postgres \
 MOCK_STATE_STORAGE_CONNECTION_STRING="$CONNECTION_STRING" \
 MOCK_STATE_STORAGE_SCHEMA=public \
-RELEASE_STORAGE_BACKEND=postgres \
-RELEASE_STORAGE_CONNECTION_STRING="$CONNECTION_STRING" \
-RELEASE_STORAGE_SCHEMA=public \
 bash scripts/ci/start-server-and-wait.sh \
   --command "AUTH_SECRET=$AUTH_SECRET_VALUE npm run start --workspace @ielts/server" \
   --log-file "$SERVER_LOG" \

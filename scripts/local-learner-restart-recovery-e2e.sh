@@ -53,14 +53,13 @@ for i in $(seq 1 60); do
   fi
 done
 
-npm run db:migrate:release:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 npm run db:migrate:auth-account:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 npm run db:migrate:learner-state:postgres --workspace @ielts/server -- --connection_string="$CONNECTION_STRING" --schema=public
 
 echo "[learner-restart-smoke] running postgres integration tests"
 RELEASE_TEST_POSTGRES_URL="$CONNECTION_STRING" npm run test:server:integration:postgres
 
-BACKEND_COMMAND="AUTH_SECRET=$AUTH_SECRET_VALUE AUTH_ACCOUNT_STORAGE_BACKEND=postgres AUTH_ACCOUNT_STORAGE_CONNECTION_STRING=$CONNECTION_STRING AUTH_ACCOUNT_STORAGE_SCHEMA=public LEARNER_STATE_STORAGE_BACKEND=postgres LEARNER_STATE_STORAGE_CONNECTION_STRING=$CONNECTION_STRING LEARNER_STATE_STORAGE_SCHEMA=public RELEASE_STORAGE_BACKEND=postgres RELEASE_STORAGE_CONNECTION_STRING=$CONNECTION_STRING RELEASE_STORAGE_SCHEMA=public npm run start --workspace @ielts/server"
+BACKEND_COMMAND="AUTH_SECRET=$AUTH_SECRET_VALUE AUTH_ACCOUNT_STORAGE_BACKEND=postgres AUTH_ACCOUNT_STORAGE_CONNECTION_STRING=$CONNECTION_STRING AUTH_ACCOUNT_STORAGE_SCHEMA=public LEARNER_STATE_STORAGE_BACKEND=postgres LEARNER_STATE_STORAGE_CONNECTION_STRING=$CONNECTION_STRING LEARNER_STATE_STORAGE_SCHEMA=public npm run start --workspace @ielts/server"
 
 bash scripts/ci/start-server-and-wait.sh \
   --command "$BACKEND_COMMAND" \

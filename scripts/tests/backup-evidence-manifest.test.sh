@@ -20,7 +20,7 @@ node "$ROOT_DIR/scripts/backup-evidence-manifest.mjs" \
   --restore_started_at 2026-03-13T10:10:00Z \
   --restore_completed_at 2026-03-13T10:28:00Z \
   --actual_rpo_minutes 5 \
-  --evidence_paths logs/restore.log,artifacts/postgres-chaos-drill-report.json \
+  --evidence_paths logs/restore.log,artifacts/recovery-verification-report.json \
   --notes "restore drill for GA signoff" \
   --out_dir "$OUT_DIR" \
   --overwrite true
