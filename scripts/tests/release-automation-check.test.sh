@@ -98,7 +98,7 @@ test_continue_on_error() {
   RELEASE_AUTOMATION_CONTINUE_ON_ERROR=true \
   RELEASE_AUTOMATION_RUN_E2E=true \
   RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE=true \
-  RELEASE_AUTOMATION_RUN_OBSERVABILITY_STORAGE_E2E=true \
+  RELEASE_AUTOMATION_RUN_FRONTEND_FULL_E2E=true \
   bash "$CHECK_SCRIPT" >/dev/null 2>&1
   local rc=$?
   set -e
@@ -108,7 +108,7 @@ test_continue_on_error() {
   assert_json_expr "$summary_json" 'data.continue_on_error === true'
   assert_json_expr "$summary_json" 'data.failed_step === "typecheck"'
   assert_json_expr "$summary_json" 'data.failed_steps.includes("typecheck") && data.failed_steps.includes("postgres-e2e-local-smoke")'
-  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "observability-storage-e2e-local")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "frontend-full-e2e-local")'
   rm -rf "$temp_dir"
 }
 

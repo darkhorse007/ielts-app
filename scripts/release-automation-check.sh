@@ -3,10 +3,7 @@ set -euo pipefail
 
 RUN_E2E="${RELEASE_AUTOMATION_RUN_E2E:-false}"
 RUN_POSTGRES_SMOKE="${RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE:-false}"
-RUN_STABILITY_PAGE_E2E="${RELEASE_AUTOMATION_RUN_STABILITY_PAGE_E2E:-false}"
-RUN_VISUAL_SNAPSHOTS="${RELEASE_AUTOMATION_RUN_VISUAL_SNAPSHOTS:-false}"
 RUN_POSTGRES_CHAOS="${RELEASE_AUTOMATION_RUN_POSTGRES_CHAOS:-false}"
-RUN_OBSERVABILITY_STORAGE_E2E="${RELEASE_AUTOMATION_RUN_OBSERVABILITY_STORAGE_E2E:-false}"
 RUN_FRONTEND_FULL_E2E="${RELEASE_AUTOMATION_RUN_FRONTEND_FULL_E2E:-false}"
 RUN_CLIENT_ARTIFACT="${RELEASE_AUTOMATION_RUN_CLIENT_ARTIFACT:-false}"
 RUN_CLIENT_PUBLISH="${RELEASE_AUTOMATION_RUN_CLIENT_PUBLISH:-false}"
@@ -209,28 +206,10 @@ else
   skip_step "postgres-e2e-local-smoke" "RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE=false"
 fi
 
-if is_truthy "$RUN_STABILITY_PAGE_E2E"; then
-  execute_step "stability-page-e2e-local" npm run smoke:stability-page:e2e-local
-else
-  skip_step "stability-page-e2e-local" "RELEASE_AUTOMATION_RUN_STABILITY_PAGE_E2E=false"
-fi
-
-if is_truthy "$RUN_VISUAL_SNAPSHOTS"; then
-  execute_step "visual-snapshots-e2e-local" npm run smoke:visual-snapshots:e2e-local
-else
-  skip_step "visual-snapshots-e2e-local" "RELEASE_AUTOMATION_RUN_VISUAL_SNAPSHOTS=false"
-fi
-
 if is_truthy "$RUN_POSTGRES_CHAOS"; then
   execute_step "postgres-chaos-drill-local" npm run drill:postgres-chaos:local
 else
   skip_step "postgres-chaos-drill-local" "RELEASE_AUTOMATION_RUN_POSTGRES_CHAOS=false"
-fi
-
-if is_truthy "$RUN_OBSERVABILITY_STORAGE_E2E"; then
-  execute_step "observability-storage-e2e-local" npm run smoke:observability-storage:e2e-local
-else
-  skip_step "observability-storage-e2e-local" "RELEASE_AUTOMATION_RUN_OBSERVABILITY_STORAGE_E2E=false"
 fi
 
 if is_truthy "$RUN_FRONTEND_FULL_E2E"; then

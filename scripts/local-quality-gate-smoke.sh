@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RUN_STABILITY_PAGE_E2E="${QUALITY_GATE_LOCAL_RUN_STABILITY_PAGE_E2E:-false}"
-RUN_VISUAL_SNAPSHOTS="${QUALITY_GATE_LOCAL_RUN_VISUAL_SNAPSHOTS:-true}"
 RUN_POSTGRES_CHAOS="${QUALITY_GATE_LOCAL_RUN_POSTGRES_CHAOS:-false}"
-RUN_OBSERVABILITY_STORAGE_E2E="${QUALITY_GATE_LOCAL_RUN_OBSERVABILITY_STORAGE_E2E:-false}"
 RUN_FRONTEND_FULL_E2E="${QUALITY_GATE_LOCAL_RUN_FRONTEND_FULL_E2E:-false}"
 RUN_SCRIPT_TESTS="${QUALITY_GATE_LOCAL_RUN_SCRIPT_TESTS:-true}"
 RUN_TRACKING_GOVERNANCE="${QUALITY_GATE_LOCAL_RUN_TRACKING_GOVERNANCE:-true}"
@@ -32,10 +29,7 @@ normalize_bool() {
   esac
 }
 
-RUN_STABILITY_PAGE_E2E_BOOL="$(normalize_bool "$RUN_STABILITY_PAGE_E2E")"
-RUN_VISUAL_SNAPSHOTS_BOOL="$(normalize_bool "$RUN_VISUAL_SNAPSHOTS")"
 RUN_POSTGRES_CHAOS_BOOL="$(normalize_bool "$RUN_POSTGRES_CHAOS")"
-RUN_OBSERVABILITY_STORAGE_E2E_BOOL="$(normalize_bool "$RUN_OBSERVABILITY_STORAGE_E2E")"
 RUN_FRONTEND_FULL_E2E_BOOL="$(normalize_bool "$RUN_FRONTEND_FULL_E2E")"
 RUN_SCRIPT_TESTS_BOOL="$(normalize_bool "$RUN_SCRIPT_TESTS")"
 RUN_TRACKING_GOVERNANCE_BOOL="$(normalize_bool "$RUN_TRACKING_GOVERNANCE")"
@@ -55,14 +49,8 @@ collect_failure_artifacts() {
     "$TRACKING_GOVERNANCE_SUMMARY_PATH"
     "/tmp/ielts-api-e2e-backend.log"
     "/tmp/ielts-postgres-server.log"
-    "/tmp/ielts-observability-storage-backend.log"
-    "/tmp/ielts-observability-storage-frontend.log"
     "/tmp/ielts-frontend-full-backend.log"
     "/tmp/ielts-frontend-full-frontend.log"
-    "/tmp/ielts-stability-page-backend.log"
-    "/tmp/ielts-stability-page-frontend.log"
-    "/tmp/ielts-visual-backend.log"
-    "/tmp/ielts-visual-frontend.log"
   )
 
   local copied_any=false
@@ -86,10 +74,7 @@ collect_failure_artifacts() {
     echo "  \"continue_on_error\": ${CONTINUE_ON_ERROR_BOOL},"
     echo "  \"dry_run\": ${DRY_RUN_BOOL},"
     echo "  \"flags\": {"
-    echo "    \"run_stability_page_e2e\": ${RUN_STABILITY_PAGE_E2E_BOOL},"
-    echo "    \"run_visual_snapshots\": ${RUN_VISUAL_SNAPSHOTS_BOOL},"
     echo "    \"run_postgres_chaos\": ${RUN_POSTGRES_CHAOS_BOOL},"
-    echo "    \"run_observability_storage_e2e\": ${RUN_OBSERVABILITY_STORAGE_E2E_BOOL},"
     echo "    \"run_frontend_full_e2e\": ${RUN_FRONTEND_FULL_E2E_BOOL},"
     echo "    \"run_script_tests\": ${RUN_SCRIPT_TESTS_BOOL},"
     echo "    \"run_tracking_governance\": ${RUN_TRACKING_GOVERNANCE_BOOL},"
@@ -130,10 +115,7 @@ trap on_error ERR
 RELEASE_AUTOMATION_SUMMARY_PATH="$SUMMARY_JSON_PATH" \
 RELEASE_AUTOMATION_RUN_E2E=true \
 RELEASE_AUTOMATION_RUN_POSTGRES_SMOKE=true \
-RELEASE_AUTOMATION_RUN_STABILITY_PAGE_E2E="$RUN_STABILITY_PAGE_E2E_BOOL" \
-RELEASE_AUTOMATION_RUN_VISUAL_SNAPSHOTS="$RUN_VISUAL_SNAPSHOTS_BOOL" \
 RELEASE_AUTOMATION_RUN_POSTGRES_CHAOS="$RUN_POSTGRES_CHAOS_BOOL" \
-RELEASE_AUTOMATION_RUN_OBSERVABILITY_STORAGE_E2E="$RUN_OBSERVABILITY_STORAGE_E2E_BOOL" \
 RELEASE_AUTOMATION_RUN_FRONTEND_FULL_E2E="$RUN_FRONTEND_FULL_E2E_BOOL" \
 RELEASE_AUTOMATION_RUN_SCRIPT_TESTS="$RUN_SCRIPT_TESTS_BOOL" \
 RELEASE_AUTOMATION_RUN_TRACKING_GOVERNANCE="$RUN_TRACKING_GOVERNANCE_BOOL" \

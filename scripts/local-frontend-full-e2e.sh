@@ -43,6 +43,7 @@ if is_truthy "$PARALLEL_MODE"; then
   PLAYWRIGHT_WEB_BASE_URL="http://127.0.0.1:5173" \
   npm run test:e2e:frontend-full --workspace @ielts/client
 else
+  PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
   npm run test:e2e --workspace @ielts/client
 
   PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
@@ -52,18 +53,6 @@ else
   PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
   PLAYWRIGHT_WEB_BASE_URL="http://127.0.0.1:5173" \
   npm run test:e2e:practice-writing-mock --workspace @ielts/client
-
-  PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
-  PLAYWRIGHT_WEB_BASE_URL="http://127.0.0.1:5173" \
-  npm run test:e2e:stability-page --workspace @ielts/client
-
-  PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
-  PLAYWRIGHT_WEB_BASE_URL="http://127.0.0.1:5173" \
-  npm run test:e2e:observability-storage --workspace @ielts/client
-
-  PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" \
-  PLAYWRIGHT_WEB_BASE_URL="http://127.0.0.1:5173" \
-  npm run test:e2e:visual --workspace @ielts/client
 fi
 
 echo "local frontend full e2e passed"

@@ -199,6 +199,6 @@ bash scripts/ci/start-server-and-wait.sh \
   --timeout-seconds 60
 
 echo "[postgres-smoke] running postgres-backed API smoke"
-PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" npm run test:e2e:stability --workspace @ielts/client
+PLAYWRIGHT_API_BASE_URL="http://127.0.0.1:8787" npm run test:e2e --workspace @ielts/client
 
 echo "local postgres e2e smoke passed"
