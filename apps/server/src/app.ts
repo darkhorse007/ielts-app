@@ -68,7 +68,6 @@ import { registerPracticeRoutes } from "./routes/practice.js";
 import { registerRealtimeSpeakingRoutes } from "./routes/realtime-speaking.js";
 import { registerWritingRoutes } from "./routes/writing.js";
 import { registerMockExamRoutes } from "./routes/mock-exam.js";
-import { registerSubscriptionRoutes } from "./routes/subscription.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerReminderRoutes } from "./routes/reminder.js";
@@ -423,13 +422,8 @@ export const buildServer = (options?: BuildServerOptions): {
     await registerMockExamRoutes(child, {
       authService,
       mockExamService,
-      subscriptionService,
       learnerStateRepository,
       mockStateRepository
-    });
-    await registerSubscriptionRoutes(child, {
-      authService,
-      subscriptionService
     });
     await registerAdminRoutes(child, {
       adminService,

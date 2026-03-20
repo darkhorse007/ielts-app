@@ -478,29 +478,6 @@ export const registerSystemRoutes = async (
     });
   });
 
-  app.get("/v1/system/payments/runtime", { preHandler: authenticate(services.authService) }, async (_request, reply) => {
-    const authRequest = _request as AuthenticatedRequest;
-    if (!assertSystemPermission(authRequest, reply, "provider_health:read")) {
-      return;
-    }
-    const runtime = services.subscriptionService.getPaymentRuntimeSummary();
-    reply.code(200).send({
-      default_provider: runtime.defaultProvider,
-      webhook_timestamp_tolerance_seconds: runtime.timestampToleranceSeconds,
-      providers: runtime.providers.map((provider) => ({
-        provider_name: provider.providerName,
-        enabled: provider.enabled,
-        upgrade_enabled: provider.upgradeEnabled,
-        mode: provider.mode,
-        webhook_path: provider.webhookPath,
-        signature_required: provider.signatureRequired,
-        webhook_secret_configured: provider.webhookSecretConfigured,
-        replay_window_seconds: provider.replayWindowSeconds,
-        refund_handling: provider.refundHandling
-      }))
-    });
-  });
-
   app.post("/v1/system/release/gate/evaluate", { preHandler: authenticate(services.authService) }, async (request, reply) => {
     const parsed = gateSchema.safeParse(request.body);
     if (!parsed.success) {

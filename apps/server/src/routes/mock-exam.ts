@@ -4,7 +4,6 @@ import type { AuthService } from "../domain/auth-service.js";
 import type { LearnerStateRepository } from "../domain/learner-state-repository.js";
 import type { MockStateRepository } from "../domain/mock-state-repository.js";
 import type { MockExamService } from "../domain/mock-exam-service.js";
-import type { SubscriptionService } from "../domain/subscription-service.js";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
 import type { MockExam, MockExamReport, MockExamSkill } from "../domain/types.js";
 
@@ -101,7 +100,6 @@ export const registerMockExamRoutes = async (
   services: {
     authService: AuthService;
     mockExamService: MockExamService;
-    subscriptionService: SubscriptionService;
     learnerStateRepository?: LearnerStateRepository;
     mockStateRepository?: MockStateRepository;
   }
@@ -127,20 +125,6 @@ export const registerMockExamRoutes = async (
     }
 
     const authRequest = request as AuthenticatedRequest;
-    try {
-      services.subscriptionService.consumeDailyQuotaForSessionStart(
-        authRequest.auth.userId,
-        "mock_exam_start",
-        request.headers["x-device-id"] as string | undefined
-      );
-    } catch (error) {
-      if (error instanceof Error && error.message === "ENTITLEMENT_LIMIT_REACHED") {
-        reply.code(429).send(toError("ENTITLEMENT_LIMIT_REACHED", "Daily free quota reached"));
-        return;
-      }
-      throw error;
-    }
-
     const exam = services.mockExamService.createExam({
       userId: authRequest.auth.userId,
       timeLimitSeconds: parsed.data.time_limit_seconds

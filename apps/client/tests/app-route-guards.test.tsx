@@ -20,7 +20,7 @@ describe("app route guards", () => {
     expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
-  test("allows authenticated users to open admin route", () => {
+  test("redirects authenticated admin visits back to home in self-hosted mode", async () => {
     const tokenStorage = new TokenStorage();
     tokenStorage.save({
       accessToken: "access-token",
@@ -32,7 +32,30 @@ describe("app route guards", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "后台登录与订单权益管理" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/admin");
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/home");
+    });
+    expect(screen.getByRole("heading", { name: "IELTS 自托管学习首页" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "订阅权益" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "后台管理" })).not.toBeInTheDocument();
+  });
+
+  test("redirects authenticated subscription visits back to home in self-hosted mode", async () => {
+    const tokenStorage = new TokenStorage();
+    tokenStorage.save({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresIn: 900,
+      userId: "user-1"
+    });
+    window.history.pushState({}, "", "/subscription");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/home");
+    });
+    expect(screen.getByRole("heading", { name: "IELTS 自托管学习首页" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "订阅权益" })).not.toBeInTheDocument();
   });
 });

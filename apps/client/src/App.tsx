@@ -16,11 +16,6 @@ import { ReadingPracticePage } from "./pages/ReadingPracticePage";
 import { SpeakingRealtimePage } from "./pages/SpeakingRealtimePage";
 import { WritingEvaluationPage } from "./pages/WritingEvaluationPage";
 import { MockExamPage } from "./pages/MockExamPage";
-import { SubscriptionPage } from "./pages/SubscriptionPage";
-import { AdminConsolePage } from "./pages/AdminConsolePage";
-import { ObservabilityPage } from "./pages/ObservabilityPage";
-import { SystemRoleAdminPage } from "./pages/SystemRoleAdminPage";
-import { StabilityOpsPage } from "./pages/StabilityOpsPage";
 
 const AuthenticatedRoute = ({ children }: { children: ReactElement }) => {
   const tokenStorage = useMemo(() => new TokenStorage(), []);
@@ -103,26 +98,6 @@ const WritingRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; token
 
 const MockExamRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
   return <MockExamPage apiClient={apiClient} tokenStorage={tokenStorage} />;
-};
-
-const SubscriptionRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
-  return <SubscriptionPage apiClient={apiClient} tokenStorage={tokenStorage} />;
-};
-
-const AdminRoute = ({ apiClient }: { apiClient: ApiClient }) => {
-  return <AdminConsolePage apiClient={apiClient} />;
-};
-
-const ObservabilityRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
-  return <ObservabilityPage apiClient={apiClient} tokenStorage={tokenStorage} />;
-};
-
-const SystemRoleAdminRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
-  return <SystemRoleAdminPage apiClient={apiClient} tokenStorage={tokenStorage} />;
-};
-
-const StabilityOpsRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
-  return <StabilityOpsPage apiClient={apiClient} tokenStorage={tokenStorage} />;
 };
 
 export const App = () => {
@@ -227,46 +202,11 @@ export const App = () => {
             </AuthenticatedRoute>
           }
         />
-        <Route
-          path="/subscription"
-          element={
-            <AuthenticatedRoute>
-              <SubscriptionRoute apiClient={apiClient} tokenStorage={tokenStorage} />
-            </AuthenticatedRoute>
-          }
-        />
-        <Route
-          path="/observability"
-          element={
-            <AuthenticatedRoute>
-              <ObservabilityRoute apiClient={apiClient} tokenStorage={tokenStorage} />
-            </AuthenticatedRoute>
-          }
-        />
-        <Route
-          path="/system-roles"
-          element={
-            <AuthenticatedRoute>
-              <SystemRoleAdminRoute apiClient={apiClient} tokenStorage={tokenStorage} />
-            </AuthenticatedRoute>
-          }
-        />
-        <Route
-          path="/stability"
-          element={
-            <AuthenticatedRoute>
-              <StabilityOpsRoute apiClient={apiClient} tokenStorage={tokenStorage} />
-            </AuthenticatedRoute>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <AuthenticatedRoute>
-              <AdminRoute apiClient={apiClient} />
-            </AuthenticatedRoute>
-          }
-        />
+        <Route path="/subscription" element={<Navigate to="/home" replace />} />
+        <Route path="/observability" element={<Navigate to="/home" replace />} />
+        <Route path="/system-roles" element={<Navigate to="/home" replace />} />
+        <Route path="/stability" element={<Navigate to="/home" replace />} />
+        <Route path="/admin" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
