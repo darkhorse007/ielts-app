@@ -446,7 +446,6 @@ export const buildServer = (options?: BuildServerOptions): {
     });
     await registerSystemRoutes(child, {
       authService,
-      subscriptionService,
       providerHealthService,
       releaseService,
       authAccountRepository,

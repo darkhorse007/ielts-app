@@ -92,19 +92,6 @@ describe("S34 user data export", () => {
     });
     expect(reminderRecommendation.statusCode).toBe(200);
 
-    const upgrade = await context.app.inject({
-      method: "POST",
-      url: "/v1/subscription/upgrade",
-      headers: {
-        authorization: `Bearer ${user.access_token}`
-      },
-      payload: {
-        plan_code: "pro_monthly"
-      }
-    });
-    expect(upgrade.statusCode).toBe(201);
-    expect(upgrade.json().provider).toBe("mockpay");
-
     const exported = await context.app.inject({
       method: "GET",
       url: "/v1/users/me/export",
@@ -125,9 +112,7 @@ describe("S34 user data export", () => {
         }>;
       };
       subscription: {
-        orders: Array<{
-          provider: string;
-        }>;
+        orders: Array<unknown>;
       };
       reminders: {
         preference?: {
@@ -146,13 +131,7 @@ describe("S34 user data export", () => {
     expect(body.profile.id).toBe(user.user_id);
     expect(body.auth.sessions.length).toBeGreaterThanOrEqual(1);
     expect(body.auth.sessions[0].deviceId).toBe("macos");
-    expect(body.subscription.orders).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider: "mockpay"
-        })
-      ])
-    );
+    expect(body.subscription.orders).toEqual([]);
     expect(body.reminders.preference?.subscribed).toBe(true);
     expect(body.reminders.recommendations.length).toBe(1);
     expect(body.analytics.total_events).toBe(1);

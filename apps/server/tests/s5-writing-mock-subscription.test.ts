@@ -49,7 +49,7 @@ describe("S5 writing rewrite, mock exam and subscription flow", () => {
     };
   };
 
-  test("supports writing rewrite comparison, mock exam report writeback, and subscription lifecycle", async () => {
+  test("supports writing rewrite comparison and mock exam report writeback in self-hosted mode", async () => {
     const login = await registerAndLogin();
 
     const planId = randomUUID();
@@ -234,72 +234,6 @@ describe("S5 writing rewrite, mock exam and subscription flow", () => {
         authorization: `Bearer ${login.access_token}`
       }
     });
-    expect(fourthExam.statusCode).toBe(429);
-
-    const upgrade = await context.app.inject({
-      method: "POST",
-      url: "/v1/subscription/upgrade",
-      headers: {
-        authorization: `Bearer ${login.access_token}`
-      },
-      payload: {
-        plan_code: "pro_monthly",
-        provider: "mockpay"
-      }
-    });
-    expect(upgrade.statusCode).toBe(201);
-    const orderId = upgrade.json().order_id as string;
-
-    const webhook = await context.app.inject({
-      method: "POST",
-      url: "/v1/payments/webhooks/provider",
-      payload: {
-        event_id: `evt-${randomUUID()}`,
-        order_id: orderId,
-        status: "paid",
-        provider_order_id: "provider-001"
-      }
-    });
-    expect(webhook.statusCode).toBe(200);
-    expect(webhook.json().entitlement.tier).toBe("pro");
-
-    const cancel = await context.app.inject({
-      method: "POST",
-      url: "/v1/subscription/cancel",
-      headers: {
-        authorization: `Bearer ${login.access_token}`
-      }
-    });
-    expect(cancel.statusCode).toBe(200);
-    expect(cancel.json().status).toBe("cancelled");
-
-    const resume = await context.app.inject({
-      method: "POST",
-      url: "/v1/subscription/resume",
-      headers: {
-        authorization: `Bearer ${login.access_token}`
-      }
-    });
-    expect(resume.statusCode).toBe(200);
-    expect(resume.json().status).toBe("active");
-
-    const entitlementIos = await context.app.inject({
-      method: "GET",
-      url: "/v1/subscription/entitlement?device_id=ios",
-      headers: {
-        authorization: `Bearer ${login.access_token}`
-      }
-    });
-    const entitlementAndroid = await context.app.inject({
-      method: "GET",
-      url: "/v1/subscription/entitlement?device_id=android",
-      headers: {
-        authorization: `Bearer ${login.access_token}`
-      }
-    });
-    expect(entitlementIos.statusCode).toBe(200);
-    expect(entitlementAndroid.statusCode).toBe(200);
-    expect(entitlementIos.json().tier).toBe(entitlementAndroid.json().tier);
-    expect(entitlementIos.json().status).toBe(entitlementAndroid.json().status);
+    expect(fourthExam.statusCode).toBe(201);
   });
 });

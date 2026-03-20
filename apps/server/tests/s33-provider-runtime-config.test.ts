@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { buildServer } from "../src/app.js";
-import { resolveAiRuntimeFromEnv, resolvePaymentRuntimeFromEnv } from "../src/domain/config.js";
+import { resolveAiRuntimeFromEnv } from "../src/domain/config.js";
 
 describe("S33 provider runtime config visibility", () => {
   let context: ReturnType<typeof buildServer> | undefined;
@@ -41,13 +41,7 @@ describe("S33 provider runtime config visibility", () => {
     };
   };
 
-  test("exposes configured AI and payment runtime summaries through system endpoints", async () => {
-    const paymentRuntime = resolvePaymentRuntimeFromEnv({
-      PAYMENT_PROVIDER_DEFAULT: "stripe",
-      PAYMENT_STRIPE_ENABLED: "true",
-      PAYMENT_STRIPE_WEBHOOK_SECRET: "stripe-webhook-secret-0001",
-      PAYMENT_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: "600"
-    });
+  test("exposes configured AI runtime summary through system endpoints", async () => {
     const aiRuntime = resolveAiRuntimeFromEnv({
       LLM_PRIMARY_PROVIDER_NAME: "openai",
       LLM_PRIMARY_ENDPOINT: "https://api.openai.example/v1",
@@ -61,7 +55,6 @@ describe("S33 provider runtime config visibility", () => {
     });
 
     context = buildServer({
-      paymentRuntime,
       aiRuntime
     });
     await context.app.ready();
@@ -126,27 +119,6 @@ describe("S33 provider runtime config visibility", () => {
     );
     expect(providerHealth.json().providers.map((item: { provider_name: string }) => item.provider_name)).toEqual(
       expect.arrayContaining(["openai", "anthropic"])
-    );
-
-    const paymentRuntimeResponse = await context.app.inject({
-      method: "GET",
-      url: "/v1/system/payments/runtime",
-      headers: {
-        authorization: `Bearer ${user.access_token}`
-      }
-    });
-    expect(paymentRuntimeResponse.statusCode).toBe(200);
-    expect(paymentRuntimeResponse.json().default_provider).toBe("stripe");
-    expect(paymentRuntimeResponse.json().providers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider_name: "stripe",
-          enabled: true,
-          signature_required: true,
-          webhook_secret_configured: true,
-          replay_window_seconds: 600
-        })
-      ])
     );
   });
 });

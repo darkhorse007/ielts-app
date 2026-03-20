@@ -5,7 +5,6 @@ import type { AuthService } from "../domain/auth-service.js";
 import type { ProviderHealthService } from "../domain/provider-health-service.js";
 import { isReleaseServiceError } from "../domain/release-service.js";
 import type { ReleaseService, ReleaseServiceErrorCode } from "../domain/release-service.js";
-import type { SubscriptionService } from "../domain/subscription-service.js";
 import { authenticate } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 
@@ -355,7 +354,6 @@ export const registerSystemRoutes = async (
   app: FastifyInstance,
   services: {
     authService: AuthService;
-    subscriptionService: SubscriptionService;
     providerHealthService: ProviderHealthService;
     releaseService: ReleaseService;
     authAccountRepository?: AuthAccountRepository;
