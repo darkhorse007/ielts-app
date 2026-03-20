@@ -147,35 +147,19 @@ describe("S29 auth/account postgres persistence", () => {
     }
   });
 
-  runIfPostgres("persists role and pending-deletion state across server restarts", async () => {
+  runIfPostgres("persists pending-deletion state across server restarts", async () => {
     const schema = `auth_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
     const password = "StrongPass123";
     let server = createServer(schema);
-    let adminEmail = "";
     let learnerEmail = "";
     let learnerUserId = "";
 
     try {
       await server.app.ready();
 
-      const admin = await registerAndLogin(server, "admin-role-manager", password);
       const learner = await registerAndLogin(server, "candidate-role-target", password);
-      adminEmail = admin.email;
       learnerEmail = learner.email;
       learnerUserId = learner.userId;
-
-      const setRoles = await server.app.inject({
-        method: "PUT",
-        url: `/v1/system/users/${learner.userId}/roles`,
-        headers: {
-          authorization: `Bearer ${admin.accessToken}`
-        },
-        payload: {
-          roles: ["qa"]
-        }
-      });
-      expect(setRoles.statusCode).toBe(200);
-      expect(setRoles.json().roles).toContain("qa");
 
       const deletionRequest = await server.app.inject({
         method: "POST",
@@ -194,17 +178,6 @@ describe("S29 auth/account postgres persistence", () => {
     try {
       await server.app.ready();
 
-      const adminRelogin = await server.app.inject({
-        method: "POST",
-        url: "/v1/auth/login",
-        payload: {
-          identifier: adminEmail,
-          password,
-          device_id: "qa-admin-restart"
-        }
-      });
-      expect(adminRelogin.statusCode).toBe(200);
-
       const learnerRelogin = await server.app.inject({
         method: "POST",
         url: "/v1/auth/login",
@@ -216,17 +189,6 @@ describe("S29 auth/account postgres persistence", () => {
       });
       expect(learnerRelogin.statusCode).toBe(403);
       expect(learnerRelogin.json().code).toBe("USER_DISABLED");
-
-      const getRoles = await server.app.inject({
-        method: "GET",
-        url: `/v1/system/users/${learnerUserId}/roles`,
-        headers: {
-          authorization: `Bearer ${adminRelogin.json().access_token as string}`
-        }
-      });
-      expect(getRoles.statusCode).toBe(200);
-      expect(getRoles.json().roles).toContain("learner");
-      expect(getRoles.json().roles).toContain("qa");
 
       const internalUser = await server.app.inject({
         method: "GET",

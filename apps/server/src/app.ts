@@ -68,11 +68,8 @@ import { registerPracticeRoutes } from "./routes/practice.js";
 import { registerRealtimeSpeakingRoutes } from "./routes/realtime-speaking.js";
 import { registerWritingRoutes } from "./routes/writing.js";
 import { registerMockExamRoutes } from "./routes/mock-exam.js";
-import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerReminderRoutes } from "./routes/reminder.js";
-import { registerChurnRoutes } from "./routes/churn.js";
-import { registerSystemRoutes } from "./routes/system.js";
 
 type BuildServerOptions = Partial<ServiceConfig> & {
   authAccountStorageBackend?: "memory" | "postgres";
@@ -283,114 +280,6 @@ export const buildServer = (options?: BuildServerOptions): {
     }
   });
 
-  app.get("/internal/e2e/stability-ui", async (_request, reply) => {
-    reply.type("text/html; charset=utf-8").send(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stability UI Smoke</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
-      .row { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
-      label { min-width: 100px; font-size: 14px; color: #333; }
-      input { padding: 6px 8px; min-width: 320px; }
-      button { padding: 8px 12px; cursor: pointer; }
-      pre { margin-top: 16px; padding: 12px; background: #f5f7fa; border: 1px solid #d9dee6; white-space: pre-wrap; }
-    </style>
-  </head>
-  <body>
-    <h1>Stability UI Smoke</h1>
-    <div class="row">
-      <label for="token">access_token</label>
-      <input id="token" />
-    </div>
-    <div class="row">
-      <label for="release-id">release_id</label>
-      <input id="release-id" value="REL-UI-SMOKE-001" />
-    </div>
-    <div class="row">
-      <label for="run-id">run_id</label>
-      <input id="run-id" />
-    </div>
-    <div class="row">
-      <button id="evaluate-gate" type="button">Evaluate Gate</button>
-      <button id="start-soak" type="button">Start Soak</button>
-      <button id="record-checkpoint" type="button">Record Checkpoint</button>
-    </div>
-    <pre id="output">idle</pre>
-    <script>
-      const output = document.getElementById("output");
-      const tokenInput = document.getElementById("token");
-      const releaseIdInput = document.getElementById("release-id");
-      const runIdInput = document.getElementById("run-id");
-
-      const request = async (path, payload) => {
-        const response = await fetch(path, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + tokenInput.value.trim()
-          },
-          body: JSON.stringify(payload)
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error((body && body.message) || "request failed");
-        }
-        return body;
-      };
-
-      document.getElementById("evaluate-gate").addEventListener("click", async () => {
-        try {
-          const releaseId = releaseIdInput.value.trim();
-          const result = await request("/v1/system/release/gate/evaluate", {
-            release_id: releaseId,
-            p0_defects: 0,
-            regression_pass_rate: 99.9,
-            api_success_rate: 99.9,
-            provider_healthy: true
-          });
-          output.textContent = "gate passed=" + String(result.passed);
-        } catch (error) {
-          output.textContent = "error: " + error.message;
-        }
-      });
-
-      document.getElementById("start-soak").addEventListener("click", async () => {
-        try {
-          const releaseId = releaseIdInput.value.trim();
-          const result = await request("/v1/system/stability/soak-tests/start", {
-            release_id: releaseId,
-            planned_duration_hours: 72
-          });
-          runIdInput.value = result.run_id;
-          output.textContent = "soak started run_id=" + result.run_id;
-        } catch (error) {
-          output.textContent = "error: " + error.message;
-        }
-      });
-
-      document.getElementById("record-checkpoint").addEventListener("click", async () => {
-        try {
-          const runId = runIdInput.value.trim();
-          const result = await request("/v1/system/stability/soak-tests/" + runId + "/checkpoints", {
-            at_hour: 24,
-            crash_count: 1,
-            active_sessions: 2000,
-            api_success_rate: 99.8,
-            latency_p95_ms: 1200
-          });
-          output.textContent = "checkpoint=" + result.checkpoint_id + "; run_status=" + result.run_status;
-        } catch (error) {
-          output.textContent = "error: " + error.message;
-        }
-      });
-    </script>
-  </body>
-</html>`);
-  });
-
   app.register(async (child) => {
     await registerAuthRoutes(child, authService, authAccountRepository);
     await registerProgressRoutes(child, {
@@ -425,13 +314,6 @@ export const buildServer = (options?: BuildServerOptions): {
       learnerStateRepository,
       mockStateRepository
     });
-    await registerAdminRoutes(child, {
-      adminService,
-      adminOpsService,
-      adminReviewService,
-      subscriptionService,
-      authAccountRepository
-    });
     await registerAnalyticsRoutes(child, {
       authService,
       analyticsService
@@ -439,17 +321,6 @@ export const buildServer = (options?: BuildServerOptions): {
     await registerReminderRoutes(child, {
       authService,
       reminderService
-    });
-    await registerChurnRoutes(child, {
-      authService,
-      churnService
-    });
-    await registerSystemRoutes(child, {
-      authService,
-      providerHealthService,
-      releaseService,
-      authAccountRepository,
-      systemRbacEnforced: options?.systemRbacEnforced ?? true
     });
     await registerOnboardingRoutes(child, {
       authService,
