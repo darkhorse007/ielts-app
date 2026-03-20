@@ -1,0 +1,404 @@
+timestamp,id,from_status,to_status,owner,reason,source
+2026-02-25T00:00:00Z,SYSTEM,NA,Ready,system,初始化纯文件跟踪系统,bootstrap
+2026-02-25T00:10:00Z,S1-SPLIT,NA,Ready,system,完成S1原子任务拆分并写入backlog与sprint文档,manual
+2026-02-25T00:20:00Z,ADMIN-SCOPE,NA,Ready,system,将后台管理系统纳入范围并完成E11与Story映射,manual
+2026-02-25T00:30:00Z,S5S6-SPLIT,NA,Ready,system,完成S5和S6后台Story原子任务拆分并写入执行清单,manual
+2026-02-26T09:00:00Z,MARKET-RESEARCH,NA,Ready,system,完成雅思商业软件竞品调研并回写PRD与决策记录,manual
+2026-02-26T14:47:03Z,TK-1101-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:03Z,TK-1101-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:03Z,TK-1101-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1101-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1101-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1102-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1102-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1102-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1102-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-1102-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-2101-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-2101-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-2101-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-2101-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:04Z,TK-2101-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:10Z,US-1101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:10Z,US-1102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T14:47:10Z,US-2101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:08:51Z,US-1103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:08:51Z,US-1104,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:08:51Z,US-2102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:08:51Z,US-2103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-3101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-3102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-3103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-4101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-5102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:32:21Z,US-5101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-3101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-3102,Done,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-3103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-5101,Done,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-5102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T15:34:24Z,US-4101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-4102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-4103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-4104,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-5103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-6101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:11:35Z,US-6102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-6103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-7101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-7102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-7103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-8101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-8102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-8103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-11101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,US-11103,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11101-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11101-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11101-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11101-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11101-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11103-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11103-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11103-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11103-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T16:47:46Z,TK-11103-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-9101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-9102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-10101,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-10102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-11102,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,US-11104,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11102-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11102-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11102-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11102-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11102-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11104-01,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11104-02,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11104-03,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11104-04,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-26T17:34:47Z,TK-11104-05,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-27T01:34:56Z,US-2104,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-27T13:27:43Z,US-3201,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T13:41:40Z,US-4201,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T13:51:22Z,US-4202,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T14:15:08Z,US-6201,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T16:30:42Z,US-8201,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T16:49:12Z,US-8202,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-27T17:34:35Z,US-9201,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-28T01:23:18Z,US-9202,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-28T12:04:29Z,US-9203,Draft,Done,codex,status updated via set_status.sh,manual
+2026-02-28T12:46:14Z,US-11203,Draft,Ready,codex,status updated via set_status.sh,manual
+2026-02-28T12:48:03Z,US-11201,Draft,Ready,codex,status updated via set_status.sh,manual
+2026-02-28T12:48:09Z,US-11202,Draft,Ready,codex,status updated via set_status.sh,manual
+2026-02-28T13:01:57Z,US-11201,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-28T13:21:37Z,US-11203,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-28T13:30:18Z,US-11202,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-28T13:42:01Z,US-10201,Draft,Ready,codex,status updated via set_status.sh,manual
+2026-02-28T13:42:01Z,US-10202,Draft,Ready,codex,status updated via set_status.sh,manual
+2026-02-28T13:57:32Z,US-10201,Ready,Done,codex,status updated via set_status.sh,manual
+2026-02-28T14:11:12Z,US-10202,Ready,Done,codex,status updated via set_status.sh,manual
+2026-03-02T14:21:51Z,US-10301,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:21:51Z,US-10302,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:21:51Z,US-10303,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:21:51Z,US-10304,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:21:51Z,US-10305,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:40:22Z,US-10306,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:40:22Z,US-10307,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:40:22Z,US-10308,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:40:22Z,US-10309,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T14:40:22Z,US-10310,In Progress,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:05:00Z,S9-CLOSE,In Progress,Done,codex,完成S9发布门禁增强十项收口并同步台账,manual
+2026-03-02T15:15:30Z,US-10401,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10402,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10403,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10404,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10405,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10406,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10407,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10408,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10409,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:15:30Z,US-10410,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-02T15:18:00Z,S10-CLOSE,In Progress,Done,codex,完成S10 tracking治理自动化十项收口并回填台账,manual
+2026-03-02T15:40:00Z,S10-HARDEN,Done,Done,codex,治理可用性增强（set_status预检查+recommended_actions+release模板命令）,manual
+2026-03-03T10:32:00Z,US-10501,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10502,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10503,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10504,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10505,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10506,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10507,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10508,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10509,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:32:00Z,US-10510,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T10:45:00Z,S11-CLOSE,In Progress,Done,codex,完成S11治理强化二期十项收口并同步台账,manual
+2026-03-03T11:35:00Z,US-10601,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10602,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10603,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10604,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10605,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10606,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10607,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10608,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10609,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:35:00Z,US-10610,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T11:45:00Z,S12-CLOSE,In Progress,Done,codex,完成S12治理强化三期十项收口并同步台账,manual
+2026-03-03T12:30:00Z,US-10701,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10702,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10703,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10704,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10705,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10706,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10707,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10708,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10709,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:30:00Z,US-10710,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T12:40:00Z,S13-CLOSE,In Progress,Done,codex,完成S13治理强化四期十项收口并同步台账,manual
+2026-03-03T14:05:00Z,US-10801,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10802,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10803,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10804,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10805,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10806,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10807,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10808,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10809,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:05:00Z,US-10810,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T14:15:00Z,S14-CLOSE,In Progress,Done,codex,完成S14治理强化五期十项收口并同步台账,manual
+2026-03-03T15:20:00Z,US-10901,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10902,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10903,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10904,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10905,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10906,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10907,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10908,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10909,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:20:00Z,US-10910,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T15:30:00Z,S15-CLOSE,In Progress,Done,codex,完成S15治理强化六期十项收口并同步台账,manual
+2026-03-03T16:30:00Z,US-11001,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11002,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11003,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11004,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11005,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11006,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11007,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11008,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11009,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:30:00Z,US-11010,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T16:40:00Z,S16-CLOSE,In Progress,Done,codex,完成S16治理强化七期十项收口并同步台账,manual
+2026-03-03T17:40:00Z,US-11011,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11012,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11013,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11014,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11015,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11016,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11017,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11018,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11019,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:40:00Z,US-11020,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T17:50:00Z,S17-CLOSE,In Progress,Done,codex,完成S17治理强化八期十项收口并同步台账,manual
+2026-03-03T18:40:00Z,US-11021,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11022,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11023,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11024,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11025,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11026,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11027,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11028,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11029,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:40:00Z,US-11030,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T18:50:00Z,S18-CLOSE,In Progress,Done,codex,完成S18治理强化九期十项收口并同步台账,manual
+2026-03-03T19:40:00Z,US-11031,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11032,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11033,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11034,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11035,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11036,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11037,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11038,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11039,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:40:00Z,US-11040,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T19:50:00Z,S19-CLOSE,In Progress,Done,codex,完成S19治理强化十期十项收口并同步台账,manual
+2026-03-03T20:35:00Z,US-11041,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11042,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11043,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11044,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11045,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11046,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11047,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11048,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11049,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:35:00Z,US-11050,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T20:45:00Z,S20-CLOSE,In Progress,Done,codex,完成S20治理强化十一期十项收口并同步台账,manual
+2026-03-03T21:35:00Z,US-11051,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11052,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11053,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11054,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11055,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11056,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11057,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11058,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11059,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:35:00Z,US-11060,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T21:45:00Z,S21-CLOSE,In Progress,Done,codex,完成S21治理强化十二期十项收口并同步台账,manual
+2026-03-03T22:35:00Z,US-11061,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11062,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11063,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11064,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11065,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11066,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11067,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11068,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11069,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:35:00Z,US-11070,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T22:45:00Z,S22-CLOSE,In Progress,Done,codex,完成S22治理强化十三期十项收口并同步台账,manual
+2026-03-03T23:35:00Z,US-11071,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11072,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11073,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11074,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11075,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11076,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11077,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11078,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11079,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:35:00Z,US-11080,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-03T23:45:00Z,S23-CLOSE,In Progress,Done,codex,完成S23治理强化十四期十项收口并同步台账,manual
+2026-03-04T00:05:00Z,S23-REL060,In Progress,Done,codex,完成REL-060追加并复核tracking治理日期一致性,manual
+2026-03-04T09:35:00Z,US-11081,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11082,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11083,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11084,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11085,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11086,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11087,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11088,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11089,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:35:00Z,US-11090,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-04T09:45:00Z,S24-CLOSE,In Progress,Done,codex,完成S24治理强化十五期十项收口并同步台账,manual
+2026-03-05T10:02:00Z,S24-REL061,In Progress,Done,codex,完成REL-061追加并复核tracking治理日期一致性,manual
+2026-03-05T10:35:00Z,US-11091,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11092,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11093,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11094,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11095,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11096,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11097,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11098,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11099,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:35:00Z,US-11100,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T10:45:00Z,S25-CLOSE,In Progress,Done,codex,完成S25治理强化十六期十项收口并同步台账,manual
+2026-03-05T11:05:00Z,S25-REL062,In Progress,Done,codex,完成REL-062追加并复核tracking治理日期一致性,manual
+2026-03-05T11:35:00Z,US-11111,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11112,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11113,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11114,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11115,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11116,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11117,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11118,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11119,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:35:00Z,US-11120,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T11:45:00Z,S26-CLOSE,In Progress,Done,codex,完成S26治理强化十七期十项收口并同步台账,manual
+2026-03-05T12:05:00Z,S26-REL063,In Progress,Done,codex,完成REL-063追加并复核tracking治理日期一致性,manual
+2026-03-05T12:35:00Z,US-11121,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11122,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11123,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11124,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11125,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11126,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11127,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11128,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11129,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:35:00Z,US-11130,Ready,Done,codex,status updated via backlog sync,manual
+2026-03-05T12:45:00Z,S27-CLOSE,In Progress,Done,codex,完成S27治理强化十八期十项收口并同步台账,manual
+2026-03-05T13:05:00Z,S27-REL064,In Progress,Done,codex,完成REL-064追加并复核tracking治理日期一致性,manual
+2026-03-07T02:20:00Z,E01,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E02,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E03,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E04,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E05,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E06,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E07,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E08,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E09,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E10,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-07T02:20:00Z,E11,Ready,Done,codex,epic status roll-up after all child stories completed,manual
+2026-03-08T03:20:00Z,US-11131,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11132,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11133,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11134,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11135,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11136,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11137,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11138,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11139,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:20:00Z,US-11140,Ready,Done,codex,status updated via S28 tracking sync,manual
+2026-03-08T03:30:00Z,S28-CLOSE,In Progress,Done,codex,完成S28发布就绪一期十项收口并同步台账,manual
+2026-03-08T04:20:00Z,S28-REL065,In Progress,Done,codex,完成REL-065追加并基于严格门禁结果复核RC验收包一致性,manual
+2026-03-08T05:29:00Z,S29-SPLIT,NA,Ready,codex,完成S29范围冻结与Story拆分并写入tracking文档,manual
+2026-03-08T05:30:00Z,US-11141,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:01Z,US-11142,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:02Z,US-11143,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:03Z,US-11144,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:04Z,US-11145,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:05Z,US-11146,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:06Z,US-11147,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:30:07Z,US-11148,NA,Ready,codex,status planned via S29 scope freeze,manual
+2026-03-08T05:31:00Z,E10,Done,Ready,codex,epic status roll-up reopened after adding S29 stories,manual
+2026-03-08T06:40:00Z,US-11141,Ready,Done,codex,完成S29范围冻结与验收矩阵落地,manual
+2026-03-08T06:40:01Z,US-11143,Ready,Done,codex,完成前端/admin 路由保护并补齐回归测试,manual
+2026-03-08T06:40:02Z,US-11144,Ready,Done,codex,完成system RBAC 默认收紧与显式关闭回归,manual
+2026-03-08T07:50:00Z,US-11142,Ready,Done,codex,完成Postgres smoke、完整release checklist与RC签署回写,manual
+2026-03-08T07:51:00Z,S29-REL066,In Progress,Done,codex,完成REL-066追加并记录Postgres smoke与RC验收闭环结果,manual
+2026-03-09T00:20:00Z,US-11145,Ready,Done,codex,完成auth/account repository抽象、Postgres持久化、迁移脚本与跨重启回归,manual
+2026-03-09T09:35:00Z,US-11146,Ready,Done,codex,完成onboarding/plan/progress Postgres持久化、迁移脚本、Postgres smoke与跨重启回归,manual
+2026-03-10T13:10:00Z,US-11147,Ready,Done,codex,完成restart recovery集成测试与Postgres-backed learner主链路浏览器回归 smoke,manual
+2026-03-10T22:50:00Z,US-11148,Ready,Done,codex,完成REL-067、runbook与tracking台账最终同步，S29正式收口,manual
+2026-03-10T22:50:01Z,E10,Ready,Done,codex,epic status roll-up after S29 final closure,manual
+2026-03-10T22:50:02Z,S29-CLOSE,In Progress,Done,codex,完成S29全量收口并同步发布记录、风险与运行手册,manual
+2026-03-10T22:50:03Z,S29-REL067,In Progress,Done,codex,完成REL-067追加并记录S29最终门禁与restart recovery验证结果,manual
+2026-03-10T23:09:00Z,S30-SPLIT,NA,Ready,codex,完成S30范围冻结与Story拆分并写入tracking文档,manual
+2026-03-10T23:10:00Z,US-11149,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:01Z,US-11150,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:02Z,US-11151,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:03Z,US-11152,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:04Z,US-11153,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:05Z,US-11154,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:06Z,US-11155,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:07Z,US-11156,NA,Ready,codex,status planned via S30 scope freeze,manual
+2026-03-10T23:10:08Z,E10,Done,Ready,codex,epic status roll-up reopened after adding S30 stories,manual
+2026-03-11T09:00:00Z,US-11150,Ready,Done,codex,完成practice/retry queue Postgres持久化、迁移脚本、统一 smoke 与跨重启回归,manual
+2026-03-11T10:00:00Z,US-11151,Ready,Done,codex,完成speaking session Postgres持久化、WS/HTTP flush、统一 smoke 与跨重启恢复回归,manual
+2026-03-11T23:50:00Z,US-11152,Ready,Done,codex,完成writing state Postgres持久化、迁移脚本、统一 smoke 与跨重启回归,manual
+2026-03-11T23:58:00Z,US-11153,Ready,Done,codex,完成mock exam/report Postgres持久化、学习计划写回恢复、迁移脚本与统一 smoke,manual
+2026-03-12T00:05:00Z,US-11154,Ready,Done,codex,完成content recovery Postgres 集成测试与 practice-writing-mock 浏览器 smoke 组合入口,manual
+2026-03-12T00:10:00Z,US-11149,Ready,Done,codex,完成S30范围冻结与执行矩阵台账固化,manual
+2026-03-12T00:10:01Z,US-11155,Ready,Done,codex,完成多仓储运行手册、RC清单与 smoke 使用说明扩展,manual
+2026-03-12T00:29:58Z,US-11156,Ready,Done,codex,完成REL-068、runbook与tracking台账最终同步，S30正式收口,manual
+2026-03-12T00:29:59Z,E10,Ready,Done,codex,epic status roll-up after S30 final closure,manual
+2026-03-12T00:30:00Z,S30-CLOSE,In Progress,Done,codex,完成S30全量收口并同步发布记录、风险与运行手册,manual
+2026-03-12T00:30:01Z,S30-REL068,In Progress,Done,codex,完成REL-068追加并记录S30最终门禁与多仓储Postgres验证结果,manual
+2026-03-12T00:44:59Z,S31-SPLIT,NA,Ready,codex,完成S31范围冻结与Story拆分并写入tracking文档,manual
+2026-03-12T00:45:00Z,US-11157,NA,Ready,codex,status planned via S31 scope freeze,manual
+2026-03-12T00:45:01Z,US-11158,NA,Ready,codex,status planned via S31 scope freeze,manual
+2026-03-12T00:45:02Z,US-11159,NA,Ready,codex,status planned via S31 scope freeze,manual
+2026-03-12T00:45:03Z,US-11160,NA,Ready,codex,status planned via S31 scope freeze,manual
+2026-03-12T00:45:04Z,E10,Done,Ready,codex,epic status roll-up reopened after adding S31 stories,manual
+2026-03-12T01:05:00Z,US-11157,Ready,Done,codex,完成S31范围冻结与验收矩阵台账落盘,manual
+2026-03-12T01:05:01Z,US-11158,Ready,Done,codex,完成Postgres smoke daemon 预检、外部连接串 FAQ 收敛与脚本回归测试,manual
+2026-03-12T01:18:00Z,US-11159,Ready,Done,codex,完成rc-package-from-gate目录生成、release row本地日期修正、脚本回归与真实RC包 smoke,manual
+2026-03-12T01:23:00Z,US-11160,Ready,Done,codex,完成REL-069、runbook/risk/metrics/retro 同步与最终 release checklist 收口,manual
+2026-03-12T01:23:01Z,E10,Ready,Done,codex,epic status roll-up after S31 final closure,manual
+2026-03-12T01:23:02Z,S31-CLOSE,In Progress,Done,codex,完成S31全量收口并同步发布记录、风险与运行手册,manual
+2026-03-12T01:23:03Z,S31-REL069,In Progress,Done,codex,完成REL-069追加并记录S31最终门禁与RC交付包自动化结果,manual
+2026-03-13T01:30:00Z,GA-RUNTIME-FREEZE,In Progress,Done,codex,补齐PAYMENT/LLM runtime config、backup evidence manifest、runbook与风险台账同步,manual
+2026-03-13T01:30:01Z,REL-070,In Progress,Done,codex,完成最终release:checklist并追加REL-070记录（strict+Postgres smoke+frontend-full-e2e+client artifact/publish+script tests）,manual
+2026-03-14T07:30:05Z,GA-FREEZE-SYNC,In Progress,Done,codex,同步 Stripe+Alipay/OpenAI/manual_review 与用户数据导出到代码/文档/风险台账并通过专项回归,manual
+2026-03-14T07:30:06Z,REL-071,In Progress,Done,codex,完成最终release:checklist并追加REL-071记录（strict+Postgres smoke+frontend-full-e2e+client artifact/publish+script tests）,manual
+2026-03-14T07:41:57Z,GA-COMPLIANCE-DRAFTS,In Progress,Done,codex,补齐 provider/secret 联签清单、删除例外与时效草案、未成年人提示草案、版权台账模板与合规签署模板,manual
+2026-03-14T07:42:30Z,GA-COMPLIANCE-PACKET,In Progress,Done,codex,新增合规联签包入口并修正法务草案中“已联签”误写，统一会前材料与会后回写路径,manual
+2026-03-14T07:43:00Z,GA-COMPLIANCE-SIGNOFF-INSTANCE,In Progress,Done,codex,生成 REL-071 对应的合规联签实例草稿并挂入 tracking signoffs 目录,manual
+2026-03-14T07:44:00Z,GA-RELEASE-BLOCKERS-SHORTLIST,In Progress,Done,codex,新增正式可发布最短阻断清单，明确 review-ready、controlled-release candidate 与 formal GA-ready 边界,manual
+2026-03-20T04:00:00Z,GA-LAUNCH-FAST-TRACK,NA,Ready,codex,新增上线快车道计划与执行台账，按 2026-03-20 启动 7 个工作日受控上线冲刺窗口,manual

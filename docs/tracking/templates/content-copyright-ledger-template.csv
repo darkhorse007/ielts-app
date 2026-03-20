@@ -1,0 +1,2 @@
+asset_id,content_type,title,skill,source_type,source_name,license_type,license_reference,authorized_scope,territory,valid_from,valid_to,proof_location,reviewer,legal_signoff,notes
+ASSET-YYYYMMDD-001,question_set,[待填写],reading,[original/adapted/licensed],[待填写],[exclusive/non-exclusive/internal],[合同编号/邮件链接],[IELTS AI App 首发范围],[CN/global],[YYYY-MM-DD],[YYYY-MM-DD],[知识库/网盘链接],[待填写],[pending/approved/rejected],[待填写]

@@ -1,0 +1,705 @@
+openapi: 3.1.0
+info:
+  title: IELTS App S6 API Extensions
+  version: 0.6.3
+  description: |
+    Sprint S6 API contract extension for:
+    - learning analytics observability
+    - A/B experiment configuration, shunting and stop-condition evaluation
+    - personalized reminder preference/recommendation/click tracking
+    - churn risk scoring, strategy trigger and recall effect observation
+    - provider health monitoring and release gate/canary workflow
+    - admin user management, content release lifecycle and audit query
+servers:
+  - url: http://localhost:8787
+paths:
+  /v1/analytics/events/batch:
+    post:
+      summary: Ingest learning analytics event batch
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [platform, event_type]
+                    properties:
+                      platform:
+                        type: string
+                        enum: [windows, macos, ios, android, web]
+                      skill:
+                        type: string
+                        enum: [listening, speaking, reading, writing]
+                      event_type:
+                        type: string
+                      trace_id:
+                        type: string
+                      provider_name:
+                        type: string
+                      success:
+                        type: boolean
+                      fallback_triggered:
+                        type: boolean
+                      latency_ms:
+                        type: integer
+                        minimum: 0
+      responses:
+        '202':
+          description: Accepted with coverage/completeness metrics
+        '400':
+          description: Validation error
+  /v1/analytics/summary:
+    get:
+      summary: Get analytics summary metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: platform
+          required: false
+          schema:
+            type: string
+            enum: [windows, macos, ios, android, web]
+        - in: query
+          name: skill
+          required: false
+          schema:
+            type: string
+            enum: [listening, speaking, reading, writing]
+      responses:
+        '200':
+          description: Summary returned
+  /v1/analytics/experiments:
+    get:
+      summary: List A/B experiments and recommendation board
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [draft, running, stopped]
+      responses:
+        '200':
+          description: Experiment board
+  /v1/analytics/experiments/{experiment_key}:
+    put:
+      summary: Create or update A/B experiment config
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: experiment_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, variants, metric_event_type, stop_condition]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [draft, running, stopped]
+                traffic_percent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                variants:
+                  type: array
+                  minItems: 2
+                  items:
+                    type: object
+                    required: [key, label, weight]
+                    properties:
+                      key:
+                        type: string
+                      label:
+                        type: string
+                      weight:
+                        type: number
+                        minimum: 0.01
+                metric_event_type:
+                  type: string
+                stop_condition:
+                  type: object
+                  required: [min_sample_size, target_lift_percent, max_duration_days]
+                  properties:
+                    min_sample_size:
+                      type: integer
+                      minimum: 1
+                    target_lift_percent:
+                      type: number
+                      minimum: 0
+                    max_duration_days:
+                      type: integer
+                      minimum: 1
+      responses:
+        '200':
+          description: Experiment upserted
+        '400':
+          description: Invalid experiment config
+  /v1/analytics/experiments/{experiment_key}/assignment:
+    get:
+      summary: Get stable experiment assignment for current user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: experiment_key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Assignment returned
+        '404':
+          description: Experiment not found
+        '409':
+          description: Experiment not running
+  /v1/analytics/experiments/{experiment_key}/stop:
+    post:
+      summary: Stop running experiment manually
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: experiment_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Experiment stopped
+        '404':
+          description: Experiment not found
+  /v1/reminders/preferences:
+    get:
+      summary: Get personalized reminder preference
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reminder preference returned
+    put:
+      summary: Update personalized reminder preference (subscribe or unsubscribe)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subscribed]
+              properties:
+                subscribed:
+                  type: boolean
+      responses:
+        '200':
+          description: Reminder preference updated
+        '400':
+          description: Validation error
+  /v1/reminders/recommendation:
+    get:
+      summary: Get personalized reminder recommendation by active hour
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reminder recommendation returned
+  /v1/reminders/{reminder_id}/click:
+    post:
+      summary: Track reminder click and return task deep-link
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: reminder_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reminder click tracked
+        '404':
+          description: Reminder not found
+  /v1/analytics/churn/risks:
+    get:
+      summary: List churn risk users with score and factors
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: min_score
+          required: false
+          schema:
+            type: number
+        - in: query
+          name: level
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Churn risk board returned
+  /v1/analytics/churn/strategies/trigger:
+    post:
+      summary: Trigger win-back strategy for target user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, strategy_type]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                strategy_type:
+                  type: string
+                  enum: [smart_reminder, mock_exam_boost, coupon_nudge]
+                reason:
+                  type: string
+                conversion_window_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 30
+      responses:
+        '201':
+          description: Strategy triggered
+        '404':
+          description: Target user not found
+  /v1/analytics/churn/effect:
+    get:
+      summary: Get recall effect metrics for triggered strategies
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: since
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: strategy_type
+          required: false
+          schema:
+            type: string
+            enum: [smart_reminder, mock_exam_boost, coupon_nudge]
+      responses:
+        '200':
+          description: Recall effect metrics returned
+  /v1/system/health/providers:
+    get:
+      summary: Get provider health and alerts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Provider health snapshot
+  /v1/system/release/gate/evaluate:
+    post:
+      summary: Evaluate release gate by quality thresholds
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release_id, p0_defects, regression_pass_rate, api_success_rate, provider_healthy]
+              properties:
+                release_id:
+                  type: string
+                p0_defects:
+                  type: integer
+                  minimum: 0
+                regression_pass_rate:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                api_success_rate:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                provider_healthy:
+                  type: boolean
+      responses:
+        '200':
+          description: Gate evaluation result
+  /v1/system/release/canary/start:
+    post:
+      summary: Start canary release after gate passed
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release_id, target_percent, metrics]
+              properties:
+                release_id:
+                  type: string
+                target_percent:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                metrics:
+                  type: object
+                  required: [error_rate, latency_p95_ms, provider_healthy]
+                  properties:
+                    error_rate:
+                      type: number
+                      minimum: 0
+                      maximum: 100
+                    latency_p95_ms:
+                      type: integer
+                      minimum: 0
+                    provider_healthy:
+                      type: boolean
+      responses:
+        '201':
+          description: Canary started
+        '409':
+          description: Release gate not passed
+  /v1/system/release/canary/{canary_id}/promote:
+    post:
+      summary: Promote running canary
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: canary_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metrics]
+              properties:
+                metrics:
+                  type: object
+                  required: [error_rate, latency_p95_ms, provider_healthy]
+                  properties:
+                    error_rate:
+                      type: number
+                      minimum: 0
+                      maximum: 100
+                    latency_p95_ms:
+                      type: integer
+                      minimum: 0
+                    provider_healthy:
+                      type: boolean
+      responses:
+        '200':
+          description: Canary promoted
+        '404':
+          description: Canary not found
+        '409':
+          description: Canary not running or metrics not met
+  /v1/system/release/canary/{canary_id}/rollback:
+    post:
+      summary: Rollback canary release
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: canary_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Canary rolled back
+        '404':
+          description: Canary not found
+  /v1/system/release/canary/{canary_id}:
+    get:
+      summary: Get canary detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: canary_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Canary detail
+        '404':
+          description: Canary not found
+  /v1/admin/users:
+    get:
+      summary: List users with filters for admin management
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: email
+          schema:
+            type: string
+        - in: query
+          name: phone
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, frozen, pending_deletion, deleted]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: User page result
+        '403':
+          description: Forbidden by RBAC
+  /v1/admin/users/{user_id}/freeze:
+    post:
+      summary: Freeze user and revoke sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: User frozen
+        '404':
+          description: User not found
+  /v1/admin/users/{user_id}/unfreeze:
+    post:
+      summary: Unfreeze user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: User unfrozen
+        '404':
+          description: User not found
+  /v1/admin/content/items:
+    get:
+      summary: List content items for publish lifecycle management
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: skill
+          schema:
+            type: string
+            enum: [listening, speaking, reading, writing]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, published, unpublished]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Content page result
+  /v1/admin/content/items/{item_id}/publish:
+    post:
+      summary: Publish content item and increase version
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: item_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                simulate_failure:
+                  type: boolean
+      responses:
+        '200':
+          description: Content published
+        '404':
+          description: Content not found
+        '409':
+          description: Publish failed and rollback applied
+  /v1/admin/content/items/{item_id}/unpublish:
+    post:
+      summary: Unpublish content item
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: item_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Content unpublished
+        '404':
+          description: Content not found
+  /v1/admin/audit-logs:
+    get:
+      summary: Query admin audit logs by filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: user_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: actor_admin_user_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Audit log page result
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,41 @@
+{
+  "name": "@ielts/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "test": "vitest run tests",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "npx playwright test e2e/stability-alert-flow.spec.mjs e2e/stability-ui-flow.spec.mjs e2e/system-role-audit-flow.spec.mjs",
+    "test:e2e:learner": "npx playwright test e2e/learner-main-flow.spec.mjs",
+    "test:e2e:practice-writing-mock": "npx playwright test e2e/practice-writing-mock-flow.spec.mjs",
+    "test:e2e:all": "npx playwright test e2e",
+    "test:e2e:frontend-full": "npx playwright test e2e/stability-alert-flow.spec.mjs e2e/stability-ui-flow.spec.mjs e2e/system-role-audit-flow.spec.mjs e2e/learner-main-flow.spec.mjs e2e/practice-writing-mock-flow.spec.mjs e2e/stability-page-flow.spec.mjs e2e/observability-storage-alerting-flow.spec.mjs e2e/visual-snapshots.spec.mjs",
+    "test:e2e:stability": "npx playwright test e2e/stability-alert-flow.spec.mjs",
+    "test:e2e:stability-page": "npx playwright test e2e/stability-page-flow.spec.mjs",
+    "test:e2e:observability-storage": "npx playwright test e2e/observability-storage-alerting-flow.spec.mjs",
+    "test:e2e:stability-ui": "npx playwright test e2e/stability-ui-flow.spec.mjs",
+    "test:e2e:visual": "npx playwright test e2e/visual-snapshots.spec.mjs",
+    "test:e2e:system-roles": "npx playwright test e2e/system-role-audit-flow.spec.mjs"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.1",
+    "vitest": "^3.2.4"
+  }
+}

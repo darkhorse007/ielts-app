@@ -1,0 +1,433 @@
+openapi: 3.1.0
+info:
+  title: IELTS App S4 API Extensions
+  version: 0.4.3
+  description: |
+    Sprint S4 API contract extension for:
+    - speaking Part1/2/3 advanced flow with scoring and retry comparison
+    - speaking role-play scenarios with dynamic follow-up (US-4202)
+    - speaking pronunciation heatmap feedback and task tracking (US-4201)
+    - reading training/exam mode switch and timer controls
+    - writing TR/CC/LR/GRA evaluation with evidence-based suggestions
+    - writing template library, safe insertion and adoption rate (US-6201)
+servers:
+  - url: http://localhost:8787
+paths:
+  /v1/realtime/speaking/scenarios:
+    get:
+      summary: List available role-play scenarios
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: At least 5 speaking role-play scenario categories
+  /v1/practice/sessions:
+    post:
+      summary: Create practice session with reading mode support
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [skill]
+              properties:
+                skill:
+                  type: string
+                  enum: [listening, reading]
+                task_type:
+                  type: string
+                training_mode:
+                  type: string
+                  enum: [training, exam]
+                time_limit_seconds:
+                  type: integer
+                  minimum: 300
+                  maximum: 7200
+      responses:
+        '201':
+          description: Session created
+        '400':
+          description: Validation error
+  /v1/practice/sessions/{session_id}/mode:
+    patch:
+      summary: Switch reading training/exam mode
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [training_mode]
+              properties:
+                training_mode:
+                  type: string
+                  enum: [training, exam]
+                time_limit_seconds:
+                  type: integer
+                  minimum: 300
+                  maximum: 7200
+      responses:
+        '200':
+          description: Mode switched
+        '400':
+          description: Validation error
+        '404':
+          description: Session not found
+        '409':
+          description: Reading mode not supported for this session
+  /v1/practice/sessions/{session_id}/timer:
+    get:
+      summary: Get reading timer state
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Timer state returned
+        '404':
+          description: Session not found
+        '409':
+          description: Timer not supported for this session
+  /v1/practice/sessions/{session_id}/timer/pause:
+    post:
+      summary: Pause reading timer
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Timer paused
+        '404':
+          description: Session not found
+        '409':
+          description: Timer not supported for this session
+  /v1/practice/sessions/{session_id}/timer/resume:
+    post:
+      summary: Resume reading timer in exam mode
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Timer resumed
+        '404':
+          description: Session not found
+        '409':
+          description: Resume only available for reading exam mode
+  /v1/practice/sessions/{session_id}/timer/recover:
+    post:
+      summary: Recover reading timer from abnormal state
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Timer recovered
+        '404':
+          description: Session not found
+        '409':
+          description: Timer not supported for this session
+  /v1/realtime/speaking/sessions/{session_id}/part:
+    patch:
+      summary: Switch speaking part (1/2/3)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [part_no]
+              properties:
+                part_no:
+                  type: integer
+                  enum: [1, 2, 3]
+      responses:
+        '200':
+          description: Part switched
+        '400':
+          description: Validation error
+        '404':
+          description: Session not found
+        '409':
+          description: Session ended
+  /v1/realtime/speaking/sessions/{session_id}/retry:
+    post:
+      summary: Create same-topic retry speaking session from ended source
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Retry session created
+        '404':
+          description: Session not found
+        '409':
+          description: Source session not ended
+  /v1/realtime/speaking/sessions/{session_id}/comparison:
+    get:
+      summary: Compare source and retry speaking sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comparison with delta and next actions
+        '404':
+          description: Session not found
+        '409':
+          description: Not a retry session
+  /v1/realtime/speaking/sessions:
+    post:
+      summary: Create speaking session (core training or role-play)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topic:
+                  type: string
+                task_type:
+                  type: string
+                  enum: [core_training, role_play]
+                scenario_type:
+                  type: string
+                  enum: [campus_service, travel_support, job_interview, academic_tutor, community_event]
+      responses:
+        '201':
+          description: Speaking session created
+        '400':
+          description: Validation error
+  /v1/realtime/speaking/sessions/{session_id}/pronunciation-feedback:
+    get:
+      summary: Get pronunciation heatmap feedback with word/phoneme issues
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Heatmap, replay segments and trackable pronunciation tasks
+        '404':
+          description: Session not found
+  /v1/realtime/speaking/sessions/{session_id}/pronunciation-feedback/tasks/{task_id}/track:
+    post:
+      summary: Track pronunciation suggestion task status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: task_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [todo, doing, done]
+      responses:
+        '200':
+          description: Task status updated
+        '400':
+          description: Validation error
+        '404':
+          description: Session or task not found
+  /v1/realtime/speaking:
+    get:
+      summary: Realtime speaking websocket endpoint (S4 events)
+      description: |
+        WebSocket query params: `session_id`, `resume_token`, `access_token`.
+        S4 event types include:
+        `part_switch`, `coach_question`, `score_update`, `session_end`.
+        Role-play mode supports scenario-specific dynamic follow-up.
+        `score_update` contains `fluency/lexical/grammar/pronunciation`,
+        `suggestions`, `latency_ms`, `fallback_triggered`, and
+        `pronunciation_feedback.word_issues/phoneme_issues/replay_segments/task_recommendations`.
+      responses:
+        '101':
+          description: Switching Protocols
+  /v1/writing/evaluations:
+    post:
+      summary: Evaluate writing Task1/Task2 with four-dimension scores
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_type, prompt, essay]
+              properties:
+                task_type:
+                  type: string
+                  enum: [task1, task2]
+                prompt:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+                essay:
+                  type: string
+                  minLength: 30
+                  maxLength: 20000
+      responses:
+        '201':
+          description: Evaluation created
+        '400':
+          description: Validation error
+  /v1/writing/evaluations/{evaluation_id}:
+    get:
+      summary: Get writing evaluation detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: evaluation_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Evaluation detail
+        '404':
+          description: Evaluation not found
+  /v1/writing/templates:
+    get:
+      summary: List writing templates and argument frameworks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: task_type
+          required: false
+          schema:
+            type: string
+            enum: [task1, task2]
+      responses:
+        '200':
+          description: Template library with current user usage/adoption stats
+  /v1/writing/templates/{template_id}/insert:
+    post:
+      summary: Insert writing template without overwriting original essay
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: template_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [essay]
+              properties:
+                essay:
+                  type: string
+                  minLength: 1
+                insertion_mode:
+                  type: string
+                  enum: [append, prepend]
+      responses:
+        '200':
+          description: Merged essay with original text preserved
+        '400':
+          description: Validation error
+        '404':
+          description: Template not found
+  /v1/writing/templates/adoption:
+    get:
+      summary: Get writing template adoption rate for current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Adoption summary by template
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

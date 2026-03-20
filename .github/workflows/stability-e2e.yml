@@ -1,0 +1,599 @@
+name: quality-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/server/**"
+      - "apps/client/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/stability-e2e.yml"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and Integration Tests
+        run: npm test
+
+      - name: Release Automation Script Tests
+        run: npm run test:release-scripts
+
+      - name: Tracking Governance Validation
+        env:
+          TRACKING_GOVERNANCE_SUMMARY_PATH: tracking-governance-summary.json
+        run: npm run validate:tracking-governance
+
+      - name: Tracking Governance Strict Codes Check
+        env:
+          TRACKING_GOVERNANCE_STRICT_CODES_SUMMARY_PATH: tracking-governance-strict-codes-summary.json
+        run: npm run validate:tracking-governance:strict-codes -- --strict_warning_codes TGW001
+
+      - name: Upload Tracking Governance Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-tracking-governance-summary
+          path: tracking-governance-summary.json
+
+      - name: Upload Tracking Governance Strict Codes Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-tracking-governance-strict-codes-summary
+          path: tracking-governance-strict-codes-summary.json
+
+  e2e:
+    needs: typecheck-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Migrate Release DB
+        run: npm run db:migrate:release --workspace @ielts/server
+
+      - name: Start Server
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run start --workspace @ielts/server" \
+            --log-file "server.log" \
+            --pid-file "server.pid" \
+            --health-url "http://127.0.0.1:8787/health" \
+            --timeout-seconds 60
+
+      - name: Run E2E Suites
+        env:
+          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:8787
+        run: npm run test:e2e --workspace @ielts/client
+
+      - name: Stop Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server.pid
+
+      - name: Upload E2E Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-e2e-artifacts
+          path: |
+            server.log
+            playwright-report
+            test-results
+
+  postgres-smoke:
+    needs: typecheck-and-test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ielts_app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ielts_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Postgres Repository Smoke Test
+        env:
+          RELEASE_TEST_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/ielts_app
+        run: npm run test --workspace @ielts/server -- tests/s8-release-repository-postgres.integration.test.ts tests/s8-release-repository-postgres-recovery.integration.test.ts tests/s8-release-db-sqlite-to-postgres-migration.integration.test.ts
+
+      - name: Collect Postgres Logs
+        if: always()
+        run: |
+          container_id="$(docker ps -a --filter 'ancestor=postgres:16' --format '{{.ID}}' | head -n 1)"
+          if [ -n "$container_id" ]; then
+            docker logs "$container_id" > postgres-smoke.log 2>&1 || true
+          else
+            echo "postgres service container not found" > postgres-smoke.log
+          fi
+
+      - name: Upload Postgres Smoke Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-postgres-smoke-artifacts
+          path: |
+            postgres-smoke.log
+
+  postgres-e2e-smoke:
+    needs: typecheck-and-test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ielts_app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ielts_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Migrate Release DB (Postgres)
+        run: npm run db:migrate:release:postgres --workspace @ielts/server -- --connection_string=postgresql://postgres:postgres@127.0.0.1:5432/ielts_app --schema=public
+
+      - name: Start Server (Postgres Backend)
+        env:
+          RELEASE_STORAGE_BACKEND: postgres
+          RELEASE_STORAGE_CONNECTION_STRING: postgresql://postgres:postgres@127.0.0.1:5432/ielts_app
+          RELEASE_STORAGE_SCHEMA: public
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run start --workspace @ielts/server" \
+            --log-file "server-postgres.log" \
+            --pid-file "server-postgres.pid" \
+            --health-url "http://127.0.0.1:8787/health" \
+            --timeout-seconds 60
+
+      - name: Run Postgres API E2E Smoke
+        env:
+          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:8787
+        run: npm run test:e2e:stability --workspace @ielts/client
+
+      - name: Stop Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server-postgres.pid
+
+      - name: Collect Postgres Logs
+        if: always()
+        run: |
+          container_id="$(docker ps -a --filter 'ancestor=postgres:16' --format '{{.ID}}' | head -n 1)"
+          if [ -n "$container_id" ]; then
+            docker logs "$container_id" > postgres-e2e.log 2>&1 || true
+          else
+            echo "postgres service container not found" > postgres-e2e.log
+          fi
+
+      - name: Upload Postgres E2E Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-postgres-e2e-artifacts
+          path: |
+            server-postgres.log
+            postgres-e2e.log
+            playwright-report
+            test-results
+
+  visual-snapshots:
+    needs: typecheck-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Backend Server
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run start --workspace @ielts/server" \
+            --log-file "server-visual-backend.log" \
+            --pid-file "server-visual-backend.pid" \
+            --health-url "http://127.0.0.1:8787/health" \
+            --timeout-seconds 60
+
+      - name: Start Frontend Server
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run dev --workspace @ielts/client" \
+            --log-file "server-visual-frontend.log" \
+            --pid-file "server-visual-frontend.pid" \
+            --health-url "http://127.0.0.1:5173/login" \
+            --timeout-seconds 90
+
+      - name: Run Visual Snapshot E2E
+        env:
+          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:8787
+          PLAYWRIGHT_WEB_BASE_URL: http://127.0.0.1:5173
+        run: npm run test:e2e:visual --workspace @ielts/client
+
+      - name: Stop Frontend Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server-visual-frontend.pid
+
+      - name: Stop Backend Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server-visual-backend.pid
+
+      - name: Upload Visual Snapshot Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-visual-snapshots-artifacts
+          path: |
+            server-visual-backend.log
+            server-visual-frontend.log
+            playwright-report
+            test-results
+            apps/client/playwright-report
+            apps/client/test-results
+
+  quality-gate:
+    if: always()
+    needs:
+      - typecheck-and-test
+      - e2e
+      - postgres-smoke
+      - postgres-e2e-smoke
+      - visual-snapshots
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Tracking Governance Summary Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-gate-tracking-governance-summary
+          path: tracking-governance-summary
+
+      - name: Download Tracking Governance Strict Codes Summary Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-gate-tracking-governance-strict-codes-summary
+          path: tracking-governance-strict-codes-summary
+
+      - name: Build quality-gate summary JSON
+        env:
+          TYPECHECK_AND_TEST: ${{ needs.typecheck-and-test.result }}
+          E2E: ${{ needs.e2e.result }}
+          POSTGRES_SMOKE: ${{ needs.postgres-smoke.result }}
+          POSTGRES_E2E_SMOKE: ${{ needs.postgres-e2e-smoke.result }}
+          VISUAL_SNAPSHOTS: ${{ needs.visual-snapshots.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          job_results = [
+              ("typecheck-and-test", os.environ["TYPECHECK_AND_TEST"]),
+              ("e2e", os.environ["E2E"]),
+              ("postgres-smoke", os.environ["POSTGRES_SMOKE"]),
+              ("postgres-e2e-smoke", os.environ["POSTGRES_E2E_SMOKE"]),
+              ("visual-snapshots", os.environ["VISUAL_SNAPSHOTS"]),
+          ]
+          failed_steps = [name for name, result in job_results if result != "success"]
+          steps = [
+              {
+                  "name": name,
+                  "status": "passed" if result == "success" else "failed",
+                  "duration_seconds": 0,
+                  "detail": f"job_result={result}",
+              }
+              for name, result in job_results
+          ]
+
+          tracking_summary_path = Path("tracking-governance-summary/tracking-governance-summary.json")
+          strict_codes_summary_path = Path("tracking-governance-strict-codes-summary/tracking-governance-strict-codes-summary.json")
+          tracking_status = "unknown"
+          tracking_issues_count = -1
+          tracking_warnings_count = -1
+          tracking_strict_mode = False
+          tracking_artifact_found = tracking_summary_path.exists()
+          if tracking_artifact_found:
+              try:
+                  tracking_summary = json.load(open(tracking_summary_path, "r", encoding="utf-8"))
+                  tracking_status = tracking_summary.get("status", "unknown")
+                  tracking_issues_count = int(tracking_summary.get("issues_count", -1))
+                  tracking_warnings_count = int(tracking_summary.get("warnings_count", -1))
+                  tracking_strict_mode = bool(tracking_summary.get("strict_mode", False))
+              except Exception:
+                  tracking_status = "invalid_summary"
+                  tracking_issues_count = -1
+                  tracking_warnings_count = -1
+                  tracking_strict_mode = False
+
+          strict_codes_status = "unknown"
+          strict_codes_mode = "unknown"
+          strict_codes_unknown_count = -1
+          strict_codes_unknown = []
+          strict_codes_require_non_empty = False
+          strict_codes_duration_ms = -1
+          strict_codes_artifact_found = strict_codes_summary_path.exists()
+          if strict_codes_artifact_found:
+              try:
+                  strict_codes_summary = json.load(open(strict_codes_summary_path, "r", encoding="utf-8"))
+                  strict_codes_status = strict_codes_summary.get("status", "unknown")
+                  strict_codes_mode = strict_codes_summary.get("mode", "unknown")
+                  if not isinstance(strict_codes_mode, str):
+                      strict_codes_mode = "unknown"
+                  strict_codes_unknown = strict_codes_summary.get("strict_warning_codes_unknown", [])
+                  if not isinstance(strict_codes_unknown, list):
+                      strict_codes_unknown = []
+                  strict_codes_unknown_count = len(strict_codes_unknown)
+                  strict_codes_require_non_empty = bool(strict_codes_summary.get("require_non_empty", False))
+                  strict_codes_duration_ms = int(strict_codes_summary.get("duration_ms", -1))
+              except Exception:
+                  strict_codes_status = "invalid_summary"
+                  strict_codes_mode = "unknown"
+                  strict_codes_unknown_count = -1
+                  strict_codes_unknown = []
+                  strict_codes_require_non_empty = False
+                  strict_codes_duration_ms = -1
+
+          summary = {
+              "status": "passed" if not failed_steps else "failed",
+              "failed_step": failed_steps[0] if failed_steps else "",
+              "failed_steps": failed_steps,
+              "continue_on_error": True,
+              "dry_run": False,
+              "total_duration_seconds": 0,
+              "steps": steps,
+              "tracking_governance": {
+                  "status": tracking_status,
+                  "issues_count": tracking_issues_count,
+                  "warnings_count": tracking_warnings_count,
+                  "strict_mode": tracking_strict_mode,
+                  "artifact_found": tracking_artifact_found,
+                  "strict_codes_check": {
+                      "status": strict_codes_status,
+                      "mode": strict_codes_mode,
+                      "unknown_count": strict_codes_unknown_count,
+                      "unknown_codes": strict_codes_unknown,
+                      "require_non_empty": strict_codes_require_non_empty,
+                      "duration_ms": strict_codes_duration_ms,
+                      "artifact_found": strict_codes_artifact_found,
+                  },
+              },
+          }
+          with open("quality-gate-summary.json", "w", encoding="utf-8") as file:
+              json.dump(summary, file, ensure_ascii=False)
+          PY
+
+      - name: Summarize Gate From summary-json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          summary = json.load(open("quality-gate-summary.json", "r", encoding="utf-8"))
+          lines = [
+              "## quality-gate summary",
+              "",
+              f"- status: `{summary['status']}`",
+              f"- failed_step: `{summary['failed_step'] or 'none'}`",
+              "",
+              "### Step Status",
+              "",
+              "| step | status | detail |",
+              "|---|---|---|",
+          ]
+          for step in summary.get("steps", []):
+              lines.append(f"| {step['name']} | {step['status']} | {step.get('detail', '')} |")
+
+          tracking = summary.get("tracking_governance", {})
+          tracking_status = tracking.get("status", "unknown")
+          tracking_issues_count = tracking.get("issues_count", "unknown")
+          tracking_warnings_count = tracking.get("warnings_count", "unknown")
+          tracking_strict_mode = tracking.get("strict_mode", False)
+          tracking_artifact_found = tracking.get("artifact_found", False)
+          strict_codes = tracking.get("strict_codes_check", {})
+          strict_codes_status = strict_codes.get("status", "unknown")
+          strict_codes_mode = strict_codes.get("mode", "unknown")
+          strict_codes_unknown_count = strict_codes.get("unknown_count", "unknown")
+          strict_codes_unknown_codes = strict_codes.get("unknown_codes", [])
+          strict_codes_require_non_empty = strict_codes.get("require_non_empty", False)
+          strict_codes_duration_ms = strict_codes.get("duration_ms", "unknown")
+          strict_codes_artifact_found = strict_codes.get("artifact_found", False)
+          if isinstance(tracking_issues_count, int) and tracking_issues_count < 0:
+              tracking_issues_count = "unknown"
+          if isinstance(tracking_warnings_count, int) and tracking_warnings_count < 0:
+              tracking_warnings_count = "unknown"
+          if isinstance(strict_codes_unknown_count, int) and strict_codes_unknown_count < 0:
+              strict_codes_unknown_count = "unknown"
+          if isinstance(strict_codes_duration_ms, int) and strict_codes_duration_ms < 0:
+              strict_codes_duration_ms = "unknown"
+          if not isinstance(strict_codes_mode, str) or strict_codes_mode.strip() == "":
+              strict_codes_mode = "unknown"
+          if not isinstance(strict_codes_unknown_codes, list):
+              strict_codes_unknown_codes = []
+          strict_codes_unknown_codes_display = ",".join(strict_codes_unknown_codes) if strict_codes_unknown_codes else "none"
+          lines.extend(
+              [
+                  "",
+                  "### Tracking Governance",
+                  "",
+                  f"- status: `{tracking_status}`",
+                  f"- issues_count: `{tracking_issues_count}`",
+                  f"- warnings_count: `{tracking_warnings_count}`",
+                  f"- strict_mode: `{tracking_strict_mode}`",
+                  f"- artifact_found: `{tracking_artifact_found}`",
+                  "",
+                  "### Tracking Governance Strict Codes Check",
+                  "",
+                  f"- status: `{strict_codes_status}`",
+                  f"- mode: `{strict_codes_mode}`",
+                  f"- unknown_count: `{strict_codes_unknown_count}`",
+                  f"- unknown_codes: `{strict_codes_unknown_codes_display}`",
+                  f"- require_non_empty: `{strict_codes_require_non_empty}`",
+                  f"- duration_ms: `{strict_codes_duration_ms}`",
+                  f"- artifact_found: `{strict_codes_artifact_found}`",
+              ]
+          )
+
+          failed_steps = summary.get("failed_steps", [])
+          if failed_steps:
+              lines.extend(
+                  [
+                      "",
+                      "### Failed Steps",
+                      "",
+                      "| index | step |",
+                      "|---|---|",
+                  ]
+              )
+              for index, name in enumerate(failed_steps, 1):
+                  lines.append(f"| {index} | {name} |")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary_file:
+              summary_file.write("\n".join(lines) + "\n")
+
+          if summary["status"] != "passed":
+              print("quality-gate failed")
+              sys.exit(1)
+          print("quality-gate passed")
+          PY
+
+      - name: Upload quality-gate summary-json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-summary-json
+          path: quality-gate-summary.json
+
+      - name: Upsert PR quality-gate summary comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          QUALITY_GATE_PR_COMMENT_ABNORMAL_ONLY: ${{ vars.QUALITY_GATE_PR_COMMENT_ABNORMAL_ONLY || 'false' }}
+          QUALITY_GATE_PR_COMMENT_ABNORMAL_MAX_STEPS: ${{ vars.QUALITY_GATE_PR_COMMENT_ABNORMAL_MAX_STEPS || '10' }}
+          QUALITY_GATE_PR_COMMENT_ABNORMAL_PRIORITY: ${{ vars.QUALITY_GATE_PR_COMMENT_ABNORMAL_PRIORITY || 'typecheck,test,e2e,postgres,visual' }}
+          QUALITY_GATE_PR_COMMENT_ABNORMAL_PRIORITY_MATCH: ${{ vars.QUALITY_GATE_PR_COMMENT_ABNORMAL_PRIORITY_MATCH || 'contains' }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const { MARKER, buildQualityGateSummaryComment } = require("./scripts/ci/quality-gate-pr-comment.js");
+            const summaryPath = "quality-gate-summary.json";
+            if (!fs.existsSync(summaryPath)) {
+              core.warning(`summary not found: ${summaryPath}`);
+              return;
+            }
+
+            const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+            const body = buildQualityGateSummaryComment({
+              summary,
+              env: process.env
+            });
+            const issue_number = context.payload.pull_request.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number
+            });
+
+            const existing = comments.find(
+              (comment) =>
+                comment.user?.type === "Bot" &&
+                typeof comment.body === "string" &&
+                comment.body.includes(MARKER)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            }

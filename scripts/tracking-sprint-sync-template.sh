@@ -1,0 +1,341 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 --sprint <Sxx> --start_story_id <US-12345> [--story_count <n>] [--out_dir <dir>] [--date <YYYY-MM-DD>] [--owner <name>] [--epic <Exx>] [--source_doc <doc>] [--dependency_anchor <US-xxxxx>] [--tracking_root <docs/tracking>] [--backlog_file <path>] [--apply true|false] [--dry_run true|false]"
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SPRINT=""
+START_STORY_ID=""
+STORY_COUNT=10
+OUT_DIR=""
+DATE_UTC="$(date -u +%Y-%m-%d)"
+OWNER="codex"
+EPIC="E10"
+PRIORITY="P1"
+STATUS="Done"
+SOURCE_DOC=""
+DEPENDENCY_ANCHOR=""
+ESTIMATES_CSV="2,3,2,2,3,2,3,2,2,4"
+TRACKING_ROOT="${SCRIPT_DIR}/../docs/tracking"
+BACKLOG_FILE=""
+APPLY="${TRACKING_SPRINT_SYNC_TEMPLATE_APPLY:-false}"
+DRY_RUN="${TRACKING_SPRINT_SYNC_TEMPLATE_DRY_RUN:-false}"
+
+is_truthy() {
+  local value="${1:-}"
+  local normalized
+  normalized="$(echo "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sprint)
+      SPRINT="${2:-}"
+      shift 2
+      ;;
+    --start_story_id)
+      START_STORY_ID="${2:-}"
+      shift 2
+      ;;
+    --story_count)
+      STORY_COUNT="${2:-10}"
+      shift 2
+      ;;
+    --out_dir)
+      OUT_DIR="${2:-}"
+      shift 2
+      ;;
+    --date)
+      DATE_UTC="${2:-}"
+      shift 2
+      ;;
+    --owner)
+      OWNER="${2:-}"
+      shift 2
+      ;;
+    --epic)
+      EPIC="${2:-}"
+      shift 2
+      ;;
+    --source_doc)
+      SOURCE_DOC="${2:-}"
+      shift 2
+      ;;
+    --dependency_anchor)
+      DEPENDENCY_ANCHOR="${2:-}"
+      shift 2
+      ;;
+    --tracking_root)
+      TRACKING_ROOT="${2:-}"
+      shift 2
+      ;;
+    --backlog_file)
+      BACKLOG_FILE="${2:-}"
+      shift 2
+      ;;
+    --apply)
+      APPLY="${2:-false}"
+      shift 2
+      ;;
+    --dry_run)
+      DRY_RUN="${2:-false}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$SPRINT" || -z "$START_STORY_ID" ]]; then
+  echo "ERROR: --sprint and --start_story_id are required"
+  usage
+  exit 1
+fi
+
+START_NUMBER=""
+if [[ "$START_STORY_ID" =~ ^US-([0-9]+)$ ]]; then
+  START_NUMBER="${BASH_REMATCH[1]}"
+else
+  echo "ERROR: --start_story_id must match US-<number>"
+  exit 1
+fi
+
+if ! [[ "$STORY_COUNT" =~ ^[0-9]+$ ]] || [[ "$STORY_COUNT" -le 0 ]]; then
+  echo "ERROR: --story_count must be a positive integer"
+  exit 1
+fi
+
+if [[ ! "$DATE_UTC" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "ERROR: --date must be YYYY-MM-DD"
+  exit 1
+fi
+
+if [[ -z "$SOURCE_DOC" ]]; then
+  SOURCE_DOC="${SPRINT}-Atomic-Tasks"
+fi
+
+if [[ -z "$BACKLOG_FILE" ]]; then
+  BACKLOG_FILE="${TRACKING_ROOT}/backlog.csv"
+fi
+
+if [[ ! -f "$BACKLOG_FILE" ]]; then
+  echo "ERROR: backlog file not found: $BACKLOG_FILE"
+  exit 1
+fi
+
+if [[ -z "$OUT_DIR" ]]; then
+  OUT_DIR="/tmp/ielts-tracking-sync-template-${SPRINT}-$(date +%Y%m%d-%H%M%S)"
+fi
+
+COLLISIONS=()
+for ((idx=0; idx<STORY_COUNT; idx+=1)); do
+  story_id="US-$((START_NUMBER + idx))"
+  if grep -q "^${story_id}," "$BACKLOG_FILE"; then
+    COLLISIONS+=("$story_id")
+  fi
+done
+
+if [[ "${#COLLISIONS[@]}" -gt 0 ]]; then
+  echo "ERROR: story id already exists in backlog: ${COLLISIONS[*]}"
+  echo "hint: choose a non-overlapping --start_story_id or reduce --story_count"
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR"
+
+BACKLOG_OUT="$OUT_DIR/backlog.append.csv"
+ACTIVITY_OUT="$OUT_DIR/activity-log.append.csv"
+ACTIVITY_CLOSE_OUT="$OUT_DIR/activity-close.append.csv"
+METRICS_OUT="$OUT_DIR/metrics-weekly.append.csv"
+BOARD_OUT="$OUT_DIR/sprint-board.section.md"
+REPORT_OUT="$OUT_DIR/implementation-report.snippet.md"
+SUMMARY_OUT="$OUT_DIR/summary.txt"
+
+: > "$BACKLOG_OUT"
+: > "$ACTIVITY_OUT"
+: > "$ACTIVITY_CLOSE_OUT"
+: > "$METRICS_OUT"
+: > "$BOARD_OUT"
+: > "$REPORT_OUT"
+
+IFS=',' read -r -a ESTIMATES <<< "$ESTIMATES_CSV"
+ESTIMATES_LEN="${#ESTIMATES[@]}"
+LAST_ESTIMATE="${ESTIMATES[$((ESTIMATES_LEN - 1))]}"
+
+UPDATED_AT="${DATE_UTC}T00:00:00Z"
+CLOSE_AT="${DATE_UTC}T00:05:00Z"
+
+echo "## ${SPRINT}" >> "$BOARD_OUT"
+
+PREV_ID=""
+FIRST_ID=""
+LAST_ID=""
+
+for ((idx=0; idx<STORY_COUNT; idx+=1)); do
+  current_number=$((START_NUMBER + idx))
+  story_id="US-${current_number}"
+
+  if [[ -z "$FIRST_ID" ]]; then
+    FIRST_ID="$story_id"
+  fi
+  LAST_ID="$story_id"
+
+  estimate="$LAST_ESTIMATE"
+  if [[ "$idx" -lt "$ESTIMATES_LEN" ]]; then
+    estimate="${ESTIMATES[$idx]}"
+  fi
+
+  dependency=""
+  if [[ "$idx" -eq 0 ]]; then
+    dependency="$DEPENDENCY_ANCHOR"
+  else
+    dependency="$PREV_ID"
+  fi
+
+  title="TODO: ${SPRINT} Story ${idx}"
+  acceptance_ref="见 ${SPRINT} 原子任务清单"
+
+  printf "%s,Story,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
+    "$story_id" "$EPIC" "$title" "$PRIORITY" "$STATUS" "$SPRINT" "$OWNER" "$estimate" "$dependency" "$acceptance_ref" "$SOURCE_DOC" "$UPDATED_AT" >> "$BACKLOG_OUT"
+
+  printf "%s,%s,Ready,%s,%s,status generated by tracking-sprint-sync-template,manual\n" \
+    "$UPDATED_AT" "$story_id" "$STATUS" "$OWNER" >> "$ACTIVITY_OUT"
+
+  printf -- "- %s \`%s\`\n" "$story_id" "$STATUS" >> "$BOARD_OUT"
+
+  PREV_ID="$story_id"
+done
+
+printf "%s,%s-CLOSE,In Progress,Done,%s,TODO: fill sprint close record generated by tracking-sprint-sync-template,manual\n" \
+  "$CLOSE_AT" "$SPRINT" "$OWNER" >> "$ACTIVITY_CLOSE_OUT"
+
+printf "%s,%s,25,25,0,0,35,35,0,99.9,1200,120,TODO: fill metrics notes generated by tracking-sprint-sync-template,%s\n" \
+  "$DATE_UTC" "$SPRINT" "$DATE_UTC" >> "$METRICS_OUT"
+
+printf -- "- 同步 \`%s\` 台账（\`%s~%s\`）并追加 \`REL-XXX\`。\n" \
+  "$SPRINT" "$FIRST_ID" "$LAST_ID" > "$REPORT_OUT"
+
+TARGET_BACKLOG="${TRACKING_ROOT}/backlog.csv"
+TARGET_ACTIVITY="${TRACKING_ROOT}/activity-log.csv"
+TARGET_METRICS="${TRACKING_ROOT}/metrics-weekly.csv"
+TARGET_BOARD="${TRACKING_ROOT}/sprint-board.md"
+
+APPLY_ENABLED=false
+if is_truthy "$APPLY"; then
+  APPLY_ENABLED=true
+fi
+
+DRY_RUN_ENABLED=false
+if is_truthy "$DRY_RUN"; then
+  DRY_RUN_ENABLED=true
+fi
+
+if [[ "$APPLY_ENABLED" == "true" ]]; then
+  for target in "$TARGET_BACKLOG" "$TARGET_ACTIVITY" "$TARGET_METRICS" "$TARGET_BOARD"; do
+    if [[ ! -f "$target" ]]; then
+      echo "ERROR: apply target file not found: $target"
+      exit 1
+    fi
+  done
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    story_id="$(printf '%s' "$row" | awk -F',' '{print $1}')"
+    if grep -q "^${story_id}," "$TARGET_BACKLOG"; then
+      echo "ERROR: apply blocked because story id already exists in target backlog: $story_id"
+      exit 1
+    fi
+  done < "$BACKLOG_OUT"
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    entry_id="$(printf '%s' "$row" | awk -F',' '{print $2}')"
+    to_status="$(printf '%s' "$row" | awk -F',' '{print $4}')"
+    if awk -F',' -v entry_id="$entry_id" -v to_status="$to_status" 'NR>1 && $2==entry_id && $4==to_status {found=1; exit} END{exit found?0:1}' "$TARGET_ACTIVITY"; then
+      echo "ERROR: apply blocked because activity entry already exists: ${entry_id}/${to_status}"
+      exit 1
+    fi
+  done < "$ACTIVITY_OUT"
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    entry_id="$(printf '%s' "$row" | awk -F',' '{print $2}')"
+    to_status="$(printf '%s' "$row" | awk -F',' '{print $4}')"
+    if awk -F',' -v entry_id="$entry_id" -v to_status="$to_status" 'NR>1 && $2==entry_id && $4==to_status {found=1; exit} END{exit found?0:1}' "$TARGET_ACTIVITY"; then
+      echo "ERROR: apply blocked because close activity entry already exists: ${entry_id}/${to_status}"
+      exit 1
+    fi
+  done < "$ACTIVITY_CLOSE_OUT"
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    sprint_from_metrics="$(printf '%s' "$row" | awk -F',' '{print $2}')"
+    if awk -F',' -v sprint="$sprint_from_metrics" 'NR>1 && $2==sprint {found=1; exit} END{exit found?0:1}' "$TARGET_METRICS"; then
+      echo "ERROR: apply blocked because metrics sprint already exists: $sprint_from_metrics"
+      exit 1
+    fi
+  done < "$METRICS_OUT"
+
+  if grep -q "^## ${SPRINT}$" "$TARGET_BOARD"; then
+    echo "ERROR: apply blocked because sprint-board section already exists: ${SPRINT}"
+    exit 1
+  fi
+
+  if [[ "$DRY_RUN_ENABLED" == "true" ]]; then
+    echo "[tracking-sprint-sync-template] dry-run true (apply not executed)"
+    echo "[tracking-sprint-sync-template] target tracking root: $TRACKING_ROOT"
+    echo "[tracking-sprint-sync-template] planned append: $TARGET_BACKLOG <= $BACKLOG_OUT"
+    echo "[tracking-sprint-sync-template] planned append: $TARGET_ACTIVITY <= $ACTIVITY_OUT + $ACTIVITY_CLOSE_OUT"
+    echo "[tracking-sprint-sync-template] planned append: $TARGET_METRICS <= $METRICS_OUT"
+    echo "[tracking-sprint-sync-template] planned append: $TARGET_BOARD <= $BOARD_OUT"
+  else
+    cat "$BACKLOG_OUT" >> "$TARGET_BACKLOG"
+    cat "$ACTIVITY_OUT" >> "$TARGET_ACTIVITY"
+    cat "$ACTIVITY_CLOSE_OUT" >> "$TARGET_ACTIVITY"
+    cat "$METRICS_OUT" >> "$TARGET_METRICS"
+
+    board_tmp="${TARGET_BOARD}.tmp.$$"
+    awk -v date_utc="$DATE_UTC" 'BEGIN{updated=0} {if (!updated && $0 ~ /^更新时间: /) {print "更新时间: " date_utc; updated=1; next} print}' "$TARGET_BOARD" > "$board_tmp"
+    mv "$board_tmp" "$TARGET_BOARD"
+
+    printf '\n' >> "$TARGET_BOARD"
+    cat "$BOARD_OUT" >> "$TARGET_BOARD"
+
+    echo "[tracking-sprint-sync-template] apply completed"
+    echo "[tracking-sprint-sync-template] appended backlog/activity/metrics/sprint-board under: $TRACKING_ROOT"
+  fi
+elif [[ "$DRY_RUN_ENABLED" == "true" ]]; then
+  echo "[tracking-sprint-sync-template] dry-run true (template generated only, --apply not enabled)"
+fi
+
+{
+  echo "sprint=$SPRINT"
+  echo "story_count=$STORY_COUNT"
+  echo "story_range=${FIRST_ID}~${LAST_ID}"
+  echo "tracking_root=$TRACKING_ROOT"
+  echo "apply=$APPLY_ENABLED"
+  echo "dry_run=$DRY_RUN_ENABLED"
+  echo "backlog_append=$BACKLOG_OUT"
+  echo "activity_append=$ACTIVITY_OUT"
+  echo "activity_close_append=$ACTIVITY_CLOSE_OUT"
+  echo "metrics_append=$METRICS_OUT"
+  echo "sprint_board_section=$BOARD_OUT"
+  echo "implementation_report_snippet=$REPORT_OUT"
+} > "$SUMMARY_OUT"
+
+echo "[tracking-sprint-sync-template] generated at $OUT_DIR"
+echo "[tracking-sprint-sync-template] story range: ${FIRST_ID}~${LAST_ID}"
+echo "[tracking-sprint-sync-template] summary: $SUMMARY_OUT"

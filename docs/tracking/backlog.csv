@@ -1,0 +1,316 @@
+id,type,parent_id,title,priority,status,sprint,owner,estimate,dependencies,acceptance_ref,source_doc,updated_at
+E01,Epic,,账号与跨端基础,P0,Done,S1-S3,unassigned,34,,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E02,Epic,,诊断与动态学习计划,P0,Done,S1-S5,unassigned,27,E01,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E03,Epic,,听力训练闭环,P0,Done,S3-S7,unassigned,18,E01;E02,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E04,Epic,,口语实时对练教练,P0,Done,S3-S8,unassigned,29,E01;E02,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E05,Epic,,阅读训练闭环,P0,Done,S4-S8,unassigned,18,E01;E02,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E06,Epic,,写作批改闭环,P0,Done,S5-S9,unassigned,23,E01;E02;E04,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E07,Epic,,模考与复盘报告,P0,Done,S6-S10,unassigned,21,E03;E04;E05;E06,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E08,Epic,,订阅与权益系统,P0,Done,S6-S10,unassigned,26,E01,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E09,Epic,,数据埋点与可观测性,P0,Done,S4-S11,unassigned,29,E01;E02;E03;E04;E05;E06;E07;E08,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+E10,Epic,,跨平台质量与发布,P0,Done,S8-S12,unassigned,26,E01;E02;E03;E04;E05;E06;E07;E08;E09;E11,Epic 完成标准,Epic-Map,2026-03-12T01:23:01Z
+E11,Epic,,后台管理系统,P0,Done,S5-S12,unassigned,26,E01;E08;E09,Epic 完成标准,Epic-Map,2026-03-07T02:20:00Z
+US-1101,Story,E01,作为新用户我可以在四端完成注册和登录。,P0,Done,S1,codex,5,,见 Story 验收标准,Story-Catalog-P0,2026-02-26T14:47:10Z
+US-1102,Story,E01,作为登录用户我的会话在多端可持续且安全。,P0,Done,S1,codex,5,US-1101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T14:47:10Z
+US-1103,Story,E01,作为学习用户我在设备切换后学习进度保持一致。,P0,Done,S2,codex,8,US-1102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:08:51Z
+US-1104,Story,E01,作为用户我可以申请账号注销并删除数据。,P0,Done,S2,codex,5,US-1101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:08:51Z
+US-2101,Story,E02,作为考生我可在入门流程设置目标分和考试日期。,P0,Done,S1,codex,3,US-1101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T14:47:10Z
+TK-1101-01,Task,US-1101,定义注册登录接口契约与字段校验规则。,P0,Done,S1,codex,1,,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:03Z
+TK-1101-02,Task,US-1101,实现注册与登录接口并落地用户身份数据。,P0,Done,S1,codex,2,TK-1101-01,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:03Z
+TK-1101-03,Task,US-1101,实现客户端注册登录页与表单校验逻辑。,P0,Done,S1,codex,2,TK-1101-01,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:03Z
+TK-1101-04,Task,US-1101,实现登录成功后的令牌存储与首页跳转。,P0,Done,S1,codex,1,TK-1101-02;TK-1101-03,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:03Z
+TK-1101-05,Task,US-1101,补充注册登录正反向测试用例并回归。,P0,Done,S1,codex,1,TK-1101-02;TK-1101-03;TK-1101-04,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-1102-01,Task,US-1102,实现刷新令牌与登出接口。,P0,Done,S1,codex,1,TK-1101-02,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-1102-02,Task,US-1102,实现刷新令牌轮换与失效黑名单机制。,P0,Done,S1,codex,2,TK-1102-01,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-1102-03,Task,US-1102,实现客户端自动刷新与失败重试拦截器。,P0,Done,S1,codex,2,TK-1102-01;TK-1102-02,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-1102-04,Task,US-1102,实现会话审计日志与异常登录事件记录。,P0,Done,S1,codex,1,TK-1102-02,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-1102-05,Task,US-1102,补充会话过期与多设备场景测试。,P0,Done,S1,codex,1,TK-1102-03;TK-1102-04,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-2101-01,Task,US-2101,实现入门目标设置页面与本地字段校验。,P0,Done,S1,codex,1,TK-1101-04,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-2101-02,Task,US-2101,实现目标设置提交接口与幂等键支持。,P0,Done,S1,codex,2,TK-1101-02,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-2101-03,Task,US-2101,实现诊断任务异步触发与状态返回。,P0,Done,S1,codex,2,TK-2101-02,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-2101-04,Task,US-2101,打通客户端提交后状态展示与错误重试。,P0,Done,S1,codex,1,TK-2101-01;TK-2101-03,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+TK-2101-05,Task,US-2101,补充目标设置与诊断触发链路测试。,P0,Done,S1,codex,1,TK-2101-03;TK-2101-04,见 S1 原子任务清单,S1-Atomic-Tasks,2026-02-26T14:47:04Z
+US-2102,Story,E02,作为考生我可在5分钟内完成首次诊断。,P0,Done,S2,codex,8,US-2101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:08:51Z
+US-2103,Story,E02,作为考生我可获得可执行的8周学习计划。,P0,Done,S2,codex,8,US-2102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:08:51Z
+US-2104,Story,E02,作为考生我的学习计划会随表现自动调整。,P0,Done,S5,codex,8,US-2103,见 Story 验收标准,Story-Catalog-P0,2026-02-27T01:34:56Z
+US-3101,Story,E03,作为考生我可以完成雅思听力核心题型训练。,P0,Done,S3,codex,8,US-1103;US-2103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:23Z
+US-3102,Story,E03,作为考生我可以回放音频和分段精听。,P0,Done,S3,codex,5,US-3101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:24Z
+US-3103,Story,E03,作为考生我可以看到错因并进入重练。,P0,Done,S3,codex,5,US-3101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:24Z
+US-4101,Story,E04,作为考生我可以发起实时口语会话并连续对话。,P0,Done,S3,codex,8,US-1103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:24Z
+US-4102,Story,E04,作为考生我可以练习Part1/2/3且收到追问。,P0,Done,S4,codex,8,US-4101;US-2103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-4103,Story,E04,作为考生我可在每轮作答后获得四维评分反馈。,P0,Done,S4,codex,8,US-4102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-4104,Story,E04,作为考生我可以针对同题再答并查看前后差异。,P0,Done,S4,codex,5,US-4103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-5101,Story,E05,作为考生我可以完成阅读核心题型训练。,P0,Done,S3,codex,8,US-1103;US-2103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:24Z
+US-5102,Story,E05,作为考生我可以看到错题定位证据。,P0,Done,S3,codex,5,US-5101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T15:34:24Z
+US-5103,Story,E05,作为考生我可以在训练模式和考试模式切换。,P0,Done,S4,codex,5,US-5101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-6101,Story,E06,作为考生我可以提交Task1/2并获得四维评分。,P0,Done,S4,codex,8,US-1103;US-2103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-6102,Story,E06,作为考生我可以获得证据化修改建议。,P0,Done,S4,codex,5,US-6101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:11:35Z
+US-6103,Story,E06,作为考生我可以改写后复评并对比提升。,P0,Done,S5,codex,5,US-6102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-7101,Story,E07,作为考生我可以进行全科计时模考并断点恢复。,P0,Done,S5,codex,8,US-3101;US-4102;US-5101;US-6101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-7102,Story,E07,作为考生我可以在模考后快速获得复盘报告。,P0,Done,S5,codex,8,US-7101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-7103,Story,E07,作为考生我的下周计划会基于模考结果调整。,P0,Done,S5,codex,5,US-7102;US-2104,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-8101,Story,E08,作为免费用户我会被正确应用试用额度和限制。,P0,Done,S5,codex,5,US-1102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-8102,Story,E08,作为用户我可以完成订阅升级取消续费与恢复。,P0,Done,S5,codex,8,US-8101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-8103,Story,E08,作为用户我在四端看到一致的权益状态。,P0,Done,S5,codex,5,US-8102;US-1103,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+US-9101,Story,E09,作为产品与运营我可以看到完整学习行为数据。,P0,Done,S6,codex,8,E03;E04;E05;E06;E07;E08,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+US-9102,Story,E09,作为AI运维我可以监控模型路由与回退质量。,P0,Done,S6,codex,8,US-4103;US-6101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+US-10101,Story,E10,作为QA我可以执行四端统一回归测试集。,P0,Done,S6,codex,8,E01;E02;E03;E04;E05;E06;E07;E08;E09;E11,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+US-10102,Story,E10,作为发布负责人我可以按门禁策略完成灰度发布。,P0,Done,S6,codex,5,US-10101;US-9102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+US-11101,Story,E11,作为运营管理员我可以安全登录后台并按角色访问菜单。,P0,Done,S5,codex,5,US-1102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+TK-11101-01,Task,US-11101,定义后台登录接口与角色权限模型。,P0,Done,S5,codex,1,,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11101-02,Task,US-11101,实现后台登录接口与管理端令牌签发。,P0,Done,S5,codex,2,TK-11101-01,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11101-03,Task,US-11101,实现RBAC中间件与菜单权限装载逻辑。,P0,Done,S5,codex,1,TK-11101-01,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11101-04,Task,US-11101,实现Admin登录页与角色菜单渲染。,P0,Done,S5,codex,2,TK-11101-02;TK-11101-03,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11101-05,Task,US-11101,补充后台登录越权与失败重试测试。,P0,Done,S5,codex,1,TK-11101-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+US-11103,Story,E11,作为财务运营我可以查询订单并执行权益人工校正。,P0,Done,S5,codex,8,US-11101;US-8102,见 Story 验收标准,Story-Catalog-P0,2026-02-26T16:47:46Z
+TK-11103-01,Task,US-11103,实现后台订单查询接口与筛选分页。,P0,Done,S5,codex,1,TK-11101-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11103-02,Task,US-11103,实现权益人工校正接口与幂等保护。,P0,Done,S5,codex,2,TK-11103-01;US-8102,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11103-03,Task,US-11103,实现后台订单与权益校正操作页面。,P0,Done,S5,codex,2,TK-11103-01;TK-11103-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11103-04,Task,US-11103,实现权益校正审计落库与回滚标记机制。,P0,Done,S5,codex,1,TK-11103-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+TK-11103-05,Task,US-11103,补充订单校正链路与回滚场景测试。,P0,Done,S5,codex,1,TK-11103-03;TK-11103-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T16:47:46Z
+US-11102,Story,E11,作为运营管理员我可以检索用户并执行冻结解冻。,P0,Done,S6,codex,5,US-11101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+TK-11102-01,Task,US-11102,实现后台用户检索接口与条件过滤。,P0,Done,S6,codex,1,TK-11101-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11102-02,Task,US-11102,实现用户冻结解冻接口与权限校验。,P0,Done,S6,codex,2,TK-11102-01,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11102-03,Task,US-11102,实现后台用户管理页与操作确认弹窗。,P0,Done,S6,codex,2,TK-11102-01;TK-11102-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11102-04,Task,US-11102,实现冻结状态同步与缓存失效处理。,P0,Done,S6,codex,1,TK-11102-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11102-05,Task,US-11102,补充用户冻结解冻权限与一致性测试。,P0,Done,S6,codex,1,TK-11102-03;TK-11102-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+US-11104,Story,E11,作为内容管理员我可以上架下架题库并发布版本。,P0,Done,S6,codex,8,US-11101,见 Story 验收标准,Story-Catalog-P0,2026-02-26T17:34:47Z
+TK-11104-01,Task,US-11104,定义题库内容状态机与版本字段约束。,P0,Done,S6,codex,1,TK-11101-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11104-02,Task,US-11104,实现内容上架下架与版本发布接口。,P0,Done,S6,codex,2,TK-11104-01,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11104-03,Task,US-11104,实现后台内容管理页与发布流程界面。,P0,Done,S6,codex,2,TK-11104-01;TK-11104-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11104-04,Task,US-11104,实现内容发布失败回滚与补偿逻辑。,P0,Done,S6,codex,1,TK-11104-02,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+TK-11104-05,Task,US-11104,补充内容发布审计与回归测试。,P0,Done,S6,codex,1,TK-11104-03;TK-11104-04,见 S5/S6 原子任务清单,S5S6-Atomic-Tasks,2026-02-26T17:34:47Z
+US-3201,Story,E03,作为考生我可以进行听力听写模式训练。,P1,Done,BACKLOG,codex,5,US-3102,见 Story 验收标准,Story-Catalog-P1,2026-02-27T13:27:43Z
+US-4201,Story,E04,作为考生我可以获得发音热力图反馈。,P1,Done,BACKLOG,codex,8,US-4103,见 Story 验收标准,Story-Catalog-P1,2026-02-27T13:41:40Z
+US-4202,Story,E04,作为考生我可以进行场景化角色扮演口语训练。,P1,Done,BACKLOG,codex,8,US-4102,见 Story 验收标准,Story-Catalog-P1,2026-02-27T13:51:22Z
+US-6201,Story,E06,作为考生我可以使用高分写作模板和论证框架。,P1,Done,BACKLOG,codex,5,US-6102,见 Story 验收标准,Story-Catalog-P1,2026-02-27T14:15:08Z
+US-8201,Story,E08,作为用户我可以使用优惠券购买订阅。,P1,Done,BACKLOG,codex,5,US-8102,见 Story 验收标准,Story-Catalog-P1,2026-02-27T16:30:42Z
+US-8202,Story,E08,作为用户我可以升级到家庭双人计划。,P1,Done,BACKLOG,codex,8,US-8103,见 Story 验收标准,Story-Catalog-P1,2026-02-27T16:49:12Z
+US-9201,Story,E09,作为运营我可以配置AB实验以优化转化。,P1,Done,BACKLOG,codex,8,US-9101,见 Story 验收标准,Story-Catalog-P1,2026-02-27T17:34:35Z
+US-9202,Story,E09,作为用户我可以收到个性化学习提醒。,P1,Done,BACKLOG,codex,5,US-9101,见 Story 验收标准,Story-Catalog-P1,2026-02-28T01:23:18Z
+US-9203,Story,E09,作为运营我可以识别流失风险用户并触发挽回策略。,P1,Done,BACKLOG,codex,8,US-9201;US-9202,见 Story 验收标准,Story-Catalog-P1,2026-02-28T12:04:29Z
+US-10201,Story,E10,作为发布负责人我可以维护Beta渠道与用户反馈回流。,P1,Done,S8,codex,5,US-10102,见 Story 验收标准,Story-Catalog-P1,2026-02-28T13:57:32Z
+US-10202,Story,E10,作为QA我可以运行稳定性长测并输出趋势报告。,P1,Done,S8,codex,8,US-10101,见 Story 验收标准,Story-Catalog-P1,2026-02-28T14:11:12Z
+US-10301,Story,E10,作为发布负责人我可以将 release checklist 与 S9 任务矩阵对齐并输出可执行计划。,P1,Done,S9,codex,3,US-10202,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:21:51Z
+US-10302,Story,E10,作为CI维护者我可以在 quality-gate 中消费 summary-json 并展示失败步骤表。,P1,Done,S9,codex,3,US-10301,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:21:51Z
+US-10303,Story,E10,作为开发者我可以通过脚本级回归测试验证 checklist 的 fail-fast 与 continue-on-error 行为。,P1,Done,S9,codex,5,US-10301,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:21:51Z
+US-10304,Story,E10,作为值班人员我可以在本地 quality-gate 失败后查看结构化日志归档清单。,P1,Done,S9,codex,3,US-10301,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:21:51Z
+US-10305,Story,E10,作为发布负责人我可以使用 dry-run 预览本次 checklist 的执行步骤。,P1,Done,S9,codex,3,US-10301,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:21:51Z
+US-10306,Story,E10,作为QA我可以一键执行前端全量回归模式（API+stability+observability+visual）。,P1,Done,S9,codex,3,US-10305,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:40:22Z
+US-10307,Story,E10,作为发布负责人我可以根据 summary-json 自动生成 release 记录候选模板。,P1,Done,S9,codex,5,US-10301,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:40:22Z
+US-10308,Story,E10,作为发布管理员我可以将 summary-json 作为 quality-gate artifact 归档与追溯。,P1,Done,S9,codex,3,US-10302;US-10307,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:40:22Z
+US-10309,Story,E10,作为工程负责人我可以让脚本测试与日志清单一起进入门禁回归流程。,P1,Done,S9,codex,3,US-10303;US-10304,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:40:22Z
+US-10310,Story,E10,作为发布负责人我可以完成 S9 发布链路增强收口并回填 runbook 与 tracking 台账。,P1,Done,S9,codex,5,US-10306;US-10308;US-10309,见 S9 原子任务清单,S9-Atomic-Tasks,2026-03-02T14:40:22Z
+US-10401,Story,E10,作为发布负责人我可以建立 S10 tracking 治理增强任务矩阵并形成执行顺序。,P1,Done,S10,codex,3,US-10310,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10402,Story,E10,作为值班人员我可以通过脚本校验 sprint/release/metrics/risk/activity/retro 的同步完整性。,P1,Done,S10,codex,5,US-10401,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10403,Story,E10,作为发布负责人我可以在 release checklist 默认执行 tracking 治理校验并支持开关控制。,P1,Done,S10,codex,3,US-10402,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10404,Story,E10,作为值班人员我可以在本地 quality-gate 中配置治理校验开关并归档治理 summary。,P1,Done,S10,codex,3,US-10402;US-10403,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10405,Story,E10,作为开发者我可以通过脚本级测试验证 tracking 治理校验器的通过与失败场景。,P1,Done,S10,codex,3,US-10402,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10406,Story,E10,作为CI维护者我可以在 quality-gate 上传 tracking 治理 summary artifact 供排障追溯。,P1,Done,S10,codex,3,US-10402;US-10403,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10407,Story,E10,作为发布负责人我可以在 release 候选记录中合并 tracking summary 指标。,P1,Done,S10,codex,3,US-10402;US-10406,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10408,Story,E10,作为项目经理我可以补齐 S2-S9 的 metrics 与 S8/S9 retrospective 以满足治理校验门槛。,P1,Done,S10,codex,5,US-10402,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10409,Story,E10,作为团队成员我可以在 runbook 和 tracking README 中找到治理校验命令与参数说明。,P1,Done,S10,codex,2,US-10403;US-10404;US-10407,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-10410,Story,E10,作为发布负责人我可以完成 S10 治理增强收口并同步 release 与 sprint 台账。,P1,Done,S10,codex,5,US-10405;US-10406;US-10408;US-10409,见 S10 原子任务清单,S10-Atomic-Tasks,2026-03-02T15:15:30Z
+US-11201,Story,E11,作为管理员我可以启用高风险操作双人复核。,P1,Done,S7,codex,8,US-11101;US-11103;US-11104,见 Story 验收标准,Story-Catalog-P1,2026-02-28T13:01:57Z
+US-11202,Story,E11,作为运营经理我可以导出后台操作与业务报表。,P1,Done,S7,codex,5,US-11101;US-9101,见 Story 验收标准,Story-Catalog-P1,2026-02-28T13:30:17Z
+US-11203,Story,E11,作为内容管理员我可以批量导入题库并执行审核流程。,P1,Done,S7,codex,8,US-11104,见 Story 验收标准,Story-Catalog-P1,2026-02-28T13:21:37Z
+US-10501,Story,E10,作为发布负责人我可以建立 S11 治理强化二期任务矩阵并固化执行顺序。,P1,Done,S11,codex,2,US-10410,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10502,Story,E10,作为维护者我可以在 set_status 流转前执行 sprint 级治理自检并输出定向修复命令。,P1,Done,S11,codex,3,US-10501,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10503,Story,E10,作为值班人员我可以根据治理 summary 一键生成补齐模板与修复步骤。,P1,Done,S11,codex,3,US-10502,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10504,Story,E10,作为开发者我可以通过脚本测试覆盖 release-record-from-gate 的 dry-run 与冲突场景。,P1,Done,S11,codex,3,US-10503,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10505,Story,E10,作为 CI 维护者我可以在 quality-gate 聚合阶段下载 tracking 治理 artifact 并写入 summary。,P1,Done,S11,codex,3,US-10504,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10506,Story,E10,作为评审者我可以在 Step Summary 与 PR 评论直接查看 tracking 治理状态与问题数。,P1,Done,S11,codex,3,US-10505,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10507,Story,E10,作为开发者我可以补齐 tracking-governance sprint 模式错误码回归测试。,P1,Done,S11,codex,2,US-10502,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10508,Story,E10,作为项目成员我可以回填 S11 backlog/activity/metrics/sprint/retro 台账。,P1,Done,S11,codex,5,US-10503;US-10506,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10509,Story,E10,作为值班负责人我可以在 runbook/README/实施报告中找到 S11 新增治理能力说明。,P1,Done,S11,codex,3,US-10506;US-10508,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10510,Story,E10,作为发布负责人我可以完成 S11 收口并追加 REL-048 发布记录。,P1,Done,S11,codex,5,US-10504;US-10508;US-10509,见 S11 原子任务清单,S11-Atomic-Tasks,2026-03-03T10:32:00Z
+US-10601,Story,E10,作为发布负责人我可以建立 S12 治理强化三期任务矩阵并明确执行顺序。,P1,Done,S12,codex,2,US-10510,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10602,Story,E10,作为值班人员我可以重复执行治理修复模板而不产生重复追加。,P1,Done,S12,codex,3,US-10601,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10603,Story,E10,作为开发者我可以通过测试验证修复模板 apply 脚本的幂等性。,P1,Done,S12,codex,2,US-10602,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10604,Story,E10,作为维护者我可以使用 tracking-governance strict 模式将 warning 升级为失败。,P1,Done,S12,codex,5,US-10601,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10605,Story,E10,作为发布负责人我可以通过 checklist 开关控制治理 strict 模式启用。,P1,Done,S12,codex,3,US-10604,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10606,Story,E10,作为值班人员我可以在本地 quality-gate 透传治理 strict 模式并记录到 manifest。,P1,Done,S12,codex,3,US-10605,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10607,Story,E10,作为评审者我可以在 quality-gate 摘要中查看 tracking warnings_count 与 strict_mode。,P1,Done,S12,codex,3,US-10604;US-10606,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10608,Story,E10,作为发布管理员我可以在 release 记录 notes 自动携带 summary/tracking artifact 信息。,P1,Done,S12,codex,3,US-10601,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10609,Story,E10,作为开发者我可以通过脚本测试覆盖 strict 与 artifact 新增行为。,P1,Done,S12,codex,3,US-10603;US-10608,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10610,Story,E10,作为发布负责人我可以完成 S12 收口并追加 REL-049 发布记录。,P1,Done,S12,codex,5,US-10605;US-10607;US-10609,见 S12 原子任务清单,S12-Atomic-Tasks,2026-03-03T11:35:00Z
+US-10701,Story,E10,作为发布负责人我可以建立 S13 治理强化四期任务矩阵并明确执行顺序。,P1,Done,S13,codex,2,US-10610,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10702,Story,E10,作为值班人员我可以通过 dry-run 预览治理修复模板计划而不落盘。,P1,Done,S13,codex,2,US-10701,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10703,Story,E10,作为开发者我可以通过测试验证修复模板 dry-run 不会生成文件。,P1,Done,S13,codex,2,US-10702,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10704,Story,E10,作为维护者我可以在 strict 模式下仅升级指定 warning code 为失败。,P1,Done,S13,codex,5,US-10701,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10705,Story,E10,作为发布负责人我可以在 checklist 与 local gate 透传 strict warning code 参数。,P1,Done,S13,codex,3,US-10704,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10706,Story,E10,作为开发者我可以通过回归测试验证 strict warning code 分级行为。,P1,Done,S13,codex,3,US-10704;US-10705,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10707,Story,E10,作为评审者我可以在 PR 评论中看到 artifact 下载指引。,P1,Done,S13,codex,3,US-10701,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10708,Story,E10,作为发布管理员我可以在 release notes 记录 strict 与 artifact 追溯字段。,P1,Done,S13,codex,3,US-10705;US-10707,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10709,Story,E10,作为团队成员我可以在 README 与 runbook 找到 dry-run 与 strict 分级命令。,P1,Done,S13,codex,3,US-10707;US-10708,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10710,Story,E10,作为发布负责人我可以完成 S13 收口并追加 REL-050 发布记录。,P1,Done,S13,codex,5,US-10706;US-10708;US-10709,见 S13 原子任务清单,S13-Atomic-Tasks,2026-03-03T12:30:00Z
+US-10801,Story,E10,作为发布负责人我可以建立 S14 治理强化五期任务矩阵并明确执行顺序。,P1,Done,S14,codex,2,US-10710,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10802,Story,E10,作为维护者我可以获得 strict warning code 配置校验与非法 code 提示。,P1,Done,S14,codex,3,US-10801,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10803,Story,E10,作为开发者我可以通过脚本测试验证 strict warning code 规范化与非法 code 提示行为。,P1,Done,S14,codex,2,US-10802,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10804,Story,E10,作为值班人员我可以让治理修复模板 dry-run 输出 JSON 计划用于自动化消费。,P1,Done,S14,codex,3,US-10801,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10805,Story,E10,作为开发者我可以通过测试验证 dry-run JSON 输出结构与不落盘约束。,P1,Done,S14,codex,2,US-10804,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10806,Story,E10,作为发布管理员我可以在 release notes 自动携带 tracking warnings 与 strict 明细字段。,P1,Done,S14,codex,3,US-10802;US-10804,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10807,Story,E10,作为评审者我可以在 PR 评论中看到失败后首查路径与本地复现命令。,P1,Done,S14,codex,2,US-10801,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10808,Story,E10,作为团队成员我可以在 README 与 runbook 查到 strict code 校验与 dry-run JSON 命令。,P1,Done,S14,codex,3,US-10806;US-10807,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10809,Story,E10,作为项目成员我可以在实施报告与 Sprint 日志追溯 S14 新增治理能力。,P1,Done,S14,codex,3,US-10808,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10810,Story,E10,作为发布负责人我可以完成 S14 收口并追加 REL-051 发布记录。,P1,Done,S14,codex,5,US-10803;US-10805;US-10808;US-10809,见 S14 原子任务清单,S14-Atomic-Tasks,2026-03-03T14:05:00Z
+US-10901,Story,E10,作为发布负责人我可以建立 S15 治理强化六期任务矩阵并明确执行顺序。,P1,Done,S15,codex,2,US-10810,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10902,Story,E10,作为维护者我可以使用 strict warning code 快速校验子命令检查配置有效性。,P1,Done,S15,codex,3,US-10901,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10903,Story,E10,作为开发者我可以通过脚本测试覆盖 strict code 快速校验的通过/失败/容错场景。,P1,Done,S15,codex,2,US-10902,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10904,Story,E10,作为值班人员我可以在 release checklist 严格模式前执行 strict code 快速校验并输出步骤结果。,P1,Done,S15,codex,3,US-10902,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10905,Story,E10,作为本地门禁使用者我可以控制 strict code 快速校验开关并在 manifest 记录该配置。,P1,Done,S15,codex,2,US-10904,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10906,Story,E10,作为值班人员我可以将 fix-template dry-run JSON 输出写入指定文件以便后续自动化消费。,P1,Done,S15,codex,3,US-10901,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10907,Story,E10,作为开发者我可以通过脚本测试验证 dry-run JSON `--out` 输出与参数约束行为。,P1,Done,S15,codex,2,US-10906,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10908,Story,E10,作为评审者我可以在 PR 评论中看到 tracking artifact 缺失时的专项排障提示。,P1,Done,S15,codex,2,US-10904,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10909,Story,E10,作为团队成员我可以在 README 与 runbook 查到 strict 快速校验及 JSON `--out` 命令说明。,P1,Done,S15,codex,3,US-10905;US-10908,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-10910,Story,E10,作为发布负责人我可以完成 S15 收口并追加 REL-052 发布记录。,P1,Done,S15,codex,5,US-10903;US-10907;US-10909,见 S15 原子任务清单,S15-Atomic-Tasks,2026-03-03T15:20:00Z
+US-11001,Story,E10,作为发布负责人我可以建立 S16 治理强化七期任务矩阵并明确执行顺序。,P1,Done,S16,codex,2,US-10910,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11002,Story,E10,作为维护者我可以在 strict code 快速校验中启用 require_non_empty 约束避免空配置误用。,P1,Done,S16,codex,3,US-11001,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11003,Story,E10,作为开发者我可以通过脚本测试覆盖 require_non_empty 的失败场景。,P1,Done,S16,codex,2,US-11002,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11004,Story,E10,作为值班人员我可以在 checklist/local gate 透传 strict code require_non_empty 开关并在摘要中追溯。,P1,Done,S16,codex,3,US-11002,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11005,Story,E10,作为开发者我可以在脚本测试中验证 strict code require_non_empty 标记写入 summary。,P1,Done,S16,codex,2,US-11004,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11006,Story,E10,作为值班人员我可以在 fix-template dry-run JSON 中读取 recommended_actions 以驱动自动化补齐流程。,P1,Done,S16,codex,3,US-11001,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11007,Story,E10,作为开发者我可以通过测试验证 dry-run JSON 包含 recommended_actions。,P1,Done,S16,codex,2,US-11006,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11008,Story,E10,作为评审者我可以在 quality-gate summary 与 PR 评论中查看 strict code 预检结果与缺失产物排障提示。,P1,Done,S16,codex,3,US-11004,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11009,Story,E10,作为团队成员我可以在 README 与 runbook 查到 strict code require_non_empty 与 JSON out/recommended_actions 命令说明。,P1,Done,S16,codex,3,US-11006;US-11008,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11010,Story,E10,作为发布负责人我可以完成 S16 收口并追加 REL-053 发布记录。,P1,Done,S16,codex,5,US-11003;US-11005;US-11007;US-11009,见 S16 原子任务清单,S16-Atomic-Tasks,2026-03-03T16:30:00Z
+US-11011,Story,E10,作为发布负责人我可以建立 S17 治理强化八期任务矩阵并明确执行顺序。,P1,Done,S17,codex,2,US-11010,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11012,Story,E10,作为维护者我可以通过 supported_codes 模式动态发现 strict warning code 支持列表。,P1,Done,S17,codex,3,US-11011,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11013,Story,E10,作为开发者我可以通过脚本测试验证 supported_codes 文本/JSON 输出行为。,P1,Done,S17,codex,2,US-11012,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11014,Story,E10,作为值班人员我可以在 strict-codes summary 中查看 mode 与 duration_ms 字段以便排障。,P1,Done,S17,codex,3,US-11012,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11015,Story,E10,作为自动化维护者我可以在 fix-template dry-run JSON 中稳定读取 recommended_actions 字段。,P1,Done,S17,codex,2,US-11014,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11016,Story,E10,作为开发者我可以通过回归测试验证 fix-template recommended_actions 输出稳定。,P1,Done,S17,codex,3,US-11015,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11017,Story,E10,作为评审者我可以在 quality-gate 中获得 strict-codes 预检步骤与 summary artifact。,P1,Done,S17,codex,3,US-11014,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11018,Story,E10,作为值班人员我可以在 quality-gate 汇总与 PR 评论中查看 strict-codes 预检明细并支持异常精简展示。,P1,Done,S17,codex,3,US-11017,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11019,Story,E10,作为团队成员我可以在 README 与 runbook 查到 supported_codes 与异常评论模式配置。,P1,Done,S17,codex,3,US-11016;US-11018,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11020,Story,E10,作为发布负责人我可以完成 S17 收口并追加 REL-054 发布记录。,P1,Done,S17,codex,5,US-11013;US-11016;US-11018;US-11019,见 S17 原子任务清单,S17-Atomic-Tasks,2026-03-03T17:40:00Z
+US-11021,Story,E10,作为发布负责人我可以建立 S18 治理强化九期任务矩阵并明确执行顺序。,P1,Done,S18,codex,2,US-11020,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11022,Story,E10,作为维护者我可以通过 summary_to_stderr 控制 strict-codes summary 日志输出通道。,P1,Done,S18,codex,3,US-11021,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11023,Story,E10,作为值班人员我可以通过 quiet 模式静默 strict-codes 非必要日志并正确使用环境变量透传。,P1,Done,S18,codex,3,US-11022,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11024,Story,E10,作为开发者我可以通过测试验证 strict-codes 输出控制与环境变量优先级行为。,P1,Done,S18,codex,3,US-11023,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11025,Story,E10,作为评审者我可以在 quality-gate summary 中查看 strict-codes mode 字段。,P1,Done,S18,codex,3,US-11022,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11026,Story,E10,作为值班人员我可以在 Step Summary 与 PR 评论中查看 strict-codes mode 语义。,P1,Done,S18,codex,2,US-11025,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11027,Story,E10,作为评审者我可以通过 max_abnormal_steps 限制 PR 评论异常步骤数量并获得截断提示。,P1,Done,S18,codex,3,US-11026,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11028,Story,E10,作为团队成员我可以在 README 与 runbook 查到 strict-codes 输出控制与 PR 评论限幅配置。,P1,Done,S18,codex,3,US-11023;US-11027,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11029,Story,E10,作为项目成员我可以在实施报告与 Sprint 日志追溯 S18 治理能力增强。,P1,Done,S18,codex,3,US-11028,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11030,Story,E10,作为发布负责人我可以完成 S18 收口并追加 REL-055 发布记录。,P1,Done,S18,codex,5,US-11024;US-11027;US-11029,见 S18 原子任务清单,S18-Atomic-Tasks,2026-03-03T18:40:00Z
+US-11031,Story,E10,作为发布负责人我可以建立 S19 治理强化十期任务矩阵并明确执行顺序。,P1,Done,S19,codex,2,US-11030,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11032,Story,E10,作为维护者我可以通过 output_mode 统一 strict-codes 的文本/JSON/静默输出策略。,P1,Done,S19,codex,3,US-11031,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11033,Story,E10,作为开发者我可以通过回归测试验证 strict-codes output_mode 各场景行为稳定。,P1,Done,S19,codex,3,US-11032,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11034,Story,E10,作为维护者我可以使用 Node 原生测试验证 strict-codes 输出与失败语义。,P1,Done,S19,codex,3,US-11032,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11035,Story,E10,作为发布管理员我可以在 release 脚本测试链路中自动执行 strict-codes Node 单测。,P1,Done,S19,codex,2,US-11034,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11036,Story,E10,作为评审者我可以在 PR 评论异常模式下按优先级查看异常步骤。,P1,Done,S19,codex,3,US-11031,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11037,Story,E10,作为值班人员我可以在异常步骤排序后再应用限幅并看到截断提示。,P1,Done,S19,codex,3,US-11036,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11038,Story,E10,作为团队成员我可以在 README 与 runbook 查到 output_mode 与异常排序规则。,P1,Done,S19,codex,3,US-11032;US-11037,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11039,Story,E10,作为项目成员我可以在实施报告与 Sprint 日志追溯 S19 能力增强。,P1,Done,S19,codex,3,US-11038,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11040,Story,E10,作为发布负责人我可以完成 S19 收口并追加 REL-056 发布记录。,P1,Done,S19,codex,5,US-11033;US-11035;US-11037;US-11039,见 S19 原子任务清单,S19-Atomic-Tasks,2026-03-03T19:40:00Z
+US-11041,Story,E10,作为发布负责人我可以建立 S20 治理强化十一期任务矩阵并明确执行顺序。,P1,Done,S20,codex,2,US-11040,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11042,Story,E10,作为维护者我可以在 strict-codes 机读输出中获得 schema_version 以支持兼容演进。,P1,Done,S20,codex,3,US-11041,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11043,Story,E10,作为开发者我可以通过 shell 回归验证 strict-codes schema_version 字段稳定输出。,P1,Done,S20,codex,2,US-11042,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11044,Story,E10,作为维护者我可以通过 Node 单测验证 strict-codes schema_version 与输出语义。,P1,Done,S20,codex,2,US-11042,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11045,Story,E10,作为发布管理员我可以通过摘要模式执行 Node 单测降低 release 脚本日志噪音。,P1,Done,S20,codex,3,US-11044,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11046,Story,E10,作为团队成员我可以在 test:release-scripts 中默认获得 Node 单测摘要结果。,P1,Done,S20,codex,2,US-11045,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11047,Story,E10,作为评审者我可以通过变量化配置调整 PR 评论异常步骤优先级排序。,P1,Done,S20,codex,3,US-11041,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11048,Story,E10,作为团队成员我可以在 README 与 runbook 查到 schema_version 与异常优先级配置说明。,P1,Done,S20,codex,3,US-11042;US-11047,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11049,Story,E10,作为项目成员我可以在实施报告与 Sprint 日志追溯 S20 治理能力增强。,P1,Done,S20,codex,3,US-11048,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11050,Story,E10,作为发布负责人我可以完成 S20 收口并追加 REL-057 发布记录。,P1,Done,S20,codex,5,US-11043;US-11046;US-11047;US-11049,见 S20 原子任务清单,S20-Atomic-Tasks,2026-03-03T20:35:00Z
+US-11051,Story,E10,作为发布负责人我可以建立 S21 治理强化十二期任务矩阵并明确执行顺序。,P1,Done,S21,codex,2,US-11050,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11052,Story,E10,作为维护者我可以在 strict-codes 机读输出中获得 schema_url 以定位字段契约文档。,P1,Done,S21,codex,3,US-11051,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11053,Story,E10,作为集成方我可以使用 strict-codes summary JSON schema 文件校验输出结构。,P1,Done,S21,codex,2,US-11052,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11054,Story,E10,作为开发者我可以通过 shell 回归验证 strict-codes schema_url 字段稳定输出。,P1,Done,S21,codex,2,US-11052,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11055,Story,E10,作为维护者我可以通过 Node 单测验证 strict-codes schema_url 与输出语义。,P1,Done,S21,codex,2,US-11052,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11056,Story,E10,作为发布管理员我可以在 Node 单测摘要执行脚本中获得多文件聚合统计。,P1,Done,S21,codex,3,US-11055,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11057,Story,E10,作为值班人员我可以通过摘要脚本在失败场景自动回放完整日志并支持 verbose 透传。,P1,Done,S21,codex,2,US-11056,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11058,Story,E10,作为评审者我可以为 PR 评论异常优先级设置 contains 或 exact 匹配模式。,P1,Done,S21,codex,3,US-11051,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11059,Story,E10,作为团队成员我可以在 README 与 runbook 查到 schema_url 和匹配模式配置说明。,P1,Done,S21,codex,3,US-11053;US-11058,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11060,Story,E10,作为发布负责人我可以完成 S21 收口并追加 REL-058 发布记录。,P1,Done,S21,codex,5,US-11054;US-11057;US-11058;US-11059,见 S21 原子任务清单,S21-Atomic-Tasks,2026-03-03T21:35:00Z
+US-11061,Story,E10,作为发布负责人我可以建立 S22 治理强化十三期任务矩阵并明确执行顺序。,P1,Done,S22,codex,2,US-11060,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11062,Story,E10,作为维护者我可以将 quality-gate PR 评论生成逻辑抽离为独立脚本以便复用与测试。,P1,Done,S22,codex,3,US-11061,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11063,Story,E10,作为 CI 维护者我可以让 workflow 通过模块调用生成 PR 评论并保持 upsert 行为稳定。,P1,Done,S22,codex,2,US-11062,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11064,Story,E10,作为值班人员我可以在异常模式查看标准 token 参考与示例映射。,P1,Done,S22,codex,2,US-11062,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11065,Story,E10,作为评审者我可以在 exact 匹配模式看到 token 命中统计与配置提示。,P1,Done,S22,codex,2,US-11064,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11066,Story,E10,作为维护者我可以通过 Node 单测验证 PR 评论生成脚本的排序与 fallback 语义。,P1,Done,S22,codex,3,US-11065,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11067,Story,E10,作为集成方我可以让 strict-codes 的 supported_codes JSON 输出与 schema 契约一致。,P1,Done,S22,codex,3,US-11061,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11068,Story,E10,作为开发者我可以通过契约测试验证 strict-codes JSON 输出与 schema 一致。,P1,Done,S22,codex,3,US-11067,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11069,Story,E10,作为团队成员我可以在 README 与 runbook 查到 token 参考与 exact 命中提示语义。,P1,Done,S22,codex,2,US-11065;US-11068,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11070,Story,E10,作为发布负责人我可以完成 S22 收口并追加 REL-059 发布记录。,P1,Done,S22,codex,5,US-11063;US-11066;US-11068;US-11069,见 S22 原子任务清单,S22-Atomic-Tasks,2026-03-03T22:35:00Z
+US-11071,Story,E10,作为发布负责人我可以建立 S23 治理强化十四期任务矩阵并明确执行顺序。,P1,Done,S23,codex,2,US-11070,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11072,Story,E10,作为值班人员我可以通过 CLI 本地预览 quality-gate PR 评论正文。,P1,Done,S23,codex,3,US-11071,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11073,Story,E10,作为维护者我可以将 PR 评论预览结果输出到文件用于评审留档。,P1,Done,S23,codex,2,US-11072,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11074,Story,E10,作为开发者我可以通过 Node 单测验证 PR 评论预览 CLI 正常/异常场景。,P1,Done,S23,codex,2,US-11073,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11075,Story,E10,作为维护者我可以通过契约负向测试验证 strict-codes schema 对缺失字段的约束。,P1,Done,S23,codex,2,US-11068,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11076,Story,E10,作为维护者我可以通过契约负向测试验证 strict-codes schema 对字段类型错配的约束。,P1,Done,S23,codex,2,US-11075,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11077,Story,E10,作为发布管理员我可以在 release 脚本测试链路中默认执行 PR 评论预览与契约负向测试。,P1,Done,S23,codex,3,US-11074;US-11076,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11078,Story,E10,作为评审者我可以在 runbook 获取 exact 模式推荐 token 配置模板。,P1,Done,S23,codex,2,US-11065,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11079,Story,E10,作为团队成员我可以在 README 与实施报告追溯 PR 评论预览与契约负向回归能力。,P1,Done,S23,codex,2,US-11077;US-11078,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11080,Story,E10,作为发布负责人我可以完成 S23 收口并追加 REL-060 发布记录。,P1,Done,S23,codex,5,US-11074;US-11077;US-11079,见 S23 原子任务清单,S23-Atomic-Tasks,2026-03-03T23:35:00Z
+US-11081,Story,E10,作为发布负责人我可以建立 S24 治理强化十五期任务矩阵并明确执行顺序。,P1,Done,S24,codex,2,US-11080,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11082,Story,E10,作为值班人员我可以通过 `--env_file` 在本地模拟 PR 评论变量并预览输出。,P1,Done,S24,codex,3,US-11081,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11083,Story,E10,作为维护者我可以获得 env-file 解析与变量覆盖优先级以减少评论模式配置偏差。,P1,Done,S24,codex,2,US-11082,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11084,Story,E10,作为开发者我可以通过 Node 单测覆盖 PR 评论预览 env-file 正常与异常路径。,P1,Done,S24,codex,2,US-11083,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11085,Story,E10,作为维护者我可以将 strict-codes schema 契约测试迁移到 Ajv 标准校验器。,P1,Done,S24,codex,3,US-11068,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11086,Story,E10,作为维护者我可以通过 Ajv 报错片段断言保持 strict-codes 契约负向测试稳定。,P1,Done,S24,codex,2,US-11085,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11087,Story,E10,作为发布管理员我可以在 release 脚本测试链路验证 env-file 与 Ajv 契约改造无回归。,P1,Done,S24,codex,3,US-11084;US-11086,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11088,Story,E10,作为值班人员我可以在 runbook 使用 contains/exact 排障清单快速定位优先级匹配问题。,P1,Done,S24,codex,2,US-11083,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11089,Story,E10,作为团队成员我可以在 README 与实施报告追溯 env-file 与 Ajv 契约升级能力。,P1,Done,S24,codex,2,US-11087;US-11088,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11090,Story,E10,作为发布负责人我可以完成 S24 收口并追加 REL-061 发布记录。,P1,Done,S24,codex,4,US-11087;US-11089,见 S24 原子任务清单,S24-Atomic-Tasks,2026-03-04T09:35:00Z
+US-11091,Story,E10,作为发布负责人我可以建立 S25 治理强化十六期任务矩阵并明确执行顺序。,P1,Done,S25,codex,2,US-11090,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11092,Story,E10,作为值班人员我可以在 PR 评论预览 env-file 中使用转义字符与尾随注释模拟复杂配置。,P1,Done,S25,codex,3,US-11091,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11093,Story,E10,作为维护者我可以在 quoted env 值尾随非法内容时得到明确失败提示并定位行号。,P1,Done,S25,codex,2,US-11092,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11094,Story,E10,作为开发者我可以通过 Node 单测覆盖 env-file 转义/注释与 quoted 尾随非法内容场景。,P1,Done,S25,codex,2,US-11093,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11095,Story,E10,作为集成方我可以通过 strict-codes schema 阻断未声明字段输入并保持契约稳定。,P1,Done,S25,codex,3,US-11086,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11096,Story,E10,作为维护者我可以通过 unknown 字段负向测试验证 strict-codes schema 的额外字段约束。,P1,Done,S25,codex,2,US-11095,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11097,Story,E10,作为发布管理员我可以在 release 脚本测试与 strict checklist 验证本轮治理增强无回归。,P1,Done,S25,codex,3,US-11094;US-11096,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11098,Story,E10,作为值班人员我可以在 runbook 查看 exact 命中示例并使用一键排障命令模板。,P1,Done,S25,codex,2,US-11092,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11099,Story,E10,作为团队成员我可以在 README 与实施报告追溯 env-file 解析增强与 schema unknown 约束能力。,P1,Done,S25,codex,2,US-11097;US-11098,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11100,Story,E10,作为发布负责人我可以完成 S25 收口并追加 REL-062 发布记录。,P1,Done,S25,codex,4,US-11097;US-11099,见 S25 原子任务清单,S25-Atomic-Tasks,2026-03-05T10:35:00Z
+US-11111,Story,E10,作为发布负责人我可以建立 S26 治理强化十七期任务矩阵并明确执行顺序。,P1,Done,S26,codex,2,US-11100,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11112,Story,E10,作为值班人员我可以在 PR 评论预览 env-file 使用 `export KEY=VALUE` 兼容 shell 风格配置片段。,P1,Done,S26,codex,3,US-11111,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11113,Story,E10,作为维护者我可以在 export 赋值非法场景获得稳定且可定位的失败语义。,P1,Done,S26,codex,2,US-11112,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11114,Story,E10,作为开发者我可以通过 Node 单测覆盖 env-file export 正常与异常路径。,P1,Done,S26,codex,2,US-11113,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11115,Story,E10,作为集成方我可以通过 schema 对 strict-codes `checked_at` 执行 date-time 格式约束。,P1,Done,S26,codex,3,US-11116,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11116,Story,E10,作为维护者我可以在契约测试中启用 format 校验并验证 invalid checked_at 失败。,P1,Done,S26,codex,2,US-11115,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11117,Story,E10,作为发布管理员我可以通过 release 脚本测试与 strict checklist 验证本轮改造无回归。,P1,Done,S26,codex,3,US-11114;US-11116,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11118,Story,E10,作为值班人员我可以在 runbook 获得 abnormal_steps_truncated 的 max-steps 调参建议。,P1,Done,S26,codex,2,US-11114,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11119,Story,E10,作为团队成员我可以在 README 与实施报告追溯 export 兼容与 checked_at 格式约束能力。,P1,Done,S26,codex,2,US-11117;US-11118,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11120,Story,E10,作为发布负责人我可以完成 S26 收口并追加 REL-063 发布记录。,P1,Done,S26,codex,4,US-11117;US-11119,见 S26 原子任务清单,S26-Atomic-Tasks,2026-03-05T11:35:00Z
+US-11121,Story,E10,作为发布负责人我可以建立 S27 治理强化十八期任务矩阵并明确执行顺序。,P1,Done,S27,codex,2,US-11120,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11122,Story,E10,作为值班人员我可以在 PR 评论预览 env-file 覆盖 export+quoted 空白变体以提升配置兼容性。,P1,Done,S27,codex,3,US-11121,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11123,Story,E10,作为维护者我可以在 env-file export/quoted 组合异常场景获得稳定且可定位的失败语义。,P1,Done,S27,codex,2,US-11122,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11124,Story,E10,作为开发者我可以通过 Node 回归测试覆盖 PR 评论预览 env-file 组合场景并保持语义稳定。,P1,Done,S27,codex,2,US-11123,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11125,Story,E10,作为集成方我可以通过 strict-codes schema 对 schema_url 路径格式执行约束并阻断非标准输入。,P1,Done,S27,codex,3,US-11124,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11126,Story,E10,作为维护者我可以通过契约测试验证 strict-codes schema_url 路径约束的负向场景。,P1,Done,S27,codex,2,US-11125,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11127,Story,E10,作为发布管理员我可以使用 Sprint 台账同步模板脚本生成 backlog/activity/metrics/board/report 片段并接入测试。,P1,Done,S27,codex,3,US-11126,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11128,Story,E10,作为值班人员我可以在 runbook 与 README 查阅台账模板脚本用法并快速执行收口操作。,P1,Done,S27,codex,2,US-11127,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11129,Story,E10,作为团队成员我可以在实施报告与 Sprint 台账追溯本轮治理强化交付结果。,P1,Done,S27,codex,2,US-11128,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11130,Story,E10,作为发布负责人我可以完成 S27 收口并追加 REL-064 发布记录。,P1,Done,S27,codex,4,US-11129,见 S27 原子任务清单,S27-Atomic-Tasks,2026-03-05T12:35:00Z
+US-11131,Story,E10,S28 范围冻结与验收矩阵,P1,Done,S28,codex,2,US-11130,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11132,Story,E10,backlog Epic 状态 roll-up 与一致性校验,P1,Done,S28,codex,3,US-11131,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11133,Story,E10,Retro Action Items 去陈旧化与治理文档同步,P1,Done,S28,codex,2,US-11132,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11134,Story,E10,前端 `API_BASE_URL` / `WS_BASE_URL` 环境配置化,P0,Done,S28,codex,3,US-11131,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11135,Story,E10,`.env.example`、README 与启动前校验补齐,P0,Done,S28,codex,2,US-11134,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11136,Story,E10,学员主链路 Playwright E2E（登录→入门→诊断→计划）,P0,Done,S28,codex,3,US-11135,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11137,Story,E10,练习/写作/模考主链路 Playwright E2E 与门禁接入,P0,Done,S28,codex,3,US-11136,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11138,Story,E10,Postgres 集成测试本地/夜间可执行基线,P0,Done,S28,codex,3,US-11131,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11139,Story,E10,RC 验收清单、已知问题模板与演示脚本,P1,Done,S28,codex,2,US-11137;US-11138,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11140,Story,E10,S28 收口、候选发布记录与台账同步,P1,Done,S28,codex,4,US-11132;US-11133;US-11139,见 Story 验收标准,S28-Atomic-Tasks,2026-03-08T03:20:00Z
+US-11141,Story,E10,S29 范围冻结与验收矩阵,P1,Done,S29,codex,2,US-11140,见 Story 验收标准,S29-Atomic-Tasks,2026-03-08T06:40:00Z
+US-11142,Story,E10,Postgres smoke 与 RC 签署闭环,P0,Done,S29,codex,3,US-11141,见 Story 验收标准,S29-Atomic-Tasks,2026-03-08T07:50:00Z
+US-11143,Story,E10,前端 `/admin` 登录保护与回归,P0,Done,S29,codex,2,US-11141,见 Story 验收标准,S29-Atomic-Tasks,2026-03-08T06:40:00Z
+US-11144,Story,E10,system RBAC 默认收紧与环境开关,P0,Done,S29,codex,3,US-11141,见 Story 验收标准,S29-Atomic-Tasks,2026-03-08T06:40:00Z
+US-11145,Story,E10,认证/账户仓储抽象与 Postgres 持久化,P0,Done,S29,codex,5,US-11142,见 Story 验收标准,S29-Atomic-Tasks,2026-03-09T00:20:00Z
+US-11146,Story,E10,入门/计划/进度持久化与迁移,P0,Done,S29,codex,5,US-11145,见 Story 验收标准,S29-Atomic-Tasks,2026-03-09T09:35:00Z
+US-11147,Story,E10,重启恢复集成测试与 learner 主链路回归,P0,Done,S29,codex,3,US-11144;US-11146,见 Story 验收标准,S29-Atomic-Tasks,2026-03-10T13:10:00Z
+US-11148,Story,E10,S29 收口、发布记录与 tracking 同步,P1,Done,S29,codex,2,US-11142;US-11147,见 Story 验收标准,S29-Atomic-Tasks,2026-03-10T22:50:00Z
+US-11149,Story,E10,S30 范围冻结与验收矩阵,P1,Done,S30,codex,2,US-11148,见 Story 验收标准,S30-Atomic-Tasks,2026-03-12T00:10:00Z
+US-11150,Story,E10,listening/reading practice 与 retry queue Postgres 持久化,P0,Done,S30,codex,5,US-11149,见 Story 验收标准,S30-Atomic-Tasks,2026-03-11T09:00:00Z
+US-11151,Story,E10,speaking realtime session 持久化与重连恢复,P0,Done,S30,codex,5,US-11150,见 Story 验收标准,S30-Atomic-Tasks,2026-03-11T10:00:00Z
+US-11152,Story,E10,writing evaluation/rewrite/template usage 持久化,P0,Done,S30,codex,5,US-11150,见 Story 验收标准,S30-Atomic-Tasks,2026-03-11T23:50:00Z
+US-11153,Story,E10,mock exam/report/progress 持久化与恢复,P0,Done,S30,codex,5,US-11151;US-11152,见 Story 验收标准,S30-Atomic-Tasks,2026-03-11T23:58:00Z
+US-11154,Story,E10,practice-writing-mock restart recovery 集成与浏览器 smoke,P0,Done,S30,codex,3,US-11151;US-11152;US-11153,见 Story 验收标准,S30-Atomic-Tasks,2026-03-12T00:05:00Z
+US-11155,Story,E10,多仓储运行手册、环境变量与 smoke 扩展,P1,Done,S30,codex,2,US-11154,见 Story 验收标准,S30-Atomic-Tasks,2026-03-12T00:10:00Z
+US-11156,Story,E10,S30 收口、发布记录与 tracking 同步,P1,Done,S30,codex,2,US-11155,见 Story 验收标准,S30-Atomic-Tasks,2026-03-12T00:29:58Z
+US-11157,Story,E10,S31 范围冻结与验收矩阵,P1,Done,S31,codex,2,US-11156,见 Story 验收标准,S31-Atomic-Tasks,2026-03-12T01:05:00Z
+US-11158,Story,E10,Postgres smoke daemon 就绪预检与外部连接串 FAQ 收敛,P0,Done,S31,codex,3,US-11157,见 Story 验收标准,S31-Atomic-Tasks,2026-03-12T01:05:01Z
+US-11159,Story,E10,基于 release checklist summary 的 RC 交付包目录生成与命令接入,P0,Done,S31,codex,4,US-11158,见 Story 验收标准,S31-Atomic-Tasks,2026-03-12T01:18:00Z
+US-11160,Story,E10,S31 收口、发布记录与 tracking 同步,P1,Done,S31,codex,2,US-11159,见 Story 验收标准,S31-Atomic-Tasks,2026-03-12T01:23:00Z

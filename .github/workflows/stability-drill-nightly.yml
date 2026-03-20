@@ -1,0 +1,144 @@
+name: stability-drill-nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Migrate Release DB
+        run: npm run db:migrate:release --workspace @ielts/server
+
+      - name: Start Server
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run start --workspace @ielts/server" \
+            --log-file "server.log" \
+            --pid-file "server.pid" \
+            --health-url "http://127.0.0.1:8787/health" \
+            --timeout-seconds 60
+
+      - name: Run Stability Drill
+        run: node apps/server/scripts/stability-soak-drill.mjs --base_url=http://127.0.0.1:8787 --scenario=all --output=artifacts/stability-drill-report.json
+
+      - name: Stop Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server.pid
+
+      - name: Publish Stability Drill Summary
+        if: always()
+        run: |
+          if [ -f artifacts/stability-drill-report.json ]; then
+            node -e 'const fs=require("node:fs"); const p="artifacts/stability-drill-report.json"; const r=JSON.parse(fs.readFileSync(p,"utf8")); const rows=(Array.isArray(r.results)?r.results:[]).map((x)=>`| ${x.scenario ?? "-"} | ${x.run_id ?? "-"} | ${x.alert_total ?? "-"} | ${x.acknowledged_alert_id ?? "-"} |`); const lines=["## Stability Drill Summary","","| scenario | run_id | alert_total | acknowledged_alert_id |","|---|---|---:|---|",...(rows.length?rows:["| - | - | - | - |"]),"",`started_at: ${r.started_at ?? "-"}` ,`completed_at: ${r.completed_at ?? "-"}`,""]; fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY ?? "/dev/null", lines.join("\n"));'
+          fi
+
+      - name: Upload Drill Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stability-drill-report
+          path: |
+            artifacts/stability-drill-report.json
+            server.log
+
+  postgres-chaos-drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ielts_app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ielts_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Migrate Release DB (Postgres)
+        run: npm run db:migrate:release:postgres --workspace @ielts/server -- --connection_string=postgresql://postgres:postgres@127.0.0.1:5432/ielts_app --schema=public
+
+      - name: Start Server (Postgres Backend)
+        env:
+          RELEASE_STORAGE_BACKEND: postgres
+          RELEASE_STORAGE_CONNECTION_STRING: postgresql://postgres:postgres@127.0.0.1:5432/ielts_app
+          RELEASE_STORAGE_SCHEMA: public
+          RELEASE_POSTGRES_WRITE_MAX_ATTEMPTS: "2"
+          RELEASE_POSTGRES_WRITE_CIRCUIT_FAILURE_THRESHOLD: "3"
+          RELEASE_POSTGRES_WRITE_CIRCUIT_COOLDOWN_MS: "1200"
+          SYSTEM_RBAC_ENFORCED: "false"
+        run: |
+          bash scripts/ci/start-server-and-wait.sh \
+            --command "npm run start --workspace @ielts/server" \
+            --log-file "server-postgres-chaos.log" \
+            --pid-file "server-postgres-chaos.pid" \
+            --health-url "http://127.0.0.1:8787/health" \
+            --timeout-seconds 60
+
+      - name: Run Postgres Chaos Drill
+        run: |
+          npm run drill:postgres-chaos --workspace @ielts/server -- \
+            --base_url=http://127.0.0.1:8787 \
+            --pg_image=postgres:16 \
+            --output=artifacts/postgres-chaos-drill-report.json
+
+      - name: Stop Server
+        if: always()
+        run: bash scripts/ci/stop-server.sh server-postgres-chaos.pid
+
+      - name: Publish Postgres Chaos Summary
+        if: always()
+        run: |
+          if [ -f artifacts/postgres-chaos-drill-report.json ]; then
+            node -e 'const fs=require("node:fs"); const p="artifacts/postgres-chaos-drill-report.json"; const r=JSON.parse(fs.readFileSync(p,"utf8")); const lines=["## Postgres Chaos Drill Summary","",`ok: ${r.ok === true ? "true" : "false"}`,"", "| step | status | code | passed |","|---|---:|---|---|",`| baseline | ${r.steps?.baseline?.status ?? "-"} | ${r.steps?.baseline?.code ?? "-"} | ${r.steps?.baseline?.passed ?? "-"} |`, `| during_disconnect | ${r.steps?.during_disconnect?.status ?? "-"} | ${r.steps?.during_disconnect?.code ?? "-"} | ${r.steps?.during_disconnect?.passed ?? "-"} |`, `| recovered | ${r.steps?.recovered?.status ?? "-"} | ${r.steps?.recovered?.code ?? "-"} | ${r.steps?.recovered?.passed ?? "-"} |`, "", `failure_attempts: ${r.attempts?.failure ?? "-"}`, `recovery_attempts: ${r.attempts?.recovery ?? "-"}`, `started_at: ${r.started_at ?? "-"}`, `completed_at: ${r.completed_at ?? "-"}`, ""]; fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY ?? "/dev/null", lines.join("\n"));'
+          fi
+
+      - name: Collect Postgres Logs
+        if: always()
+        run: |
+          container_id="$(docker ps -a --filter 'ancestor=postgres:16' --format '{{.ID}}' | head -n 1)"
+          if [ -n "$container_id" ]; then
+            docker logs "$container_id" > postgres-chaos.log 2>&1 || true
+          else
+            echo "postgres service container not found" > postgres-chaos.log
+          fi
+
+      - name: Upload Chaos Drill Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-chaos-drill-report
+          path: |
+            artifacts/postgres-chaos-drill-report.json
+            server-postgres-chaos.log
+            postgres-chaos.log

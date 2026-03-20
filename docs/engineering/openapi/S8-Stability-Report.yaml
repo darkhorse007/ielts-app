@@ -1,0 +1,445 @@
+openapi: 3.1.0
+info:
+  title: IELTS App S8 Stability Soak & Trend Report API Extensions
+  version: 0.8.2
+  description: |
+    Sprint S8 API contract extension (US-10202):
+    - 72h stability soak test orchestration
+    - staged checkpoint ingestion
+    - trend report generation and historical release comparison
+    - stability alert query and handling
+    - release operational metrics (idempotency + write latency)
+servers:
+  - url: http://localhost:8787
+paths:
+  /v1/system/stability/soak-tests/start:
+    post:
+      summary: Start a stability soak test run
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release_id]
+              properties:
+                release_id:
+                  type: string
+                planned_duration_hours:
+                  type: integer
+                  minimum: 1
+                  maximum: 240
+      responses:
+        '201':
+          description: Soak run started
+  /v1/system/stability/soak-tests/{run_id}/checkpoints:
+    post:
+      summary: Record a staged checkpoint for soak run
+      description: |
+        Supports optimistic lock (`expected_version`) and idempotency replay (`x-idempotency-key`).
+        Version conflict returns `STABILITY_CHECKPOINT_VERSION_CONFLICT`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: x-idempotency-key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [at_hour, crash_count, active_sessions, api_success_rate, latency_p95_ms]
+              properties:
+                at_hour:
+                  type: integer
+                  minimum: 0
+                  maximum: 240
+                crash_count:
+                  type: integer
+                  minimum: 0
+                active_sessions:
+                  type: integer
+                  minimum: 0
+                api_success_rate:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                latency_p95_ms:
+                  type: integer
+                  minimum: 0
+                expected_version:
+                  type: integer
+                  minimum: 0
+      responses:
+        '201':
+          description: Checkpoint recorded
+        '409':
+          description: `STABILITY_CHECKPOINT_VERSION_CONFLICT` or `IDEMPOTENCY_KEY_CONFLICT`
+        '404':
+          description: Soak run not found
+  /v1/system/stability/soak-tests/{run_id}/report:
+    get:
+      summary: Generate trend report for a soak run
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Trend report returned
+        '409':
+          description: Report not ready
+  /v1/system/stability/reports/compare:
+    get:
+      summary: Compare stability reports between baseline and target release
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: baseline_release_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: target_release_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Comparison report returned
+        '404':
+          description: Baseline or target report not found
+  /v1/system/stability/reports/export:
+    get:
+      summary: Export comparison report between baseline and target release
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: baseline_release_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: target_release_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exported report returned
+        '404':
+          description: Baseline or target report not found
+  /v1/system/stability/alerts:
+    get:
+      summary: List stability alerts with threshold metadata
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: run_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: release_id
+          schema:
+            type: string
+        - in: query
+          name: level
+          schema:
+            type: string
+            enum: [yellow, red]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, acknowledged, resolved]
+      responses:
+        '200':
+          description: Alert page returned
+  /v1/system/stability/alerts/{alert_id}/handle:
+    post:
+      summary: Handle stability alert as acknowledge/resolve
+      description: |
+        Supports optimistic lock (`expected_version`) and idempotency replay (`x-idempotency-key`).
+        Version conflict returns `STABILITY_ALERT_VERSION_CONFLICT`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: alert_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: x-idempotency-key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [acknowledge, resolve]
+                note:
+                  type: string
+                expected_version:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Alert handled
+        '404':
+          description: Alert not found
+        '409':
+          description: `STABILITY_ALERT_ALREADY_RESOLVED` or `STABILITY_ALERT_VERSION_CONFLICT` or `IDEMPOTENCY_KEY_CONFLICT`
+  /v1/system/release/metrics:
+    get:
+      summary: Get release operational metrics
+      description: |
+        Returns in-memory operational metrics for release write paths:
+        - idempotency attempts/replay/conflict ratios
+        - write latency samples and threshold alerts
+        - storage_resilience circuit status from release repository
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Metrics returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [idempotency, write_latency, storage_resilience]
+                properties:
+                  idempotency:
+                    type: object
+                  write_latency:
+                    type: object
+                  storage_resilience:
+                    type: object
+                    required:
+                      - backend
+                      - mode
+                      - circuit_open
+                      - consecutive_write_failures
+                    properties:
+                      backend:
+                        type: string
+                        enum: [memory, sqlite, postgres]
+                      mode:
+                        type: string
+                        enum: [synchronous, async_buffered]
+                      circuit_open:
+                        type: boolean
+                      circuit_open_until:
+                        type: string
+                        nullable: true
+                      consecutive_write_failures:
+                        type: integer
+                        minimum: 0
+                      max_attempts:
+                        type: integer
+                        minimum: 1
+                      retry_base_delay_ms:
+                        type: integer
+                        minimum: 0
+                      retry_max_delay_ms:
+                        type: integer
+                        minimum: 0
+                      circuit_failure_threshold:
+                        type: integer
+                        minimum: 0
+                      circuit_cooldown_ms:
+                        type: integer
+                        minimum: 0
+                      last_error:
+                        type: string
+                        nullable: true
+                      alerting:
+                        type: object
+                        required:
+                          - circuit_open_threshold_ms
+                          - recent_limit
+                          - recent_count
+                          - capped_count
+                          - opened_count
+                          - prolonged_count
+                          - recovered_count
+                          - recent
+                        properties:
+                          circuit_open_threshold_ms:
+                            type: integer
+                            minimum: 1
+                          recent_limit:
+                            type: integer
+                            minimum: 1
+                          recent_count:
+                            type: integer
+                            minimum: 0
+                          capped_count:
+                            type: integer
+                            minimum: 0
+                          opened_count:
+                            type: integer
+                            minimum: 0
+                          prolonged_count:
+                            type: integer
+                            minimum: 0
+                          recovered_count:
+                            type: integer
+                            minimum: 0
+                          recent:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - event
+                                - backend
+                                - operation
+                                - write_failed
+                                - consecutive_write_failures
+                                - recorded_at
+                              properties:
+                                event:
+                                  type: string
+                                  enum: [circuit_opened, circuit_prolonged, circuit_recovered]
+                                backend:
+                                  type: string
+                                  enum: [memory, sqlite, postgres]
+                                operation:
+                                  type: string
+                                write_failed:
+                                  type: boolean
+                                consecutive_write_failures:
+                                  type: integer
+                                  minimum: 0
+                                duration_ms:
+                                  type: number
+                                last_error:
+                                  type: string
+                                recorded_at:
+                                  type: string
+        '403':
+          description: Missing permission release:manage
+  /v1/system/users/{user_id}/roles:
+    get:
+      summary: Read system roles for a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User roles returned
+        '403':
+          description: Missing permission user_roles:manage
+        '404':
+          description: User not found
+    put:
+      summary: Update system roles for a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [learner, qa, ops, admin]
+      responses:
+        '200':
+          description: Roles updated
+        '403':
+          description: Missing permission user_roles:manage
+        '404':
+          description: User not found
+  /v1/system/users/roles/audit:
+    get:
+      summary: Query system role update audit logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: target_user_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: operator_user_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: page_size
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Role audit logs returned
+        '403':
+          description: Missing permission user_roles:manage
+        '400':
+          description: Invalid query
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

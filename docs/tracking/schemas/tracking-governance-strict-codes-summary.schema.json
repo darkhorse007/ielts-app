@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docs/tracking/schemas/tracking-governance-strict-codes-summary.schema.json",
+  "title": "Tracking Governance Strict Codes Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "schema_url",
+    "status",
+    "mode",
+    "strict_warning_codes",
+    "strict_warning_codes_unknown",
+    "supported_warning_codes",
+    "allow_unknown",
+    "require_non_empty",
+    "empty_input",
+    "duration_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "schema_url": {
+      "type": "string",
+      "pattern": "^docs\\/tracking\\/schemas\\/[a-z0-9._-]+\\.schema\\.json$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["validate", "supported_codes"]
+    },
+    "output_mode": {
+      "type": "string",
+      "enum": ["auto", "text", "json", "silent"],
+      "default": "auto"
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "strict_warning_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "strict_warning_codes_unknown": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supported_warning_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allow_unknown": {
+      "type": "boolean"
+    },
+    "require_non_empty": {
+      "type": "boolean"
+    },
+    "empty_input": {
+      "type": "boolean"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "supported_codes"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_mode": {
+            "enum": ["text", "json"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "validate"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_mode": {
+            "enum": ["text", "json", "silent"]
+          }
+        }
+      }
+    }
+  ]
+}

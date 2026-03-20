@@ -1,0 +1,287 @@
+openapi: 3.1.0
+info:
+  title: IELTS App S3 API Extensions
+  version: 0.3.1
+  description: |
+    Sprint S3 API contract extension for listening/reading core practice
+    and realtime speaking conversation foundation.
+    Includes US-3201 dictation mode extension on listening practice.
+servers:
+  - url: http://localhost:8787
+paths:
+  /v1/practice/sessions:
+    post:
+      summary: Create listening/reading practice session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [skill]
+              properties:
+                skill:
+                  type: string
+                  enum: [listening, reading]
+                task_type:
+                  type: string
+                  enum: [core_training, dictation, retry_training]
+      responses:
+        '201':
+          description: Session created
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+  /v1/practice/sessions/{session_id}:
+    get:
+      summary: Get practice session detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session detail
+        '404':
+          description: Session not found
+  /v1/practice/sessions/{session_id}/submit:
+    post:
+      summary: Submit answers and get structured feedback
+      description: |
+        When listening `task_type=dictation`, response includes
+        `submission.dictation_summary` and per-question
+        `question_results[].dictation_feedback`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    required: [question_id, answer]
+                    properties:
+                      question_id:
+                        type: string
+                        format: uuid
+                      answer:
+                        type: string
+      responses:
+        '200':
+          description: Submission accepted
+        '400':
+          description: Validation error
+        '404':
+          description: Session not found
+  /v1/practice/sessions/{session_id}/playback:
+    get:
+      summary: Get listening playback state
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Playback state
+        '404':
+          description: Session not found
+        '409':
+          description: Playback not supported for non-listening session
+    patch:
+      summary: Persist listening playback state with recovery
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playback_rate:
+                  type: number
+                segment_index:
+                  type: integer
+                position_seconds:
+                  type: integer
+                replay_wrong_only:
+                  type: boolean
+                replay_question_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Playback state updated
+        '400':
+          description: Validation error
+        '404':
+          description: Session not found
+        '409':
+          description: Playback not supported for non-listening session
+  /v1/practice/sessions/{session_id}/retry-queue:
+    post:
+      summary: Add wrong answers to retry queue
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Retry queue updated
+        '404':
+          description: Session not found
+        '409':
+          description: Session not submitted
+  /v1/practice/retry-queue:
+    get:
+      summary: Get current user retry queue
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Queue items
+  /v1/practice/retry-queue/{queue_item_id}/start:
+    post:
+      summary: Start retry session from one queue item
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: queue_item_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Retry session created
+        '404':
+          description: Queue item not found
+        '409':
+          description: Queue item already completed
+  /v1/realtime/speaking/sessions:
+    post:
+      summary: Create realtime speaking session
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Speaking session created
+  /v1/realtime/speaking/sessions/{session_id}:
+    get:
+      summary: Get realtime speaking session status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Speaking session status
+        '404':
+          description: Session not found
+  /v1/realtime/speaking/sessions/{session_id}/events:
+    get:
+      summary: Get realtime speaking session event logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Event logs
+        '404':
+          description: Session not found
+  /v1/realtime/speaking/sessions/{session_id}/end:
+    post:
+      summary: End realtime speaking session
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session ended
+        '404':
+          description: Session not found
+  /v1/realtime/speaking:
+    get:
+      summary: Realtime speaking websocket endpoint
+      description: |
+        WebSocket endpoint. Query params:
+        `session_id`, `resume_token`, `access_token`.
+        Event types: `session_start`, `session_resume`, `partial_transcript`,
+        `coach_question`, `score_update`, `heartbeat`, `session_end`.
+      responses:
+        '101':
+          description: Switching Protocols
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
