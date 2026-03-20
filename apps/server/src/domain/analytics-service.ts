@@ -11,9 +11,7 @@ const CORE_EVENT_TYPES = [
   "practice_submitted",
   "speaking_turn_scored",
   "writing_evaluated",
-  "mock_exam_submitted",
-  "subscription_upgraded",
-  "admin_adjustment"
+  "mock_exam_submitted"
 ];
 
 const HOLDOUT_VARIANT_KEY = "__holdout__";

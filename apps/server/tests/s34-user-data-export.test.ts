@@ -111,9 +111,6 @@ describe("S34 user data export", () => {
           deviceId?: string;
         }>;
       };
-      subscription: {
-        orders: Array<unknown>;
-      };
       reminders: {
         preference?: {
           subscribed: boolean;
@@ -131,12 +128,11 @@ describe("S34 user data export", () => {
     expect(body.profile.id).toBe(user.user_id);
     expect(body.auth.sessions.length).toBeGreaterThanOrEqual(1);
     expect(body.auth.sessions[0].deviceId).toBe("macos");
-    expect(body.subscription.orders).toEqual([]);
     expect(body.reminders.preference?.subscribed).toBe(true);
     expect(body.reminders.recommendations.length).toBe(1);
     expect(body.analytics.total_events).toBe(1);
     expect(body.exclusions).toEqual(
-      expect.arrayContaining(["password_hash", "refresh_token_hash", "admin_audit_logs", "backup_copies"])
+      expect.arrayContaining(["password_hash", "refresh_token_hash", "internal_audit_events", "backup_copies"])
     );
   });
 });

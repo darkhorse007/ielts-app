@@ -136,11 +136,7 @@ export const registerAccountRoutes = async (
         removed_writing_evaluations: result.removedWritingEvaluations,
         removed_writing_rewrite_archives: result.removedWritingRewriteArchives,
         removed_mock_exams: result.removedMockExams,
-        removed_mock_exam_reports: result.removedMockExamReports,
-        removed_entitlements: result.removedEntitlements,
-        removed_subscription_orders: result.removedSubscriptionOrders,
-        removed_subscription_events: result.removedSubscriptionEvents,
-        removed_entitlement_adjustments: result.removedEntitlementAdjustments
+        removed_mock_exam_reports: result.removedMockExamReports
       });
     } catch (error) {
       if (error instanceof Error && error.message === "USER_NOT_FOUND") {

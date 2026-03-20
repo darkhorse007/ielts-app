@@ -62,10 +62,6 @@ export class AccountService {
     removedWritingRewriteArchives: number;
     removedMockExams: number;
     removedMockExamReports: number;
-    removedEntitlements: number;
-    removedSubscriptionOrders: number;
-    removedSubscriptionEvents: number;
-    removedEntitlementAdjustments: number;
   } {
     const user = this.store.usersById.get(userId);
     if (!user) {
@@ -210,39 +206,6 @@ export class AccountService {
       this.store.mockExamReportsById.delete(reportId);
     }
 
-    const removedEntitlements = this.store.subscriptionEntitlementsByUserId.has(userId) ? 1 : 0;
-    this.store.subscriptionEntitlementsByUserId.delete(userId);
-
-    const subscriptionOrderIdsToRemove: string[] = [];
-    for (const [orderId, order] of this.store.subscriptionOrdersById.entries()) {
-      if (order.userId === userId) {
-        subscriptionOrderIdsToRemove.push(orderId);
-      }
-    }
-    for (const orderId of subscriptionOrderIdsToRemove) {
-      this.store.subscriptionOrdersById.delete(orderId);
-    }
-
-    const subscriptionEventIdsToRemove: string[] = [];
-    for (const [eventId, event] of this.store.subscriptionEventsById.entries()) {
-      if (event.userId === userId) {
-        subscriptionEventIdsToRemove.push(eventId);
-      }
-    }
-    for (const eventId of subscriptionEventIdsToRemove) {
-      this.store.subscriptionEventsById.delete(eventId);
-    }
-
-    const entitlementAdjustmentIdsToRemove: string[] = [];
-    for (const [adjustmentId, adjustment] of this.store.adminEntitlementAdjustmentsById.entries()) {
-      if (adjustment.userId === userId) {
-        entitlementAdjustmentIdsToRemove.push(adjustmentId);
-      }
-    }
-    for (const adjustmentId of entitlementAdjustmentIdsToRemove) {
-      this.store.adminEntitlementAdjustmentsById.delete(adjustmentId);
-    }
-
     const removedReminderPreferences = this.store.reminderPreferencesByUserId.has(userId) ? 1 : 0;
     this.store.reminderPreferencesByUserId.delete(userId);
 
@@ -253,18 +216,6 @@ export class AccountService {
       }
       this.store.reminderRecommendationsById.delete(reminderId);
       removedReminderRecommendations += 1;
-    }
-
-    const removedChurnRiskSnapshots = this.store.churnRiskSnapshotsByUserId.has(userId) ? 1 : 0;
-    this.store.churnRiskSnapshotsByUserId.delete(userId);
-
-    let removedChurnTriggers = 0;
-    for (const [triggerId, trigger] of this.store.churnStrategyTriggersById.entries()) {
-      if (trigger.userId !== userId) {
-        continue;
-      }
-      this.store.churnStrategyTriggersById.delete(triggerId);
-      removedChurnTriggers += 1;
     }
 
     appendAudit(this.store, "user_deleted", {
@@ -283,14 +234,8 @@ export class AccountService {
         removedWritingRewriteArchives: writingRewriteArchivesRemoved,
         removedMockExams: mockExamIdsToRemove.length,
         removedMockExamReports: mockReportIdsToRemove.length,
-        removedEntitlements,
-        removedSubscriptionOrders: subscriptionOrderIdsToRemove.length,
-        removedSubscriptionEvents: subscriptionEventIdsToRemove.length,
-        removedEntitlementAdjustments: entitlementAdjustmentIdsToRemove.length,
         removedReminderPreferences,
-        removedReminderRecommendations,
-        removedChurnRiskSnapshots,
-        removedChurnTriggers
+        removedReminderRecommendations
       }
     });
 
@@ -309,11 +254,7 @@ export class AccountService {
       removedWritingEvaluations: writingEvaluationIdsToRemove.length,
       removedWritingRewriteArchives: writingRewriteArchivesRemoved,
       removedMockExams: mockExamIdsToRemove.length,
-      removedMockExamReports: mockReportIdsToRemove.length,
-      removedEntitlements,
-      removedSubscriptionOrders: subscriptionOrderIdsToRemove.length,
-      removedSubscriptionEvents: subscriptionEventIdsToRemove.length,
-      removedEntitlementAdjustments: entitlementAdjustmentIdsToRemove.length
+      removedMockExamReports: mockReportIdsToRemove.length
     };
   }
 
@@ -381,26 +322,12 @@ export class AccountService {
     const mockExams = Array.from(this.store.mockExamsById.values()).filter((item) => item.userId === userId);
     const mockExamReports = Array.from(this.store.mockExamReportsById.values()).filter((item) => item.userId === userId);
 
-    const entitlement = this.store.subscriptionEntitlementsByUserId.get(userId);
-    const subscriptionOrders = Array.from(this.store.subscriptionOrdersById.values()).filter((item) => item.userId === userId);
-    const subscriptionEvents = Array.from(this.store.subscriptionEventsById.values()).filter((item) => item.userId === userId);
-    const entitlementAdjustments = Array.from(this.store.adminEntitlementAdjustmentsById.values()).filter(
-      (item) => item.userId === userId
-    );
-
     const reminderPreference = this.store.reminderPreferencesByUserId.get(userId);
     const reminderRecommendations = Array.from(this.store.reminderRecommendationsById.values()).filter(
       (item) => item.userId === userId
     );
 
-    const churnRiskSnapshot = this.store.churnRiskSnapshotsByUserId.get(userId);
-    const churnStrategyTriggers = Array.from(this.store.churnStrategyTriggersById.values()).filter(
-      (item) => item.userId === userId
-    );
-
     const analyticsEvents = this.store.analyticsEvents.filter((item) => item.userId === userId);
-    const betaWhitelistEntries = Array.from(this.store.betaWhitelistEntriesById.values()).filter((item) => item.userId === userId);
-    const betaFeedbacks = Array.from(this.store.betaFeedbacksById.values()).filter((item) => item.userId === userId);
 
     const payload = {
       export_id: exportId,
@@ -446,33 +373,18 @@ export class AccountService {
         exams: clone(mockExams),
         reports: clone(mockExamReports)
       },
-      subscription: {
-        entitlement: entitlement ? clone(entitlement) : undefined,
-        orders: clone(subscriptionOrders),
-        events: clone(subscriptionEvents),
-        admin_adjustments: clone(entitlementAdjustments)
-      },
       reminders: {
         preference: reminderPreference ? clone(reminderPreference) : undefined,
         recommendations: clone(reminderRecommendations)
-      },
-      churn: {
-        risk_snapshot: churnRiskSnapshot ? clone(churnRiskSnapshot) : undefined,
-        strategy_triggers: clone(churnStrategyTriggers)
       },
       analytics: {
         total_events: analyticsEvents.length,
         events: clone(analyticsEvents)
       },
-      beta: {
-        whitelist_entries: clone(betaWhitelistEntries),
-        feedbacks: clone(betaFeedbacks)
-      },
       exclusions: [
         "password_hash",
         "refresh_token_hash",
-        "admin_audit_logs",
-        "payment_platform_records_outside_app",
+        "internal_audit_events",
         "backup_copies"
       ]
     };
@@ -484,7 +396,7 @@ export class AccountService {
         generatedAt,
         analyticsEventCount: analyticsEvents.length,
         studyPlanCount: studyPlans.length,
-        orderCount: subscriptionOrders.length
+        reminderRecommendationCount: reminderRecommendations.length
       }
     });
 

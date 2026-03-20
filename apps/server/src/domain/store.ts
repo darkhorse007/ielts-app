@@ -1,46 +1,22 @@
 import type {
   AbExperiment,
   AnalyticsEvent,
-  AdminEntitlementAdjustment,
-  AdminReviewRequest,
-  AdminReportExport,
-  BetaFeedback,
-  BetaWhitelistEntry,
-  AdminSession,
-  AdminUser,
   AssessmentJob,
   AuditEvent,
-  CanaryRelease,
-  ChurnRiskSnapshot,
-  ChurnStrategyTrigger,
-  ContentItem,
-  ContentImportBatch,
-  CouponRule,
-  FamilyGroup,
-  FamilyInvitation,
   FailedLoginCounter,
   GoalProfile,
   MockExam,
   MockExamReport,
   PracticeSession,
-  ProviderHealthSnapshot,
   ReminderPreference,
   ReminderRecommendation,
-  ReleaseGateEvaluation,
-  StabilityAlert,
-  StabilityCheckpoint,
-  StabilitySoakRun,
-  SystemActionIdempotencyRecord,
   ProgressConflict,
   RefreshBlacklistEntry,
   RetryQueueItem,
   Session,
   SpeakingSession,
-  SubscriptionEvent,
-  SubscriptionOrder,
   StudyPlan,
   User,
-  UserEntitlement,
   UserProgressSnapshot,
   WritingEvaluation,
   WritingTemplateUsage,
@@ -131,42 +107,11 @@ export class InMemoryStore {
     this.analyticsEvents = overrides.analyticsEvents ?? [];
   }
 
-  readonly subscriptionEntitlementsByUserId = new Map<string, UserEntitlement>();
-  readonly subscriptionOrdersById = new Map<string, SubscriptionOrder>();
-  readonly subscriptionEventsById = new Map<string, SubscriptionEvent>();
-  readonly subscriptionCouponRulesByCode = new Map<string, CouponRule>();
-  readonly subscriptionFamilyGroupsById = new Map<string, FamilyGroup>();
-  readonly subscriptionFamilyGroupIdByOwnerUserId = new Map<string, string>();
-  readonly subscriptionFamilyInvitationsById = new Map<string, FamilyInvitation>();
-  readonly processedPaymentEventIds = new Set<string>();
-
-  readonly adminUsersById = new Map<string, AdminUser>();
-  readonly adminUserIdByEmail = new Map<string, string>();
-  readonly adminSessionsByToken = new Map<string, AdminSession>();
-  readonly adminFailedLoginByEmail = new Map<string, FailedLoginCounter>();
-  readonly adminEntitlementAdjustmentsById = new Map<string, AdminEntitlementAdjustment>();
-  readonly adminReviewRequestsById = new Map<string, AdminReviewRequest>();
-  readonly adminReportExportsById = new Map<string, AdminReportExport>();
-
   readonly analyticsEvents: AnalyticsEvent[];
   readonly reminderPreferencesByUserId = new Map<string, ReminderPreference>();
   readonly reminderRecommendationsById = new Map<string, ReminderRecommendation>();
-  readonly churnRiskSnapshotsByUserId = new Map<string, ChurnRiskSnapshot>();
-  readonly churnStrategyTriggersById = new Map<string, ChurnStrategyTrigger>();
   readonly abExperimentsByKey = new Map<string, AbExperiment>();
   readonly abExperimentAssignmentByExperimentAndUser = new Map<string, string>();
   readonly abExperimentExposureCountByExperimentAndVariant = new Map<string, number>();
   readonly abExperimentConversionCountByExperimentAndVariant = new Map<string, number>();
-  readonly providerHealthByName = new Map<string, ProviderHealthSnapshot>();
-  readonly betaWhitelistEntriesById = new Map<string, BetaWhitelistEntry>();
-  readonly betaWhitelistEntryIdByUserAndRelease = new Map<string, string>();
-  readonly betaFeedbacksById = new Map<string, BetaFeedback>();
-  readonly stabilitySoakRunsById = new Map<string, StabilitySoakRun>();
-  readonly stabilityCheckpointsByRunId = new Map<string, StabilityCheckpoint[]>();
-  readonly stabilityAlertsById = new Map<string, StabilityAlert>();
-  readonly systemActionIdempotencyByKey = new Map<string, SystemActionIdempotencyRecord>();
-  readonly latestReleaseGateByReleaseId = new Map<string, ReleaseGateEvaluation>();
-  readonly canaryReleasesById = new Map<string, CanaryRelease>();
-  readonly contentItemsById = new Map<string, ContentItem>();
-  readonly contentImportBatchesById = new Map<string, ContentImportBatch>();
 }
