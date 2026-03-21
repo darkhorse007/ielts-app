@@ -70,15 +70,17 @@
 2. `VITE_WS_BASE_URL`
 
 若未显式设置，前端默认相对当前页面 origin 推导 WebSocket 地址。
+若前端与 API/WS 使用不同浏览器 origin，服务端必须配置 `BROWSER_ALLOWED_ORIGINS`。
 
 ## 5. 服务端结构
 ### 5.1 入口
 服务端入口是 `apps/server/src/index.ts`，负责：
 
 1. 解析 `AUTH_SECRET`
-2. 解析各域存储后端与连接串
-3. 调用 `buildServer()`
-4. 监听 `PORT`
+2. 解析 `BROWSER_ALLOWED_ORIGINS`
+3. 解析各域存储后端与连接串
+4. 调用 `buildServer()`
+5. 监听 `PORT`
 
 ### 5.2 应用装配
 `apps/server/src/app.ts` 负责装配：
@@ -176,7 +178,8 @@
 ## 9. 安全基线
 1. 服务端启动必须提供 `AUTH_SECRET` 或 `AUTH_SECRET_FILE`
 2. 业务接口默认通过 Bearer Token 鉴权
-3. 内部调试接口只用于本地或受控环境
+3. 浏览器跨 origin 访问必须显式配置 `BROWSER_ALLOWED_ORIGINS`
+4. 内部调试接口默认关闭，只用于本地或受控环境
 
 ## 10. 当前架构刻意不做的事
 1. 不维护中心化 Admin 网关

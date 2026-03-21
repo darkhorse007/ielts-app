@@ -227,8 +227,8 @@
 
 ### 4.11 Internal And Health
 1. `GET /health`
-2. `GET /internal/audit-events`
-3. `GET /internal/users/:user_id`
+2. `GET /internal/audit-events` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露
+3. `GET /internal/users/:user_id` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露
 
 ## 5. 当前错误边界
 1. 参数错误统一返回 `400`

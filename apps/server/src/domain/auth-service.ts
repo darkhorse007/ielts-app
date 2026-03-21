@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendAudit } from "./audit.js";
-import { sha256, randomToken, signAccessToken, verifyAccessToken } from "./crypto.js";
+import { hashPassword, randomToken, sha256, signAccessToken, verifyAccessToken, verifyPassword } from "./crypto.js";
 import type { ServiceConfig } from "./config.js";
 import { addSeconds, isPast, nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
@@ -58,7 +58,7 @@ export class AuthService {
       phone,
       displayName: input.displayName,
       systemRoles: this.resolveSystemRoles(email),
-      passwordHash: sha256(input.password),
+      passwordHash: hashPassword(input.password),
       status: "active" as const,
       createdAt: now,
       updatedAt: now
@@ -109,9 +109,16 @@ export class AuthService {
       throw new Error("USER_DISABLED");
     }
 
-    if (user.passwordHash !== sha256(input.password)) {
+    const passwordResult = verifyPassword(input.password, user.passwordHash);
+    if (!passwordResult.valid) {
       this.recordLoginFailure(normalizedIdentifier, "password_mismatch", userId);
       throw new Error("INVALID_CREDENTIALS");
+    }
+
+    if (passwordResult.needsRehash) {
+      user.passwordHash = hashPassword(input.password);
+      user.updatedAt = nowIso();
+      this.store.usersById.set(user.id, user);
     }
 
     this.store.failedLoginByIdentifier.delete(normalizedIdentifier);

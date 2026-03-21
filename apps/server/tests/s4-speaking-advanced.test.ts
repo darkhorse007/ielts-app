@@ -104,8 +104,7 @@ describe("S4 speaking part/score/retry flow", () => {
 
     const wsUrl =
       `/v1/realtime/speaking?session_id=${session.session_id}` +
-      `&resume_token=${session.resume_token}` +
-      `&access_token=${accessToken}`;
+      `&resume_token=${session.resume_token}`;
 
     const ws = await context.app.injectWS(wsUrl);
     await new Promise((resolve) => {
@@ -195,8 +194,7 @@ describe("S4 speaking part/score/retry flow", () => {
 
     const retryWsUrl =
       `/v1/realtime/speaking?session_id=${retrySession.session_id}` +
-      `&resume_token=${retrySession.resume_token}` +
-      `&access_token=${accessToken}`;
+      `&resume_token=${retrySession.resume_token}`;
     const retryWs = await context.app.injectWS(retryWsUrl);
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
@@ -271,8 +269,7 @@ describe("S4 speaking part/score/retry flow", () => {
 
     const wsUrl =
       `/v1/realtime/speaking?session_id=${session.session_id}` +
-      `&resume_token=${session.resume_token}` +
-      `&access_token=${accessToken}`;
+      `&resume_token=${session.resume_token}`;
     const ws = await context.app.injectWS(wsUrl);
     await new Promise((resolve) => {
       setTimeout(resolve, 20);

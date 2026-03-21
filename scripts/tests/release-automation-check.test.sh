@@ -189,10 +189,34 @@ test_tracking_governance_strict_codes_require_non_empty_flag() {
   rm -rf "$temp_dir"
 }
 
+test_default_validation_profile() {
+  local temp_dir summary_json fake_log
+  temp_dir="$(mktemp -d)"
+  summary_json="$temp_dir/default-profile-summary.json"
+  fake_log="$temp_dir/fake-npm.log"
+  : > "$fake_log"
+  build_fake_npm "$temp_dir"
+
+  PATH="$temp_dir:$PATH" \
+  FAKE_NPM_LOG="$fake_log" \
+  RELEASE_AUTOMATION_SUMMARY_PATH="$summary_json" \
+  RELEASE_AUTOMATION_DRY_RUN=true \
+  bash "$CHECK_SCRIPT" >/dev/null 2>&1
+
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "client-e2e-local" && step.status === "dry_run")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "postgres-e2e-local-smoke" && step.status === "dry_run")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "frontend-full-e2e-local" && step.status === "dry_run")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "client-artifact-build" && step.status === "dry_run")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "client-publish-local" && step.status === "dry_run")'
+  assert_json_expr "$summary_json" 'data.steps.some((step) => step.name === "release-script-tests" && step.status === "dry_run")'
+  rm -rf "$temp_dir"
+}
+
 test_fail_fast
 test_continue_on_error
 test_dry_run
 test_tracking_governance_strict_flag
 test_tracking_governance_strict_codes_require_non_empty_flag
+test_default_validation_profile
 
 echo "[release-script-test] PASS"

@@ -115,11 +115,9 @@ export const SpeakingRealtimePage = ({ apiClient, tokenStorage, wsBaseUrl }: Spe
     }
 
     try {
-      const accessToken = withToken();
       const query = new URLSearchParams({
         session_id: sessionId,
-        resume_token: resumeToken,
-        access_token: accessToken
+        resume_token: resumeToken
       });
       const ws = new WebSocket(`${wsBaseUrl}/v1/realtime/speaking?${query.toString()}`);
       socketRef.current = ws;

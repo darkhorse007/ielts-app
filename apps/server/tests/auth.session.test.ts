@@ -132,6 +132,11 @@ describe("S1 session continuity and security", () => {
   });
 
   test("records anomalous login for same account across multiple devices", async () => {
+    await context.app.close();
+    context = await build({
+      enableInternalDebugRoutes: true
+    });
+
     const email = nextEmail();
     await registerAndLogin(email, "iphone-15");
     const second = await context.app.inject({
@@ -155,5 +160,14 @@ describe("S1 session continuity and security", () => {
     const anomalyCount = events.filter((event) => event.type === "anomalous_login").length;
 
     expect(anomalyCount).toBeGreaterThan(0);
+  });
+
+  test("keeps internal debug routes disabled by default", async () => {
+    const audit = await context.app.inject({
+      method: "GET",
+      url: "/internal/audit-events"
+    });
+
+    expect(audit.statusCode).toBe(404);
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendAudit } from "./audit.js";
-import { sha256 } from "./crypto.js";
+import { hashPassword } from "./crypto.js";
 import { nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
 import type { AuthService } from "./auth-service.js";
@@ -84,7 +84,7 @@ export class AccountService {
     user.email = undefined;
     user.phone = undefined;
     user.displayName = undefined;
-    user.passwordHash = sha256(randomUUID());
+    user.passwordHash = hashPassword(randomUUID());
     user.status = "deleted";
     user.deletedAt = timestamp;
     user.updatedAt = timestamp;

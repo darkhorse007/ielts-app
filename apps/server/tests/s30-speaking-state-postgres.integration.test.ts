@@ -144,9 +144,7 @@ describe("S30 speaking-state postgres persistence", () => {
       sessionId = create.json().session_id as string;
       resumeToken = create.json().resume_token as string;
 
-      const ws = await server.app.injectWS(
-        `/v1/realtime/speaking?session_id=${sessionId}&resume_token=${resumeToken}&access_token=${session.accessToken}`
-      );
+      const ws = await server.app.injectWS(`/v1/realtime/speaking?session_id=${sessionId}&resume_token=${resumeToken}`);
       await sleep(20);
       ws.send(
         JSON.stringify({
@@ -189,9 +187,7 @@ describe("S30 speaking-state postgres persistence", () => {
       expect(["connected", "disconnected"]).toContain(beforeResume.json().status);
       expect(beforeResume.json().turns).toBeGreaterThanOrEqual(1);
 
-      const ws = await server.app.injectWS(
-        `/v1/realtime/speaking?session_id=${sessionId}&resume_token=${resumeToken}&access_token=${accessToken}`
-      );
+      const ws = await server.app.injectWS(`/v1/realtime/speaking?session_id=${sessionId}&resume_token=${resumeToken}`);
       await sleep(20);
       ws.send(JSON.stringify({ type: "session_end" }));
       await waitForMessageType(ws, "session_end");

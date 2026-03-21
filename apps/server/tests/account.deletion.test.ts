@@ -5,7 +5,9 @@ describe("S2 account deletion and data cleanup", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
 
   const build = async () => {
-    const server = buildServer();
+    const server = buildServer({
+      enableInternalDebugRoutes: true
+    });
     await server.app.ready();
     return server;
   };

@@ -62,8 +62,8 @@ const waitClose = async (ws: TestWebSocket): Promise<void> =>
 describe("S3 realtime speaking websocket base flow", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
 
-  const build = async () => {
-    const server = buildServer();
+  const build = async (overrides?: Parameters<typeof buildServer>[0]) => {
+    const server = buildServer(overrides);
     await server.app.ready();
     return server;
   };
@@ -122,8 +122,7 @@ describe("S3 realtime speaking websocket base flow", () => {
 
     const connectUrl =
       `/v1/realtime/speaking?session_id=${speakingSession.session_id}` +
-      `&resume_token=${speakingSession.resume_token}` +
-      `&access_token=${accessToken}`;
+      `&resume_token=${speakingSession.resume_token}`;
 
     const ws = await context.app.injectWS(connectUrl);
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -187,5 +186,34 @@ describe("S3 realtime speaking websocket base flow", () => {
     expect(types).toContain("score_update");
     expect(types).toContain("session_resume");
     expect(types).toContain("session_end");
+  });
+
+  test("rejects websocket upgrades from disallowed browser origins", async () => {
+    await context.app.close();
+    context = await build({
+      allowedBrowserOrigins: ["https://app.example.com"]
+    });
+
+    const auth = await registerAndLogin();
+    const createSession = await context.app.inject({
+      method: "POST",
+      url: "/v1/realtime/speaking/sessions",
+      headers: {
+        authorization: `Bearer ${auth.accessToken}`
+      }
+    });
+    expect(createSession.statusCode).toBe(201);
+
+    const speakingSession = createSession.json();
+    const connectUrl =
+      `/v1/realtime/speaking?session_id=${speakingSession.session_id}` +
+      `&resume_token=${speakingSession.resume_token}`;
+
+    const ws = await context.app.injectWS(connectUrl, {
+      headers: {
+        origin: "https://evil.example.com"
+      }
+    });
+    await waitClose(ws);
   });
 });

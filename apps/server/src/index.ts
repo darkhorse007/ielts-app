@@ -1,5 +1,9 @@
 import { buildServer } from "./app.js";
-import { resolveAuthSecretFromEnv } from "./domain/config.js";
+import {
+  resolveAllowedBrowserOriginsFromEnv,
+  resolveAuthSecretFromEnv,
+  resolveInternalDebugRoutesEnabledFromEnv
+} from "./domain/config.js";
 const authAccountStorageBackend = process.env.AUTH_ACCOUNT_STORAGE_BACKEND === "postgres" ? "postgres" : "memory";
 const authAccountStorageConnectionString = process.env.AUTH_ACCOUNT_STORAGE_CONNECTION_STRING;
 const authAccountStorageSchema = process.env.AUTH_ACCOUNT_STORAGE_SCHEMA;
@@ -47,13 +51,17 @@ const analyticsStorageConnectionString =
   process.env.LEARNER_STATE_STORAGE_CONNECTION_STRING ??
   process.env.AUTH_ACCOUNT_STORAGE_CONNECTION_STRING;
 const analyticsStorageSchema = process.env.ANALYTICS_STORAGE_SCHEMA;
-let authSecret: string;
+let authSecret = "";
+let allowedBrowserOrigins: string[] = [];
+let enableInternalDebugRoutes = false;
 try {
   authSecret = resolveAuthSecretFromEnv(process.env);
+  allowedBrowserOrigins = resolveAllowedBrowserOriginsFromEnv(process.env);
+  enableInternalDebugRoutes = resolveInternalDebugRoutesEnabledFromEnv(process.env);
 } catch (error) {
   const message = error instanceof Error ? error.message : "SERVER_CONFIG_INVALID";
   console.error(
-    `[server-config] ${message}. Set AUTH_SECRET or AUTH_SECRET_FILE before starting apps/server.`
+    `[server-config] ${message}. Check AUTH_SECRET, BROWSER_ALLOWED_ORIGINS, and INTERNAL_DEBUG_ROUTES_ENABLED before starting apps/server.`
   );
   process.exit(1);
 }
@@ -80,7 +88,9 @@ const { app } = buildServer({
   mockStateStorageSchema,
   analyticsStorageBackend,
   analyticsStorageConnectionString,
-  analyticsStorageSchema
+  analyticsStorageSchema,
+  allowedBrowserOrigins,
+  enableInternalDebugRoutes
 });
 const port = Number(process.env.PORT ?? 8787);
 

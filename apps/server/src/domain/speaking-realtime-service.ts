@@ -286,6 +286,14 @@ export class SpeakingRealtimeService {
     return retry;
   }
 
+  getSessionOwnerByResume(sessionId: string, resumeToken: string): string {
+    const session = this.store.speakingSessionsById.get(sessionId);
+    if (!session || session.resumeToken !== resumeToken) {
+      throw new Error("INVALID_RESUME_TOKEN");
+    }
+    return session.userId;
+  }
+
   connectSession(input: { userId: string; sessionId: string; resumeToken: string }): { session: SpeakingSession; resumed: boolean } {
     const session = this.requireSession(input.userId, input.sessionId);
     if (session.resumeToken !== input.resumeToken) {

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import { defaultConfig, type ServiceConfig } from "./domain/config.js";
+import { getBrowserOrigin, isBrowserOriginAllowed, normalizeBrowserOrigin } from "./domain/browser-origin-policy.js";
 import { InMemoryStore } from "./domain/store.js";
 import {
   InMemoryAuthAccountRepository,
@@ -87,6 +88,22 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   analyticsStorageConnectionString?: string;
   analyticsStorageSchema?: string;
   analyticsRepository?: AnalyticsRepository;
+  allowedBrowserOrigins?: string[];
+  enableInternalDebugRoutes?: boolean;
+};
+
+const ACCESS_CONTROL_ALLOW_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+const DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS = "Authorization, Content-Type, Idempotency-Key, X-Device-Id";
+
+const setCorsHeaders = (
+  reply: { header: (name: string, value: string) => void },
+  origin: string,
+  requestHeaders?: string
+): void => {
+  reply.header("Vary", "Origin");
+  reply.header("Access-Control-Allow-Origin", origin);
+  reply.header("Access-Control-Allow-Methods", ACCESS_CONTROL_ALLOW_METHODS);
+  reply.header("Access-Control-Allow-Headers", requestHeaders?.trim() || DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 };
 
 export const buildServer = (options?: BuildServerOptions): {
@@ -114,6 +131,8 @@ export const buildServer = (options?: BuildServerOptions): {
     ...defaultConfig,
     ...options
   };
+  const allowedBrowserOrigins = options?.allowedBrowserOrigins ?? [];
+  const enableInternalDebugRoutes = options?.enableInternalDebugRoutes ?? false;
 
   const authAccountRepository =
     options?.authAccountRepository ??
@@ -214,25 +233,71 @@ export const buildServer = (options?: BuildServerOptions): {
   });
   app.register(websocket);
 
+  app.addHook("onRequest", async (request, reply) => {
+    const origin = getBrowserOrigin(request.headers);
+    if (!origin) {
+      return;
+    }
+
+    const normalizedOrigin = normalizeBrowserOrigin(origin);
+    const browserOriginAllowed = isBrowserOriginAllowed(request.headers, allowedBrowserOrigins);
+    if (
+      normalizedOrigin &&
+      browserOriginAllowed &&
+      request.method !== "OPTIONS"
+    ) {
+      setCorsHeaders(
+        reply,
+        normalizedOrigin,
+        typeof request.headers["access-control-request-headers"] === "string"
+          ? request.headers["access-control-request-headers"]
+          : undefined
+      );
+    }
+
+    if (request.method !== "OPTIONS") {
+      return;
+    }
+
+    if (!normalizedOrigin || !browserOriginAllowed) {
+      reply.code(403).send({
+        code: "ORIGIN_NOT_ALLOWED",
+        message: "Browser origin is not allowed"
+      });
+      return;
+    }
+
+    setCorsHeaders(
+      reply,
+      normalizedOrigin,
+      typeof request.headers["access-control-request-headers"] === "string"
+        ? request.headers["access-control-request-headers"]
+        : undefined
+    );
+    reply.code(204).send();
+  });
+
   app.get("/health", async () => ({
     status: "ok"
   }));
 
-  app.get("/internal/audit-events", async () => ({
-    items: store.auditEvents
-  }));
+  if (enableInternalDebugRoutes) {
+    app.get("/internal/audit-events", async () => ({
+      items: store.auditEvents
+    }));
 
-  app.get<{ Params: { user_id: string } }>("/internal/users/:user_id", async (request, reply) => {
-    try {
-      const user = authService.getUserById(request.params.user_id);
-      reply.code(200).send(user);
-    } catch {
-      reply.code(404).send({
-        code: "USER_NOT_FOUND",
-        message: "User not found"
-      });
-    }
-  });
+    app.get<{ Params: { user_id: string } }>("/internal/users/:user_id", async (request, reply) => {
+      try {
+        const user = authService.getUserById(request.params.user_id);
+        reply.code(200).send(user);
+      } catch {
+        reply.code(404).send({
+          code: "USER_NOT_FOUND",
+          message: "User not found"
+        });
+      }
+    });
+  }
 
   app.register(async (child) => {
     await registerAuthRoutes(child, authService, authAccountRepository);
@@ -255,7 +320,8 @@ export const buildServer = (options?: BuildServerOptions): {
     await registerRealtimeSpeakingRoutes(child, {
       authService,
       speakingRealtimeService,
-      speakingStateRepository
+      speakingStateRepository,
+      allowedBrowserOrigins
     });
     await registerWritingRoutes(child, {
       authService,

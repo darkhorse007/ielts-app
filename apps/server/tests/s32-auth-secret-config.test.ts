@@ -3,7 +3,9 @@ import {
   DEVELOPMENT_AUTH_SECRET,
   MIN_AUTH_SECRET_LENGTH,
   defaultConfig,
-  resolveAuthSecretFromEnv
+  resolveAllowedBrowserOriginsFromEnv,
+  resolveAuthSecretFromEnv,
+  resolveInternalDebugRoutesEnabledFromEnv
 } from "../src/domain/config.js";
 
 describe("S32 auth secret runtime config", () => {
@@ -51,5 +53,35 @@ describe("S32 auth secret runtime config", () => {
         () => "tiny-secret"
       )
     ).toThrow("AUTH_SECRET_FILE_TOO_SHORT");
+  });
+
+  test("parses browser origin allowlist into normalized origins", () => {
+    const origins = resolveAllowedBrowserOriginsFromEnv({
+      BROWSER_ALLOWED_ORIGINS: "https://app.example.com, http://127.0.0.1:5173/, https://app.example.com"
+    });
+
+    expect(origins).toEqual(["https://app.example.com", "http://127.0.0.1:5173"]);
+  });
+
+  test("rejects invalid browser origins", () => {
+    expect(() =>
+      resolveAllowedBrowserOriginsFromEnv({
+        BROWSER_ALLOWED_ORIGINS: "ws://app.example.com"
+      })
+    ).toThrow("BROWSER_ALLOWED_ORIGINS_INVALID");
+  });
+
+  test("keeps internal debug routes disabled unless explicitly enabled", () => {
+    expect(resolveInternalDebugRoutesEnabledFromEnv({})).toBe(false);
+    expect(
+      resolveInternalDebugRoutesEnabledFromEnv({
+        INTERNAL_DEBUG_ROUTES_ENABLED: "true"
+      })
+    ).toBe(true);
+    expect(() =>
+      resolveInternalDebugRoutesEnabledFromEnv({
+        INTERNAL_DEBUG_ROUTES_ENABLED: "sometimes"
+      })
+    ).toThrow("INTERNAL_DEBUG_ROUTES_ENABLED_INVALID");
   });
 });

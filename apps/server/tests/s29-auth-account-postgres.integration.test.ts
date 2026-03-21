@@ -10,7 +10,8 @@ const createServer = (schema: string) =>
   buildServer({
     authAccountStorageBackend: "postgres",
     authAccountStorageConnectionString: postgresUrl,
-    authAccountStorageSchema: schema
+    authAccountStorageSchema: schema,
+    enableInternalDebugRoutes: true
   });
 
 const registerAndLogin = async (

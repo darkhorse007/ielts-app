@@ -19,6 +19,7 @@ npm install
 ### 4.1 启动服务端
 ```bash
 AUTH_SECRET=replace-with-a-32-char-or-longer-secret \
+BROWSER_ALLOWED_ORIGINS=http://127.0.0.1:5173 \
 npm run start --workspace @ielts/server
 ```
 
@@ -37,6 +38,12 @@ npm run dev --workspace @ielts/client
 默认前端地址:
 
 1. `http://127.0.0.1:5173`
+
+说明:
+
+1. 如果前端和 API/WS 不是同一浏览器 origin，需要在服务端配置 `BROWSER_ALLOWED_ORIGINS`
+2. `BROWSER_ALLOWED_ORIGINS` 支持逗号分隔多个 `http(s)://host[:port]`
+3. `/internal/*` 调试接口默认关闭；只应在本地或受控环境下显式配置 `INTERNAL_DEBUG_ROUTES_ENABLED=true`
 
 ## 5. Postgres 持久化方式
 ### 5.1 可独立切换到 Postgres 的业务域
@@ -103,6 +110,7 @@ npm run db:migrate:analytics:postgres -- --connection_string=postgresql://... --
 ## 7. Postgres 模式启动示例
 ```bash
 AUTH_SECRET=replace-with-a-32-char-or-longer-secret \
+BROWSER_ALLOWED_ORIGINS=https://app.example.com \
 AUTH_ACCOUNT_STORAGE_BACKEND=postgres \
 AUTH_ACCOUNT_STORAGE_CONNECTION_STRING=postgresql://postgres:postgres@127.0.0.1:5432/ielts_app \
 AUTH_ACCOUNT_STORAGE_SCHEMA=public \
@@ -128,12 +136,14 @@ npm run start --workspace @ielts/server
 
 1. `ANALYTICS_STORAGE_BACKEND` 不配置时会继续使用内存
 2. 如需持久化分析事件，需额外配置 `ANALYTICS_*`
+3. 如前端由独立域名、反向代理或 CDN 暴露，需同步配置 `BROWSER_ALLOWED_ORIGINS`
 
 ## 8. 验证命令
 ### 8.1 代码校验
 ```bash
 npm run typecheck
 npm test
+npm run release:checklist
 ```
 
 ### 8.2 本地 API 冒烟
@@ -152,6 +162,7 @@ npm run smoke:postgres:e2e-local
 3. 可以完成一次 onboarding 和诊断
 4. 可以创建一次训练会话和一次模考
 5. 可以进入 `/account` 导出个人数据
+6. 口语实时会话可以在浏览器端成功建立 WebSocket
 
 ## 10. 当前不需要配置的能力
 以下环境变量和系统能力已经不属于 `self-hosted` 分支，不需要再配置：

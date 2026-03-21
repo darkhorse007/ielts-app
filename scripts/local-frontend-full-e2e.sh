@@ -7,6 +7,7 @@ FRONTEND_LOG="${FRONTEND_LOG:-/tmp/ielts-frontend-full-frontend.log}"
 FRONTEND_PID_FILE="${FRONTEND_PID_FILE:-/tmp/ielts-frontend-full-frontend.pid}"
 PARALLEL_MODE="${FRONTEND_FULL_E2E_PARALLEL:-false}"
 AUTH_SECRET_VALUE="${AUTH_SECRET:-local-auth-secret-for-smoke-and-e2e-00000001}"
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://127.0.0.1:5173}"
 
 is_truthy() {
   local value="${1:-}"
@@ -25,7 +26,7 @@ cleanup() {
 trap cleanup EXIT
 
 bash scripts/ci/start-server-and-wait.sh \
-  --command "AUTH_SECRET=$AUTH_SECRET_VALUE npm run start --workspace @ielts/server" \
+  --command "AUTH_SECRET=$AUTH_SECRET_VALUE BROWSER_ALLOWED_ORIGINS=$FRONTEND_ORIGIN npm run start --workspace @ielts/server" \
   --log-file "$BACKEND_LOG" \
   --pid-file "$BACKEND_PID_FILE" \
   --health-url "http://127.0.0.1:8787/health" \

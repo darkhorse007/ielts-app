@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../domain/auth-service.js";
+import { isBrowserOriginAllowed } from "../domain/browser-origin-policy.js";
 import type { SpeakingStateRepository } from "../domain/speaking-state-repository.js";
 import type { SpeakingRealtimeService } from "../domain/speaking-realtime-service.js";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -32,8 +33,7 @@ const trackPronunciationTaskSchema = z.object({
 
 const wsQuerySchema = z.object({
   session_id: z.string().uuid(),
-  resume_token: z.string().min(20),
-  access_token: z.string().min(20)
+  resume_token: z.string().min(20)
 });
 
 const toError = (code: string, message: string): { code: string; message: string } => ({
@@ -161,6 +161,7 @@ export const registerRealtimeSpeakingRoutes = async (
     authService: AuthService;
     speakingRealtimeService: SpeakingRealtimeService;
     speakingStateRepository?: SpeakingStateRepository;
+    allowedBrowserOrigins?: string[];
   }
 ): Promise<void> => {
   const flushSpeakingStateRepository = async (
@@ -503,12 +504,22 @@ export const registerRealtimeSpeakingRoutes = async (
   );
 
   app.get("/v1/realtime/speaking", { websocket: true }, (socket, request) => {
+    if (!isBrowserOriginAllowed(request.headers, services.allowedBrowserOrigins ?? [])) {
+      safeSend(socket, {
+        type: "error",
+        code: "ORIGIN_NOT_ALLOWED",
+        message: "Browser origin is not allowed"
+      });
+      socket.close(1008, "origin_not_allowed");
+      return;
+    }
+
     const queryParsed = wsQuerySchema.safeParse(request.query);
     if (!queryParsed.success) {
       safeSend(socket, {
         type: "error",
         code: "VALIDATION_ERROR",
-        message: "session_id/resume_token/access_token is required"
+        message: "session_id/resume_token is required"
       });
       socket.close(1008, "validation_failed");
       return;
@@ -516,13 +527,15 @@ export const registerRealtimeSpeakingRoutes = async (
 
     let userId: string;
     try {
-      const payload = services.authService.verifyAccessToken(queryParsed.data.access_token);
-      userId = payload.userId;
+      userId = services.speakingRealtimeService.getSessionOwnerByResume(
+        queryParsed.data.session_id,
+        queryParsed.data.resume_token
+      );
     } catch {
       safeSend(socket, {
         type: "error",
         code: "UNAUTHORIZED",
-        message: "Invalid access token"
+        message: "Invalid session resume token"
       });
       socket.close(1008, "unauthorized");
       return;
