@@ -49,4 +49,24 @@ describe("S28 api client content-type defaults", () => {
 
     expect(headers.get("Content-Type")).toBe("application/json");
   });
+
+  test("supports text export responses with attachment filename", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"user_id":"u-1"}', {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "content-disposition": 'attachment; filename="user-data-export-u-1.json"'
+        }
+      })
+    );
+
+    const client = new ApiClient(baseUrl, fetchMock as unknown as typeof fetch);
+    const result = await client.exportUserData("token");
+
+    expect(result).toEqual({
+      filename: "user-data-export-u-1.json",
+      content: '{"user_id":"u-1"}'
+    });
+  });
 });

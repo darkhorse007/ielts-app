@@ -38,6 +38,7 @@ import type {
   StudyPlanAdjustmentHistoryResponse,
   StudyPlanResponse,
   TokenResponse,
+  UserDataExportResponse,
   UserProfileResponse,
   WritingArchiveResponse,
   WritingEvaluationResponse,
@@ -295,6 +296,15 @@ export class ApiClient {
         Authorization: `Bearer ${accessToken}`
       }
     });
+  }
+
+  async exportUserData(accessToken: string): Promise<UserDataExportResponse> {
+    return this.requestText("/v1/users/me/export?format=json", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }, "user-data-export.json");
   }
 
   async requestDeletion(accessToken: string): Promise<RequestDeletionResponse> {
@@ -1034,5 +1044,50 @@ export class ApiClient {
     }
 
     return body as T;
+  }
+
+  async requestText(
+    path: string,
+    init: RequestInit,
+    fallbackFilename: string
+  ): Promise<{
+    filename: string;
+    content: string;
+  }> {
+    const headers = new Headers(init.headers ?? {});
+    if (init.body !== undefined && init.body !== null && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const response = await this.fetchFn.call(globalThis, `${this.baseUrl}${path}`, {
+      ...init,
+      headers
+    });
+    const content = await response.text();
+
+    if (!response.ok) {
+      let message = "Request failed";
+      let code: string | undefined;
+
+      try {
+        const body = JSON.parse(content) as Record<string, unknown>;
+        message = typeof body.message === "string" ? body.message : message;
+        code = typeof body.code === "string" ? body.code : undefined;
+      } catch {
+        if (content) {
+          message = content;
+        }
+      }
+
+      throw new ApiRequestError(message, response.status, code);
+    }
+
+    const disposition = response.headers.get("content-disposition");
+    const filenameMatch = disposition?.match(/filename=\"([^\"]+)\"/);
+
+    return {
+      filename: filenameMatch?.[1] ?? fallbackFilename,
+      content
+    };
   }
 }

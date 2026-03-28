@@ -1,0 +1,16 @@
+{
+  "name": "@ielts/shared-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./api-client": "./src/api-client.ts",
+    "./api-types": "./src/api-types.ts",
+    "./validators": "./src/validators.ts"
+  }
+}

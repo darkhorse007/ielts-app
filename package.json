@@ -4,18 +4,25 @@
   "version": "0.1.0",
   "workspaces": [
     "apps/server",
-    "apps/client"
+    "apps/client",
+    "apps/mobile",
+    "packages/*"
   ],
   "scripts": {
     "test": "npm run test --workspaces",
     "test:server": "npm run test --workspace @ielts/server",
     "test:server:integration:postgres": "npm run test:integration:postgres --workspace @ielts/server",
     "test:client": "npm run test --workspace @ielts/client",
+    "test:mobile": "npm run test --workspace @ielts/mobile",
     "build:client": "npm run build --workspace @ielts/client",
     "preview:client": "npm run preview --workspace @ielts/client",
     "typecheck": "npm run typecheck --workspaces",
     "typecheck:server": "npm run typecheck --workspace @ielts/server",
     "typecheck:client": "npm run typecheck --workspace @ielts/client",
+    "typecheck:mobile": "npm run typecheck --workspace @ielts/mobile",
+    "start:mobile": "npm run start --workspace @ielts/mobile",
+    "ios:mobile": "npm run ios --workspace @ielts/mobile",
+    "android:mobile": "npm run android --workspace @ielts/mobile",
     "db:migrate:auth-account:postgres": "npm run db:migrate:auth-account:postgres --workspace @ielts/server",
     "db:migrate:learner-state:postgres": "npm run db:migrate:learner-state:postgres --workspace @ielts/server",
     "db:migrate:practice-state:postgres": "npm run db:migrate:practice-state:postgres --workspace @ielts/server",

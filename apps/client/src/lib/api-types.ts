@@ -162,6 +162,11 @@ export type DeleteAccountResponse = {
   removed_entitlement_adjustments?: number;
 };
 
+export type UserDataExportResponse = {
+  filename: string;
+  content: string;
+};
+
 export type ReminderPreferenceResponse = {
   subscribed: boolean;
   active_hour_utc: number;
