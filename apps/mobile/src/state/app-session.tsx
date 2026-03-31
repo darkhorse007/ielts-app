@@ -45,7 +45,7 @@ const toStoredSession = (tokens: TokenResponse): StoredSession => ({
 });
 
 export const AppSessionProvider = ({ children }: PropsWithChildren) => {
-  const defaultInstanceConfig = resolveDefaultInstanceConfig();
+  const [defaultInstanceConfig] = useState<InstanceConfig | null>(() => resolveDefaultInstanceConfig());
   const [state, setState] = useState<AppSessionState>({
     ready: false,
     instanceConfig: null,

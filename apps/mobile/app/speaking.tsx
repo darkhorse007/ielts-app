@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
@@ -175,16 +175,6 @@ export default function SpeakingScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!instanceConfig) {
-    router.replace("/instance");
-    return null;
-  }
-
-  if (!authSession) {
-    router.replace("/login");
-    return null;
-  }
-
   const closeSocket = (): void => {
     const existing = socketRef.current;
     if (!existing) {
@@ -196,6 +186,12 @@ export default function SpeakingScreen() {
   };
 
   useEffect(() => closeSocket, []);
+
+  useEffect(() => {
+    if (!instanceConfig || !authSession) {
+      closeSocket();
+    }
+  }, [authSession, instanceConfig]);
 
   const resetLiveFeedback = (): void => {
     setSuggestions([]);
@@ -298,6 +294,12 @@ export default function SpeakingScreen() {
   };
 
   const connect = (): void => {
+    if (!instanceConfig) {
+      setConnectionStatus("未连接");
+      setError("请先配置自托管实例");
+      return;
+    }
+
     if (!sessionState?.session_id || !resumeToken) {
       setError("请先创建口语会话");
       return;
@@ -700,6 +702,14 @@ export default function SpeakingScreen() {
   };
 
   const selectedScenario = scenarioItems.find((item) => item.scenario_type === scenarioType);
+
+  if (!instanceConfig) {
+    return <Redirect href="/instance" />;
+  }
+
+  if (!authSession) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <AppScreen

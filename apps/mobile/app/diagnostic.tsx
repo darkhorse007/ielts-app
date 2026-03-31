@@ -1,4 +1,4 @@
-import { useLocalSearchParams, router } from "expo-router";
+import { Redirect, useLocalSearchParams, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
@@ -26,8 +26,7 @@ export default function DiagnosticScreen() {
   const [loading, setLoading] = useState(false);
 
   if (!session) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const loadQuestions = async (nextAssessmentId = assessmentId.trim()): Promise<void> => {

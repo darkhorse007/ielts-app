@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/api-types";
@@ -64,8 +64,7 @@ export default function ListeningScreen() {
   const [lastPlaybackSnapshot, setLastPlaybackSnapshot] = useState<PlaybackStateResponse | null>(null);
 
   if (!authSession) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const updateAnswer = (questionId: string, value: string): void => {

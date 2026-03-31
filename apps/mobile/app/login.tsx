@@ -1,4 +1,4 @@
-import { Link, router } from "expo-router";
+import { Link, Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Platform, Text } from "react-native";
 import { ApiClient } from "../src/lib/api-client";
@@ -8,15 +8,19 @@ import { AppScreen, ButtonRow, PrimaryButton, SecondaryButton, TextField } from 
 import { colors } from "../src/ui/theme";
 
 export default function LoginScreen() {
-  const { instanceConfig, saveSession } = useAppSession();
+  const { instanceConfig, saveSession, session } = useAppSession();
+  const plainTextPasswordFields = process.env.EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS === "true";
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (!instanceConfig) {
-    router.replace("/instance");
-    return null;
+    return <Redirect href="/instance" />;
+  }
+
+  if (session) {
+    return <Redirect href="/home" />;
   }
 
   const submit = async (): Promise<void> => {
@@ -44,7 +48,6 @@ export default function LoginScreen() {
       });
       await saveSession(tokens);
       setError(null);
-      router.replace("/home");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "登录失败");
     } finally {
@@ -60,6 +63,7 @@ export default function LoginScreen() {
     >
       <TextField
         label="邮箱或手机号"
+        testID="login.identifier"
         value={identifier}
         onChangeText={setIdentifier}
         placeholder="you@example.com / +8613800000000"
@@ -69,22 +73,32 @@ export default function LoginScreen() {
 
       <TextField
         label="密码"
+        testID="login.password"
         value={password}
         onChangeText={setPassword}
         placeholder="至少 8 位"
-        secureTextEntry
+        secureTextEntry={!plainTextPasswordFields}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
       />
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
 
       <ButtonRow>
-        <PrimaryButton label={submitting ? "登录中..." : "登录"} onPress={submit} disabled={submitting} />
-        <SecondaryButton label="改实例" onPress={() => router.push("/instance")} />
+        <PrimaryButton
+          label={submitting ? "登录中..." : "登录"}
+          onPress={submit}
+          disabled={submitting}
+          testID="login.submit"
+        />
+        <SecondaryButton label="改实例" onPress={() => router.push("/instance")} testID="login.instance" />
       </ButtonRow>
 
       <Text style={{ color: colors.textMuted, fontSize: 14 }}>
         还没有账号？{" "}
-        <Link href="/register" style={{ color: colors.accent, fontWeight: "700" }}>
+        <Link href="/register" testID="login.gotoRegister" style={{ color: colors.accent, fontWeight: "700" }}>
           去注册
         </Link>
       </Text>

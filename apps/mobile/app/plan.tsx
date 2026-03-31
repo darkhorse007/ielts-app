@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useEffect, useEffectEvent, useState } from "react";
 import { Text, View } from "react-native";
 import type { StudyPlanResponse } from "../src/lib/api-types";
@@ -33,12 +33,13 @@ export default function PlanScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (!session) {
-    router.replace("/login");
-    return null;
-  }
-
   const loadPlan = useEffectEvent(async () => {
+    if (!session) {
+      setPlan(null);
+      setStatusMessage("未登录");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.fetchActivePlan(accessToken));
@@ -58,7 +59,7 @@ export default function PlanScreen() {
 
   useEffect(() => {
     void loadPlan();
-  }, [loadPlan]);
+  }, [session]);
 
   const adjust = async (): Promise<void> => {
     const firstTask = describeTask(plan);
@@ -114,6 +115,10 @@ export default function PlanScreen() {
   };
 
   const firstTask = describeTask(plan);
+
+  if (!session) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <AppScreen

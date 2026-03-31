@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useEffect, useEffectEvent, useState } from "react";
 import { Text, View } from "react-native";
 import { ApiClient, runSpeakingWebSocketSmoke } from "../src/lib/api-client";
@@ -39,17 +39,13 @@ export default function HomeScreen() {
   const [healthStatus, setHealthStatus] = useState("未检查");
   const [socketStatus, setSocketStatus] = useState("未检查");
 
-  if (!instanceConfig) {
-    router.replace("/instance");
-    return null;
-  }
-
-  if (!session) {
-    router.replace("/login");
-    return null;
-  }
-
   const loadProfile = useEffectEvent(async () => {
+    if (!session) {
+      setProfile(null);
+      setProfileStatus("未登录");
+      return;
+    }
+
     setProfileStatus("正在拉取 /v1/users/me/profile");
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProfile(accessToken));
@@ -62,9 +58,14 @@ export default function HomeScreen() {
 
   useEffect(() => {
     void loadProfile();
-  }, [loadProfile]);
+  }, [session]);
 
   const checkHealth = async (): Promise<void> => {
+    if (!instanceConfig) {
+      setHealthStatus("请先配置实例");
+      return;
+    }
+
     setHealthStatus("正在检查 /health");
     try {
       const apiClient = new ApiClient(instanceConfig.apiBaseUrl);
@@ -76,6 +77,16 @@ export default function HomeScreen() {
   };
 
   const checkSpeakingSocket = async (): Promise<void> => {
+    if (!instanceConfig) {
+      setSocketStatus("请先配置实例");
+      return;
+    }
+
+    if (!session) {
+      setSocketStatus("请先登录");
+      return;
+    }
+
     setSocketStatus("正在创建 session 并连接 WebSocket");
     try {
       const result = await runWithAuthorizedClient(async (apiClient, accessToken) => {
@@ -112,6 +123,14 @@ export default function HomeScreen() {
     await logout();
     router.replace("/login");
   };
+
+  if (!instanceConfig) {
+    return <Redirect href="/instance" />;
+  }
+
+  if (!session) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <AppScreen
@@ -180,12 +199,12 @@ export default function HomeScreen() {
           <SecondaryButton label="查看计划" onPress={() => router.push("/plan")} />
         </ButtonRow>
         <ButtonRow>
-          <PrimaryButton label="进入模考" onPress={() => router.push("/mock-exam")} />
+          <PrimaryButton label="进入模考" onPress={() => router.push("/mock-exam")} testID="home.mockExam" />
           <SecondaryButton label="查看进度" onPress={() => router.push("/progress")} />
         </ButtonRow>
         <ButtonRow>
-          <PrimaryButton label="进入账户中心" onPress={() => router.push("/account")} />
-          <SecondaryButton label="导出/删除" onPress={() => router.push("/account")} />
+          <PrimaryButton label="进入账户中心" onPress={() => router.push("/account")} testID="home.account" />
+          <SecondaryButton label="导出/删除" onPress={() => router.push("/account")} testID="home.accountQuick" />
         </ButtonRow>
       </InfoCard>
 

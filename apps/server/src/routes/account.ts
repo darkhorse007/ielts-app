@@ -19,6 +19,12 @@ const toError = (code: string, message: string): { code: string; message: string
   message
 });
 
+const accountDebugLog = (...parts: unknown[]): void => {
+  if (process.env.ACCOUNT_DEBUG_LOG === "true") {
+    console.log("[account-debug]", ...parts);
+  }
+};
+
 export const registerAccountRoutes = async (
   app: FastifyInstance,
   services: {
@@ -76,6 +82,7 @@ export const registerAccountRoutes = async (
     { preHandler: authenticate(services.authService) },
     async (request, reply) => {
       const authRequest = request as AuthenticatedRequest;
+      accountDebugLog("deletion-request:start", authRequest.auth.userId);
       try {
         const result = services.accountService.requestDeletion(authRequest.auth.userId);
         try {
@@ -89,7 +96,9 @@ export const registerAccountRoutes = async (
           status: result.status,
           deletion_requested_at: result.deletionRequestedAt
         });
+        accountDebugLog("deletion-request:success", result.userId, result.status, result.deletionRequestedAt);
       } catch (error) {
+        accountDebugLog("deletion-request:error", authRequest.auth.userId, error instanceof Error ? error.message : error);
         if (error instanceof Error && error.message === "USER_ALREADY_DELETED") {
           reply.code(409).send(toError("USER_ALREADY_DELETED", "User already deleted"));
           return;
@@ -111,6 +120,7 @@ export const registerAccountRoutes = async (
     }
 
     const authRequest = request as AuthenticatedRequest;
+    accountDebugLog("delete:start", authRequest.auth.userId);
 
     try {
       const result = services.accountService.deleteUser(authRequest.auth.userId);
@@ -138,7 +148,9 @@ export const registerAccountRoutes = async (
         removed_mock_exams: result.removedMockExams,
         removed_mock_exam_reports: result.removedMockExamReports
       });
+      accountDebugLog("delete:success", result.userId, result.deletedAt);
     } catch (error) {
+      accountDebugLog("delete:error", authRequest.auth.userId, error instanceof Error ? error.message : error);
       if (error instanceof Error && error.message === "USER_NOT_FOUND") {
         reply.code(404).send(toError("USER_NOT_FOUND", "User not found"));
         return;

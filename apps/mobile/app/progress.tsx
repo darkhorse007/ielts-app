@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { Platform, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useState } from "react";
 import type { ProgressResponse } from "../src/lib/api-types";
@@ -29,12 +29,14 @@ export default function ProgressScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (!session) {
-    router.replace("/login");
-    return null;
-  }
-
   const load = useEffectEvent(async () => {
+    if (!session) {
+      setSnapshot(null);
+      setConflictCount(0);
+      setStatusMessage("未登录");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProgress(accessToken));
@@ -57,7 +59,7 @@ export default function ProgressScreen() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [session]);
 
   const sync = async (): Promise<void> => {
     setLoading(true);
@@ -105,6 +107,10 @@ export default function ProgressScreen() {
       setLoading(false);
     }
   };
+
+  if (!session) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <AppScreen

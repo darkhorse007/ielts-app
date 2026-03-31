@@ -77,15 +77,18 @@ export const TextField = ({ label, ...props }: TextInputProps & { label: string 
 export const PrimaryButton = ({
   label,
   onPress,
-  disabled
+  disabled,
+  testID
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  testID?: string;
 }) => (
   <Pressable
     onPress={onPress}
     disabled={disabled}
+    testID={testID}
     style={({ pressed }) => ({
       minHeight: 52,
       borderRadius: radii.md,
@@ -103,15 +106,18 @@ export const PrimaryButton = ({
 export const SecondaryButton = ({
   label,
   onPress,
-  disabled
+  disabled,
+  testID
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  testID?: string;
 }) => (
   <Pressable
     onPress={onPress}
     disabled={disabled}
+    testID={testID}
     style={({ pressed }) => ({
       minHeight: 52,
       borderRadius: radii.md,

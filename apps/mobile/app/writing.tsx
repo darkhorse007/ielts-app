@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { useState } from "react";
 import type { WritingArchiveResponse, WritingEvaluationResponse, WritingTemplateListResponse } from "../src/lib/api-types";
@@ -87,8 +87,7 @@ export default function WritingScreen() {
   const [error, setError] = useState<string | null>(null);
 
   if (!authSession) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const selectedTemplate = templates.find((item) => item.template_id === selectedTemplateId) ?? null;

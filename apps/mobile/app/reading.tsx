@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PracticeSessionResponse } from "../src/lib/api-types";
@@ -53,8 +53,7 @@ export default function ReadingScreen() {
   const [evidenceCount, setEvidenceCount] = useState(0);
 
   if (!authSession) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const updateAnswer = (questionId: string, value: string): void => {

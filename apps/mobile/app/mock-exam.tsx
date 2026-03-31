@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { Pressable, Share, Text, View } from "react-native";
 import { useState } from "react";
 import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-types";
@@ -68,29 +68,45 @@ export default function MockExamScreen() {
   const [exportFilename, setExportFilename] = useState("-");
 
   if (!authSession) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const createExam = async (): Promise<void> => {
-    setLoading(true);
-    try {
-      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.createMockExam(accessToken, {
-          time_limit_seconds: asNumber(timeLimitSeconds, 7200)
-        })
-      );
-      setExam(response);
-      setReport(null);
-      setExportPreview("-");
-      setExportFilename("-");
-      setStatusMessage(`模考创建成功，当前科目=${response.current_skill}`);
-      setError(null);
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建模考失败");
-    } finally {
-      setLoading(false);
-    }
+    const optimisticExam: MockExamResponse = {
+      exam_id: `mock-local-${Date.now()}`,
+      status: "in_progress",
+      time_limit_seconds: asNumber(timeLimitSeconds, 7200),
+      elapsed_seconds: 0,
+      remaining_seconds: asNumber(timeLimitSeconds, 7200),
+      current_skill: skill,
+      sections: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    setExam(optimisticExam);
+    setReport(null);
+    setExportPreview("-");
+    setExportFilename("-");
+    setStatusMessage(`模考创建成功，当前科目=${optimisticExam.current_skill}`);
+    setError(null);
+
+    const createPromise = runWithAuthorizedClient((apiClient, accessToken) =>
+      apiClient.createMockExam(accessToken, {
+        time_limit_seconds: asNumber(timeLimitSeconds, 7200)
+      })
+    );
+
+    void createPromise
+      .then((response) => {
+        setExam(response);
+        setStatusMessage(`模考创建成功，当前科目=${response.current_skill}`);
+      })
+      .catch((createError) => {
+        setExam(null);
+        setStatusMessage("未开始");
+        setError(createError instanceof Error ? createError.message : "创建模考失败");
+      });
   };
 
   const loadExam = async (): Promise<void> => {
@@ -267,13 +283,19 @@ export default function MockExamScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>模考配置</Text>
         <TextField
           label="总时长（秒）"
+          testID="mockExam.timeLimitSeconds"
           value={timeLimitSeconds}
           onChangeText={setTimeLimitSeconds}
           placeholder="7200"
           keyboardType="number-pad"
         />
         <ButtonRow>
-          <PrimaryButton label={loading ? "处理中..." : "创建模考"} onPress={() => void createExam()} disabled={loading} />
+          <PrimaryButton
+            label={loading ? "处理中..." : "创建模考"}
+            onPress={() => void createExam()}
+            disabled={loading}
+            testID="mockExam.create"
+          />
           <SecondaryButton label="拉取模考状态" onPress={() => void loadExam()} disabled={loading || !exam} />
         </ButtonRow>
       </InfoCard>
@@ -291,6 +313,10 @@ export default function MockExamScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>remaining_seconds: {exam?.remaining_seconds ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>report_id: {exam?.report_id ?? report?.report_id ?? "-"}</Text>
         </View>
+        <ButtonRow>
+          <PrimaryButton label="返回首页" onPress={() => router.replace("/home")} testID="mockExam.backHome" />
+          <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} />
+        </ButtonRow>
       </InfoCard>
 
       <InfoCard>
@@ -442,11 +468,6 @@ export default function MockExamScreen() {
       </InfoCard>
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
-
-      <ButtonRow>
-        <PrimaryButton label="返回首页" onPress={() => router.replace("/home")} />
-        <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} />
-      </ButtonRow>
     </AppScreen>
   );
 }

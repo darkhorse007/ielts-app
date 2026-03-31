@@ -62,6 +62,7 @@ export default function InstanceConfigScreen() {
 
       <TextField
         label="API Base URL"
+        testID="instance.apiBaseUrl"
         value={apiBaseUrl}
         onChangeText={setApiBaseUrl}
         placeholder="http://127.0.0.1:8787"
@@ -71,6 +72,7 @@ export default function InstanceConfigScreen() {
 
       <TextField
         label="WS Base URL"
+        testID="instance.wsBaseUrl"
         value={wsBaseUrl}
         onChangeText={setWsBaseUrl}
         placeholder="留空则按 API 地址自动推导"
@@ -94,8 +96,13 @@ export default function InstanceConfigScreen() {
       ) : null}
 
       <ButtonRow>
-        <PrimaryButton label={saving ? "保存中..." : "保存实例"} onPress={submit} disabled={saving} />
-        <SecondaryButton label="返回入口" onPress={() => router.replace("/")} />
+        <PrimaryButton
+          label={saving ? "保存中..." : "保存实例"}
+          onPress={submit}
+          disabled={saving}
+          testID="instance.save"
+        />
+        <SecondaryButton label="返回入口" onPress={() => router.replace("/")} testID="instance.back" />
       </ButtonRow>
     </AppScreen>
   );

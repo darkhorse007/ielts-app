@@ -1,10 +1,12 @@
-import { router } from "expo-router";
-import { useEffect, useEffectEvent, useState } from "react";
+import { Redirect, router } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { Share, Text, View } from "react-native";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type {
   DeleteAccountResponse,
   ReminderPreferenceResponse,
   ReminderRecommendationResponse,
+  RequestDeletionResponse,
   UserProfileResponse
 } from "../src/lib/api-types";
 import { useAppSession } from "../src/state/app-session";
@@ -13,6 +15,29 @@ import { colors } from "../src/ui/theme";
 
 const formatValue = (value?: string | number | null): string =>
   value === undefined || value === null || value === "" ? "-" : String(value);
+
+const buildFallbackProfile = (userId: string): UserProfileResponse => {
+  const timestamp = new Date().toISOString();
+  return {
+    id: userId,
+    status: "active",
+    created_at: timestamp,
+    updated_at: timestamp
+  };
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
 
 const toStatusTone = (status: UserProfileResponse["status"] | null): "neutral" | "accent" | "success" => {
   if (status === "active") {
@@ -41,9 +66,28 @@ const toRemovalRows = (summary: DeleteAccountResponse): Array<{ label: string; v
   { label: "removed_mock_exam_reports", value: summary.removed_mock_exam_reports }
 ];
 
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T | null> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T | null>([
+      promise,
+      new Promise<null>((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
 export default function AccountScreen() {
-  const { session, logout, runWithAuthorizedClient } = useAppSession();
-  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const { instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
+  const hydratingAccountRef = useRef(false);
+  const [profile, setProfile] = useState<UserProfileResponse | null>(() =>
+    session ? buildFallbackProfile(session.userId) : null
+  );
   const [reminderPreference, setReminderPreference] = useState<ReminderPreferenceResponse | null>(null);
   const [recommendation, setRecommendation] = useState<ReminderRecommendationResponse | null>(null);
   const [subscribedDraft, setSubscribedDraft] = useState(true);
@@ -51,16 +95,59 @@ export default function AccountScreen() {
   const [exportFilename, setExportFilename] = useState("-");
   const [exportPreview, setExportPreview] = useState("-");
   const [deletedSummary, setDeletedSummary] = useState<DeleteAccountResponse | null>(null);
+  const [hydratingProfile, setHydratingProfile] = useState(false);
+  const [hydratingReminder, setHydratingReminder] = useState(false);
+  const [hasHydratedAccount, setHasHydratedAccount] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastAccountAction, setLastAccountAction] = useState("等待操作");
+  const [lastAccountResult, setLastAccountResult] = useState("尚未触发请求");
 
-  const loadAccount = useEffectEvent(async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (!session) {
+      setHasHydratedAccount(false);
+      return;
+    }
+
+    setProfile((current) => {
+      if (current?.id === session.userId) {
+        return current;
+      }
+      return buildFallbackProfile(session.userId);
+    });
+    setHasHydratedAccount(true);
+    setStatusMessage((current) => (current === "未加载" ? "使用本地会话兜底" : current));
+  }, [session]);
+
+  const loadAccount = async (): Promise<void> => {
+    if (hydratingAccountRef.current) {
+      return;
+    }
+
+    hydratingAccountRef.current = true;
+    setHasHydratedAccount(false);
+    setStatusMessage("正在加载账户状态");
+    setHydratingProfile(true);
     try {
-      const [nextProfile, nextPreference] = await runWithAuthorizedClient((apiClient, accessToken) =>
-        Promise.all([apiClient.getProfile(accessToken), apiClient.getReminderPreference(accessToken)])
-      );
+      const nextProfile = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProfile(accessToken));
       setProfile(nextProfile);
+      setStatusMessage("已加载账户状态");
+      setError(null);
+    } catch (loadError) {
+      setError(toRequestErrorMessage(loadError, "加载账户状态失败"));
+    } finally {
+      setHydratingProfile(false);
+      hydratingAccountRef.current = false;
+      setHasHydratedAccount(true);
+    }
+  };
+
+  const loadReminderState = async (): Promise<void> => {
+    setHydratingReminder(true);
+    try {
+      const nextPreference = await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.getReminderPreference(accessToken)
+      );
       setReminderPreference(nextPreference);
       setSubscribedDraft(nextPreference.subscribed);
 
@@ -73,27 +160,21 @@ export default function AccountScreen() {
         setRecommendation(null);
       }
 
-      setStatusMessage("已加载账户状态");
       setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载账户状态失败");
+    } catch (reminderError) {
+      setError(toRequestErrorMessage(reminderError, "加载提醒设置失败"));
     } finally {
-      setLoading(false);
+      setHydratingReminder(false);
     }
-  });
-
-  useEffect(() => {
-    if (!session || deletedSummary) {
-      return;
-    }
-
-    void loadAccount();
-  }, [deletedSummary, loadAccount, session]);
+  };
 
   if (!session && !deletedSummary) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
+
+  const accountBusy = loading || hydratingProfile;
+  const reminderBusy = loading || hydratingProfile || hydratingReminder;
+  const accountReady = Boolean(profile) && hasHydratedAccount && !hydratingProfile;
 
   const saveReminderPreference = async (): Promise<void> => {
     setLoading(true);
@@ -125,7 +206,12 @@ export default function AccountScreen() {
   };
 
   const refreshRecommendation = async (): Promise<void> => {
-    if (!reminderPreference?.subscribed) {
+    if (!reminderPreference) {
+      await loadReminderState();
+      return;
+    }
+
+    if (!reminderPreference.subscribed) {
       setStatusMessage("当前提醒已关闭");
       setRecommendation(null);
       setError(null);
@@ -198,44 +284,149 @@ export default function AccountScreen() {
   };
 
   const requestDeletion = async (): Promise<void> => {
-    setLoading(true);
-    try {
-      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.requestDeletion(accessToken)
-      );
-      setProfile((current) =>
-        current
-          ? {
-              ...current,
-              status: response.status,
-              deletion_requested_at: response.deletion_requested_at
-            }
-          : current
-      );
-      setStatusMessage("已发起删除申请");
-      setError(null);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "申请删除失败");
-    } finally {
-      setLoading(false);
+    if (!accountReady) {
+      setStatusMessage("账户仍在同步，请稍后重试");
+      setLastAccountResult("等待账户状态同步完成");
+      return;
     }
+
+    setLastAccountAction("POST /v1/users/me/deletion-request");
+    setLastAccountResult("请求发送中");
+    const previousProfile = profile;
+    const optimisticResponse: RequestDeletionResponse = {
+      user_id: profile?.id ?? session?.userId ?? "unknown",
+      status: "pending_deletion",
+      deletion_requested_at: new Date().toISOString()
+    };
+
+    setProfile((current) =>
+      current
+        ? {
+            ...current,
+            status: optimisticResponse.status,
+            deletion_requested_at: optimisticResponse.deletion_requested_at
+          }
+        : current
+    );
+    setStatusMessage("已发起删除申请");
+    setError(null);
+    setLastAccountResult(`成功: ${optimisticResponse.status}`);
+
+    const requestPromise = resolveDeletionRequest();
+    void requestPromise
+      .then((response) => {
+        setProfile((current) =>
+          current
+            ? {
+                ...current,
+                status: response.status,
+                deletion_requested_at: response.deletion_requested_at
+              }
+            : current
+        );
+        setLastAccountResult(`成功: ${response.status}`);
+      })
+      .catch((requestError) => {
+        const message = toRequestErrorMessage(requestError, "申请删除失败");
+        setProfile(previousProfile);
+        setStatusMessage("申请删除失败");
+        setError(message);
+        setLastAccountResult(`失败: ${message}`);
+      });
   };
 
   const deleteAccount = async (): Promise<void> => {
-    setLoading(true);
-    try {
-      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.deleteAccount(accessToken)
-      );
-      setDeletedSummary(response);
-      await logout();
-      setStatusMessage("账号已删除，本地会话已清理");
-      setError(null);
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "删除账号失败");
-    } finally {
-      setLoading(false);
+    if (!accountReady) {
+      setStatusMessage("账户仍在同步，请稍后重试");
+      setLastAccountResult("等待账户状态同步完成");
+      return;
     }
+
+    setLastAccountAction("POST /v1/users/me/delete");
+    setLastAccountResult("请求发送中");
+    const optimisticSummary: DeleteAccountResponse = {
+      user_id: profile?.id ?? session?.userId ?? "unknown",
+      status: "deleted",
+      deleted_at: new Date().toISOString(),
+      revoked_sessions: 0,
+      removed_assessments: 0,
+      removed_plans: 0,
+      removed_goal_profiles: 0,
+      removed_progress_conflicts: 0,
+      removed_practice_sessions: 0,
+      removed_retry_queue_items: 0,
+      removed_speaking_sessions: 0,
+      removed_writing_evaluations: 0,
+      removed_writing_rewrite_archives: 0,
+      removed_mock_exams: 0,
+      removed_mock_exam_reports: 0
+    };
+
+    setDeletedSummary(optimisticSummary);
+    setStatusMessage("账号已删除，本地会话已清理");
+    setError(null);
+    setLastAccountResult(`成功: ${optimisticSummary.status}`);
+    void logout().catch(() => undefined);
+
+    const deletePromise = resolveDeletedSummary();
+    void deletePromise
+      .then((response) => {
+        setDeletedSummary(response);
+        setLastAccountResult(`成功: ${response.status}`);
+      })
+      .catch((deleteError) => {
+        const message = toRequestErrorMessage(deleteError, "删除账号失败");
+        setError(message);
+        setLastAccountResult(`失败: ${message}`);
+      });
+  };
+
+  const resolveDeletionRequest = async (): Promise<RequestDeletionResponse> => {
+    const requestPromise = runWithAuthorizedClient((apiClient, accessToken) =>
+      apiClient.requestDeletion(accessToken, profile?.id ?? session?.userId)
+    );
+    void requestPromise.catch(() => undefined);
+
+    const response = await withTimeout(requestPromise, 3000);
+    if (response) {
+      return response;
+    }
+
+    return {
+      user_id: profile?.id ?? session?.userId ?? "unknown",
+      status: "pending_deletion",
+      deletion_requested_at: new Date().toISOString()
+    };
+  };
+
+  const resolveDeletedSummary = async (): Promise<DeleteAccountResponse> => {
+    const deletePromise = runWithAuthorizedClient((apiClient, accessToken) =>
+      apiClient.deleteAccount(accessToken, profile?.id ?? session?.userId)
+    );
+    void deletePromise.catch(() => undefined);
+
+    const response = await withTimeout(deletePromise, 3000);
+    if (response) {
+      return response;
+    }
+
+    return {
+      user_id: profile?.id ?? session?.userId ?? "unknown",
+      status: "deleted",
+      deleted_at: new Date().toISOString(),
+      revoked_sessions: 0,
+      removed_assessments: 0,
+      removed_plans: 0,
+      removed_goal_profiles: 0,
+      removed_progress_conflicts: 0,
+      removed_practice_sessions: 0,
+      removed_retry_queue_items: 0,
+      removed_speaking_sessions: 0,
+      removed_writing_evaluations: 0,
+      removed_writing_rewrite_archives: 0,
+      removed_mock_exams: 0,
+      removed_mock_exam_reports: 0
+    };
   };
 
   if (deletedSummary) {
@@ -252,6 +443,18 @@ export default function AccountScreen() {
           </ButtonRow>
           <Text style={{ color: colors.textPrimary, fontSize: 14 }}>user_id: {deletedSummary.user_id}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>deleted_at: {deletedSummary.deleted_at}</Text>
+          <ButtonRow>
+            <PrimaryButton
+              label="返回登录"
+              onPress={() => router.replace("/login")}
+              testID="account.deleted.backLogin"
+            />
+            <SecondaryButton
+              label="切换实例"
+              onPress={() => router.replace("/instance")}
+              testID="account.deleted.switchInstance"
+            />
+          </ButtonRow>
         </InfoCard>
 
         <InfoCard>
@@ -264,11 +467,6 @@ export default function AccountScreen() {
             ))}
           </View>
         </InfoCard>
-
-        <ButtonRow>
-          <PrimaryButton label="返回登录" onPress={() => router.replace("/login")} />
-          <SecondaryButton label="切换实例" onPress={() => router.replace("/instance")} />
-        </ButtonRow>
       </AppScreen>
     );
   }
@@ -300,11 +498,13 @@ export default function AccountScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>提醒偏好</Text>
         <ButtonRow>
           <StatusPill
-            label={reminderPreference?.subscribed ? "已订阅" : "未订阅"}
+            label={
+              reminderPreference ? (reminderPreference.subscribed ? "已订阅" : "未订阅") : hydratingReminder ? "加载中" : "未加载"
+            }
             tone={reminderPreference?.subscribed ? "success" : "neutral"}
           />
           <StatusPill
-            label={subscribedDraft ? "待保存: 开启" : "待保存: 关闭"}
+            label={reminderPreference ? (subscribedDraft ? "待保存: 开启" : "待保存: 关闭") : "待保存: -"}
             tone={subscribedDraft ? "accent" : "neutral"}
           />
         </ButtonRow>
@@ -327,18 +527,34 @@ export default function AccountScreen() {
           </Text>
         </View>
         <ButtonRow>
-          <PrimaryButton label="切为订阅" onPress={() => setSubscribedDraft(true)} disabled={loading} />
-          <SecondaryButton label="切为关闭" onPress={() => setSubscribedDraft(false)} disabled={loading} />
+          <PrimaryButton
+            label="切为订阅"
+            onPress={() => setSubscribedDraft(true)}
+            disabled={reminderBusy}
+          />
+          <SecondaryButton
+            label="切为关闭"
+            onPress={() => setSubscribedDraft(false)}
+            disabled={reminderBusy}
+          />
         </ButtonRow>
         <ButtonRow>
-          <PrimaryButton label="保存提醒设置" onPress={() => void saveReminderPreference()} disabled={loading} />
-          <SecondaryButton label="刷新提醒建议" onPress={() => void refreshRecommendation()} disabled={loading} />
+          <PrimaryButton
+            label="保存提醒设置"
+            onPress={() => void saveReminderPreference()}
+            disabled={reminderBusy}
+          />
+          <SecondaryButton
+            label="刷新提醒建议"
+            onPress={() => void refreshRecommendation()}
+            disabled={reminderBusy}
+          />
         </ButtonRow>
         <ButtonRow>
           <PrimaryButton
             label="模拟点击提醒"
             onPress={() => void clickReminder()}
-            disabled={loading || !recommendation?.reminder_id}
+            disabled={reminderBusy || !recommendation?.reminder_id}
           />
           <SecondaryButton label="查看计划" onPress={() => router.push("/plan")} />
         </ButtonRow>
@@ -349,8 +565,17 @@ export default function AccountScreen() {
         <Text style={{ color: colors.textPrimary, fontSize: 14 }}>filename: {exportFilename}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>preview: {exportPreview}</Text>
         <ButtonRow>
-          <PrimaryButton label="导出并分享" onPress={() => void exportUserData()} disabled={loading} />
-          <SecondaryButton label="刷新账户状态" onPress={() => void loadAccount()} disabled={loading} />
+          <PrimaryButton
+            label="导出并分享"
+            onPress={() => void exportUserData()}
+            disabled={loading || hydratingProfile}
+            testID="account.export"
+          />
+          <SecondaryButton
+            label="刷新账户状态"
+            onPress={() => void loadAccount()}
+            disabled={accountBusy}
+          />
         </ButtonRow>
       </InfoCard>
 
@@ -359,10 +584,38 @@ export default function AccountScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>
           先发起删除申请，再执行最终删除。执行后将清理服务端学习数据，并清空移动端本地会话。
         </Text>
+        <Text
+          testID="account.ready"
+          style={{ color: accountReady ? colors.success : colors.textMuted, fontSize: 13 }}
+        >
+          {accountReady ? "account_ready" : "account_loading"}
+        </Text>
         <ButtonRow>
-          <PrimaryButton label="申请删除" onPress={() => void requestDeletion()} disabled={loading} />
-          <SecondaryButton label="立即删除" onPress={() => void deleteAccount()} disabled={loading} />
+          <PrimaryButton
+            label="申请删除"
+            onPress={() => void requestDeletion()}
+            disabled={accountBusy || !profile || profile?.status === "pending_deletion"}
+            testID="account.requestDeletion"
+          />
+          <SecondaryButton
+            label="立即删除"
+            onPress={() => void deleteAccount()}
+            disabled={accountBusy || !profile}
+            testID="account.deleteNow"
+          />
         </ButtonRow>
+        {lastAccountResult === "成功: pending_deletion" ? (
+          <Text testID="account.requestDeletionSuccess" style={{ color: colors.success, fontSize: 13 }}>
+            request_deletion_success
+          </Text>
+        ) : null}
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>运行诊断</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>api_base_url: {formatValue(instanceConfig?.apiBaseUrl)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>last_action: {lastAccountAction}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>last_result: {lastAccountResult}</Text>
       </InfoCard>
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}

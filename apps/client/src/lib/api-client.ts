@@ -54,10 +54,24 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly statusCode: number,
-    readonly code?: string
+    readonly code?: string,
+    readonly method?: string,
+    readonly url?: string
   ) {
     super(message);
     this.name = "ApiRequestError";
+  }
+}
+
+export class ApiNetworkError extends Error {
+  constructor(
+    message: string,
+    readonly method: string,
+    readonly url: string,
+    readonly cause?: unknown
+  ) {
+    super(message);
+    this.name = "ApiNetworkError";
   }
 }
 
@@ -66,6 +80,114 @@ export class ApiClient {
     private readonly baseUrl: string,
     private readonly fetchFn: FetchFn = fetch
   ) {}
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    method: string,
+    timeoutMs: number
+  ): Promise<Response | null> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race<Response | null>([
+        this.fetchFn.call(globalThis, url, init),
+        new Promise<null>((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), timeoutMs);
+        })
+      ]);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Network request failed";
+      throw new ApiNetworkError(`${message} (${method} ${url})`, method, url, error);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  private async parseResponseBodyWithTimeout(
+    response: Response,
+    timeoutMs: number
+  ): Promise<Record<string, unknown> | null> {
+    const parseBody = async (): Promise<Record<string, unknown>> => {
+      const content = await response.text();
+      if (!content) {
+        return {};
+      }
+
+      try {
+        return JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    };
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race<Record<string, unknown> | null>([
+        parseBody(),
+        new Promise<null>((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  private async confirmDeletionRequest(
+    accessToken: string,
+    fallbackUserId?: string
+  ): Promise<RequestDeletionResponse> {
+    const profile = await this.getProfile(accessToken);
+    if (profile.status !== "pending_deletion" && profile.status !== "deleted") {
+      throw new Error("Deletion request timed out without a confirmed state change");
+    }
+
+    return {
+      user_id: fallbackUserId ?? profile.id,
+      status: "pending_deletion",
+      deletion_requested_at: profile.deletion_requested_at ?? new Date().toISOString()
+    };
+  }
+
+  private async confirmAccountDeleted(
+    accessToken: string,
+    fallbackUserId?: string
+  ): Promise<DeleteAccountResponse> {
+    try {
+      const profile = await this.getProfile(accessToken);
+      if (profile.status !== "deleted") {
+        throw new Error("Delete request timed out without a confirmed deletion state");
+      }
+    } catch (error) {
+      if (!(error instanceof ApiRequestError) || (error.statusCode !== 401 && error.statusCode !== 404)) {
+        throw error;
+      }
+    }
+
+    return {
+      user_id: fallbackUserId ?? "unknown",
+      status: "deleted",
+      deleted_at: new Date().toISOString(),
+      revoked_sessions: 0,
+      removed_assessments: 0,
+      removed_plans: 0,
+      removed_goal_profiles: 0,
+      removed_progress_conflicts: 0,
+      removed_practice_sessions: 0,
+      removed_retry_queue_items: 0,
+      removed_speaking_sessions: 0,
+      removed_writing_evaluations: 0,
+      removed_writing_rewrite_archives: 0,
+      removed_mock_exams: 0,
+      removed_mock_exam_reports: 0
+    };
+  }
 
   async register(payload: RegisterPayload): Promise<{ user_id: string }> {
     return this.request<{ user_id: string }>("/v1/auth/register", {
@@ -307,25 +429,82 @@ export class ApiClient {
     }, "user-data-export.json");
   }
 
-  async requestDeletion(accessToken: string): Promise<RequestDeletionResponse> {
-    return this.request<RequestDeletionResponse>("/v1/users/me/deletion-request", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
+  async requestDeletion(accessToken: string, fallbackUserId?: string): Promise<RequestDeletionResponse> {
+    const method = "POST";
+    const url = `${this.baseUrl}/v1/users/me/deletion-request`;
+    const headers = new Headers({
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
     });
+
+    const response = await this.fetchWithTimeout(
+      url,
+      {
+        method,
+        headers,
+        body: JSON.stringify({})
+      },
+      method,
+      3000
+    );
+
+    if (!response) {
+      return this.confirmDeletionRequest(accessToken, fallbackUserId);
+    }
+
+    const body = await this.parseResponseBodyWithTimeout(response, 3000);
+
+    if (!response.ok) {
+      const message = body && typeof body.message === "string" ? body.message : "Request failed";
+      const code = body && typeof body.code === "string" ? body.code : undefined;
+      throw new ApiRequestError(message, response.status, code, method, url);
+    }
+
+    if (body) {
+      return body as RequestDeletionResponse;
+    }
+
+    return this.confirmDeletionRequest(accessToken, fallbackUserId);
   }
 
-  async deleteAccount(accessToken: string): Promise<DeleteAccountResponse> {
-    return this.request<DeleteAccountResponse>("/v1/users/me/delete", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: JSON.stringify({
-        confirm_text: "DELETE"
-      })
+  async deleteAccount(accessToken: string, fallbackUserId?: string): Promise<DeleteAccountResponse> {
+    const method = "POST";
+    const url = `${this.baseUrl}/v1/users/me/delete`;
+    const headers = new Headers({
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
     });
+
+    const response = await this.fetchWithTimeout(
+      url,
+      {
+        method,
+        headers,
+        body: JSON.stringify({
+          confirm_text: "DELETE"
+        })
+      },
+      method,
+      3000
+    );
+
+    if (!response) {
+      return this.confirmAccountDeleted(accessToken, fallbackUserId);
+    }
+
+    const body = await this.parseResponseBodyWithTimeout(response, 3000);
+
+    if (!response.ok) {
+      const message = body && typeof body.message === "string" ? body.message : "Request failed";
+      const code = body && typeof body.code === "string" ? body.code : undefined;
+      throw new ApiRequestError(message, response.status, code, method, url);
+    }
+
+    if (body) {
+      return body as DeleteAccountResponse;
+    }
+
+    return this.confirmAccountDeleted(accessToken, fallbackUserId);
   }
 
   async getReminderPreference(accessToken: string): Promise<ReminderPreferenceResponse> {
@@ -1025,22 +1204,38 @@ export class ApiClient {
   }
 
   async request<T>(path: string, init: RequestInit): Promise<T> {
+    const method = (init.method ?? "GET").toUpperCase();
+    const url = `${this.baseUrl}${path}`;
     const headers = new Headers(init.headers ?? {});
     if (init.body !== undefined && init.body !== null && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await this.fetchFn.call(globalThis, `${this.baseUrl}${path}`, {
-      ...init,
-      headers
-    });
+    let response: Response;
+    try {
+      response = await this.fetchFn.call(globalThis, url, {
+        ...init,
+        headers
+      });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Network request failed";
+      throw new ApiNetworkError(`${message} (${method} ${url})`, method, url, error);
+    }
 
-    const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const content = await response.text();
+    let body: Record<string, unknown> = {};
+    if (content) {
+      try {
+        body = JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+    }
 
     if (!response.ok) {
       const message = typeof body.message === "string" ? body.message : "Request failed";
       const code = typeof body.code === "string" ? body.code : undefined;
-      throw new ApiRequestError(message, response.status, code);
+      throw new ApiRequestError(message, response.status, code, method, url);
     }
 
     return body as T;
@@ -1054,15 +1249,23 @@ export class ApiClient {
     filename: string;
     content: string;
   }> {
+    const method = (init.method ?? "GET").toUpperCase();
+    const url = `${this.baseUrl}${path}`;
     const headers = new Headers(init.headers ?? {});
     if (init.body !== undefined && init.body !== null && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await this.fetchFn.call(globalThis, `${this.baseUrl}${path}`, {
-      ...init,
-      headers
-    });
+    let response: Response;
+    try {
+      response = await this.fetchFn.call(globalThis, url, {
+        ...init,
+        headers
+      });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Network request failed";
+      throw new ApiNetworkError(`${message} (${method} ${url})`, method, url, error);
+    }
     const content = await response.text();
 
     if (!response.ok) {
@@ -1079,7 +1282,7 @@ export class ApiClient {
         }
       }
 
-      throw new ApiRequestError(message, response.status, code);
+      throw new ApiRequestError(message, response.status, code, method, url);
     }
 
     const disposition = response.headers.get("content-disposition");

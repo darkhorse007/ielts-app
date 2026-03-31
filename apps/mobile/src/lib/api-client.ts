@@ -1,10 +1,11 @@
 import {
   ApiClient as SharedApiClient,
+  ApiNetworkError,
   ApiRequestError
 } from "@ielts/shared-client/api-client";
 import type { HealthResponse } from "./api-types";
 
-export { ApiRequestError };
+export { ApiNetworkError, ApiRequestError };
 
 export class ApiClient extends SharedApiClient {
   async health(): Promise<HealthResponse> {

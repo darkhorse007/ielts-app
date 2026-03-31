@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { validateBandScore } from "../src/lib/validators";
@@ -31,8 +31,7 @@ export default function OnboardingScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!session) {
-    router.replace("/login");
-    return null;
+    return <Redirect href="/login" />;
   }
 
   const toggleSkill = (skill: WeakSkill): void => {

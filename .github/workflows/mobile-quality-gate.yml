@@ -1,0 +1,163 @@
+name: mobile-quality-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "apps/server/**"
+      - "packages/shared-client/**"
+      - "scripts/ci/**"
+      - "scripts/local-mobile-android-e2e.sh"
+      - "scripts/local-mobile-ios-e2e.sh"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile-quality-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Mobile Tests
+        run: npm run test:mobile
+
+  android-smoke:
+    needs: mobile-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android Local Smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          ram-size: 4096M
+          avd-name: maestro
+          force-avd-creation: false
+          emulator-boot-timeout: 900
+          script: |
+            export PATH="$HOME/.maestro/bin:$PATH"
+            export MAESTRO_CLI_NO_ANALYTICS=1
+            export MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED=true
+            export MOBILE_ANDROID_E2E_AUTO_START_AVD=false
+            export MOBILE_ANDROID_E2E_DEVICE_SERIAL="emulator-${EMULATOR_PORT:-5554}"
+            npm run smoke:e2e:mobile-android-local
+
+      - name: Collect Android Artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts/android
+          cp /tmp/ielts-mobile-android-*.log artifacts/android/ 2>/dev/null || true
+          cp /tmp/ielts-mobile-android-*.pid artifacts/android/ 2>/dev/null || true
+          cp -R "$HOME/.maestro/tests" artifacts/android/maestro-tests 2>/dev/null || true
+
+      - name: Upload Android Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-android-smoke-artifacts
+          path: artifacts/android
+
+  ios-smoke:
+    needs: mobile-tests
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Resolve Simulator
+        id: simulator
+        run: |
+          simulator_udid="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 16 Pro .*Shutdown|iPhone 16 Pro .*Booted/ { print $2; exit }')"
+          if [ -z "$simulator_udid" ]; then
+            simulator_udid="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 16 .*Shutdown|iPhone 16 .*Booted/ { print $2; exit }')"
+          fi
+          if [ -z "$simulator_udid" ]; then
+            simulator_udid="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 15 Pro .*Shutdown|iPhone 15 Pro .*Booted/ { print $2; exit }')"
+          fi
+          if [ -z "$simulator_udid" ]; then
+            echo "supported iPhone simulator not found" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+
+          simulator_name="$(xcrun simctl list devices available | awk -v udid="$simulator_udid" -F '[()]' '$2 == udid { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }')"
+
+          echo "simulator_udid=$simulator_udid" >> "$GITHUB_OUTPUT"
+          echo "simulator_name=$simulator_name" >> "$GITHUB_OUTPUT"
+
+      - name: Run iOS Local Smoke
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: "1"
+          MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: "true"
+          MOBILE_IOS_E2E_SIMULATOR_UDID: ${{ steps.simulator.outputs.simulator_udid }}
+          MOBILE_IOS_E2E_SIMULATOR_NAME: ${{ steps.simulator.outputs.simulator_name }}
+        run: |
+          export PATH="$HOME/.maestro/bin:$PATH"
+          npm run smoke:e2e:mobile-ios-local
+
+      - name: Collect iOS Artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts/ios
+          cp /tmp/ielts-mobile-ios-*.log artifacts/ios/ 2>/dev/null || true
+          cp /tmp/ielts-mobile-ios-*.pid artifacts/ios/ 2>/dev/null || true
+          cp -R "$HOME/.maestro/tests" artifacts/ios/maestro-tests 2>/dev/null || true
+
+      - name: Upload iOS Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios-smoke-artifacts
+          path: artifacts/ios

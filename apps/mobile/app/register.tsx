@@ -1,4 +1,4 @@
-import { Link, router } from "expo-router";
+import { Link, Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Text } from "react-native";
 import { ApiClient } from "../src/lib/api-client";
@@ -9,6 +9,7 @@ import { colors } from "../src/ui/theme";
 
 export default function RegisterScreen() {
   const { instanceConfig } = useAppSession();
+  const plainTextPasswordFields = process.env.EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS === "true";
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -17,8 +18,7 @@ export default function RegisterScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!instanceConfig) {
-    router.replace("/instance");
-    return null;
+    return <Redirect href="/instance" />;
   }
 
   const submit = async (): Promise<void> => {
@@ -68,6 +68,7 @@ export default function RegisterScreen() {
     >
       <TextField
         label="邮箱"
+        testID="register.email"
         value={email}
         onChangeText={setEmail}
         placeholder="可选，和手机号二选一即可"
@@ -77,6 +78,7 @@ export default function RegisterScreen() {
 
       <TextField
         label="手机号"
+        testID="register.phone"
         value={phone}
         onChangeText={setPhone}
         placeholder="可选，和邮箱二选一即可"
@@ -86,30 +88,45 @@ export default function RegisterScreen() {
 
       <TextField
         label="密码"
+        testID="register.password"
         value={password}
         onChangeText={setPassword}
         placeholder="至少 8 位"
-        secureTextEntry
+        secureTextEntry={!plainTextPasswordFields}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
       />
 
       <TextField
         label="确认密码"
+        testID="register.confirmPassword"
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         placeholder="再次输入密码"
-        secureTextEntry
+        secureTextEntry={!plainTextPasswordFields}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
       />
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
 
       <ButtonRow>
-        <PrimaryButton label={submitting ? "注册中..." : "注册"} onPress={submit} disabled={submitting} />
-        <SecondaryButton label="返回登录" onPress={() => router.replace("/login")} />
+        <PrimaryButton
+          label={submitting ? "注册中..." : "注册"}
+          onPress={submit}
+          disabled={submitting}
+          testID="register.submit"
+        />
+        <SecondaryButton label="返回登录" onPress={() => router.replace("/login")} testID="register.backToLogin" />
       </ButtonRow>
 
       <Text style={{ color: colors.textMuted, fontSize: 14 }}>
         已有账号？{" "}
-        <Link href="/login" style={{ color: colors.accent, fontWeight: "700" }}>
+        <Link href="/login" testID="register.gotoLogin" style={{ color: colors.accent, fontWeight: "700" }}>
           去登录
         </Link>
       </Text>

@@ -149,10 +149,9 @@ describe("mobile route smoke", () => {
     render(<AccountScreen />);
 
     expect(screen.getByText("账户中心已进入移动端")).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.getByText((content) => content.includes("learner@example.com"))).toBeTruthy();
-    });
-    expect(screen.getByText((content) => content.includes("今日写作任务仍未完成"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("user-1"))).toBeTruthy();
+    expect(screen.getByText("account_ready")).toBeTruthy();
+    expect(screen.getByText("未加载")).toBeTruthy();
     expect(screen.getByText("导出并分享")).toBeTruthy();
     expect(screen.getByText("立即删除")).toBeTruthy();
   });

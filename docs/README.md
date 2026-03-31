@@ -22,7 +22,7 @@
 6. 全科模考、报告导出与计划回写
 7. 学习行为分析、提醒与轻量实验能力
 8. 账号导出与删除
-9. Mobile 当前已落地：实例配置、安全会话存储、注册/登录、首页工作台、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、数据导出、删除账号、API/WS smoke，以及 route-level vitest smoke
+9. Mobile 当前已落地：实例配置、安全会话存储、注册/登录、首页工作台、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、数据导出、删除账号、API/WS smoke、route-level vitest smoke，以及 iOS simulator / Android emulator-device Maestro smoke baseline 和 CI workflow
 10. 共享基础层：`packages/shared-client` 复用 Web 侧 API 契约与校验逻辑
 
 以下能力已从代码中移除，不应再作为当前产品能力理解：
@@ -47,5 +47,8 @@
 3. 再读 `docs/PRD-Appendix-IA-Data-API.md`
 4. 然后读 `docs/architecture/Technical-Architecture.md`
 5. 如需推进移动端建设，再读 `docs/architecture/Mobile-Technology-Selection.md`
-6. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
-7. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
+6. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
+7. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
+8. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
+9. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
+10. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
