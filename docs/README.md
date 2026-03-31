@@ -50,5 +50,8 @@
 6. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
 7. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
 8. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
-9. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
-10. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
+9. 如需生成移动端原生构建，可先执行 `npx eas-cli@latest init` 将 `apps/mobile` 关联到 Expo / EAS 项目
+10. 然后运行 `npm run build:mobile:preview:ios` 或 `npm run build:mobile:preview:android` 生成内测构建；如需 Dev Client 或生产构建，可切换到 `development` / `production` 脚本
+11. 如需给安装包预置默认 self-hosted 实例，可在构建前创建 `apps/mobile/.env.local`，填写 `EXPO_PUBLIC_API_BASE_URL`；`EXPO_PUBLIC_WS_BASE_URL` 可省略并由脚本自动推导
+12. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
+13. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`

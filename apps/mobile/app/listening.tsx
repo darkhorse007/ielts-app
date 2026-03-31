@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/api-types";
+import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
@@ -207,6 +208,18 @@ export default function ListeningScreen() {
       setLoading(false);
     }
   };
+
+  useAppForegroundEffect(
+    async () => {
+      if (loading || !session?.session_id) {
+        return;
+      }
+      await loadPlayback();
+    },
+    {
+      enabled: Boolean(session?.session_id)
+    }
+  );
 
   return (
     <AppScreen

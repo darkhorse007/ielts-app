@@ -8,6 +8,7 @@ import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
 import HomeScreen from "../app/home";
 import MockExamScreen from "../app/mock-exam";
+import SpeakingScreen from "../app/speaking";
 
 vi.mock("expo-router", () => ({
   router: {
@@ -154,5 +155,16 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("未加载")).toBeTruthy();
     expect(screen.getByText("导出并分享")).toBeTruthy();
     expect(screen.getByText("立即删除")).toBeTruthy();
+  });
+
+  test("speaking screen renders permission gate and live controls", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    render(<SpeakingScreen />);
+
+    expect(screen.getByText("实时口语已进入移动端")).toBeTruthy();
+    expect(screen.getByText("麦克风权限")).toBeTruthy();
+    expect(screen.getByText("授权麦克风")).toBeTruthy();
+    expect(screen.getByText("连接实时会话")).toBeTruthy();
   });
 });

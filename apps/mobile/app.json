@@ -13,15 +13,24 @@
       "backgroundColor": "#ffffff"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for speaking practice and pronunciation feedback."
+        }
+      ]
     ],
     "ios": {
       "bundleIdentifier": "com.darkhorse.ieltsmobile",
+      "buildNumber": "1",
       "supportsTablet": false
     },
     "android": {
       "package": "com.darkhorse.ieltsmobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

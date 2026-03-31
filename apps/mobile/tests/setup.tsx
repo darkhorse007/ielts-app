@@ -16,6 +16,7 @@ const normalizeDomProps = (props: Record<string, unknown> | null | undefined): R
 const originalCreateElement = React.createElement;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
+const appStateListeners = new Set<(state: "active" | "background" | "inactive") => void>();
 
 (React as typeof React & {
   createElement: typeof React.createElement;
@@ -109,6 +110,17 @@ vi.mock("react-native", () => {
     Platform: {
       OS: "ios"
     },
+    AppState: {
+      currentState: "active",
+      addEventListener: (_type: "change", listener: (state: "active" | "background" | "inactive") => void) => {
+        appStateListeners.add(listener);
+        return {
+          remove: () => {
+            appStateListeners.delete(listener);
+          }
+        };
+      }
+    },
     Share: {
       share: vi.fn().mockResolvedValue({
         action: "sharedAction"
@@ -120,4 +132,21 @@ vi.mock("react-native", () => {
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>
+}));
+
+vi.mock("expo-audio", () => ({
+  getRecordingPermissionsAsync: vi.fn().mockResolvedValue({
+    status: "granted",
+    granted: true,
+    canAskAgain: true,
+    expires: "never"
+  }),
+  requestRecordingPermissionsAsync: vi.fn().mockResolvedValue({
+    status: "granted",
+    granted: true,
+    canAskAgain: true,
+    expires: "never"
+  }),
+  setAudioModeAsync: vi.fn().mockResolvedValue(undefined),
+  setIsAudioActiveAsync: vi.fn().mockResolvedValue(undefined)
 }));

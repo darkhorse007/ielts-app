@@ -21,6 +21,7 @@ AUTO_INSTALL_MAESTRO="${MOBILE_IOS_E2E_AUTO_INSTALL_MAESTRO:-true}"
 AUTO_INSTALL_EXPO_GO="${MOBILE_IOS_E2E_AUTO_INSTALL_EXPO_GO:-true}"
 EXPO_GO_WAIT_SECONDS="${MOBILE_IOS_E2E_EXPO_GO_WAIT_SECONDS:-60}"
 EXPO_GO_BUNDLE_ID="${MOBILE_IOS_E2E_EXPO_GO_BUNDLE_ID:-host.exp.Exponent}"
+FLOW_RETRY_COUNT="${MOBILE_IOS_E2E_FLOW_RETRY_COUNT:-2}"
 
 is_truthy() {
   local value="${1:-}"
@@ -138,11 +139,24 @@ fi
 run_maestro_flow() {
   local flow_file="$1"
   local register_email="$2"
+  local attempt=1
 
-  maestro --platform=ios --udid="$SIMULATOR_UDID" test "$flow_file" \
-    -e APP_URL="$APP_URL" \
-    -e REGISTER_EMAIL="$register_email" \
-    -e REGISTER_PASSWORD="$REGISTER_PASSWORD"
+  while [[ "$attempt" -le "$FLOW_RETRY_COUNT" ]]; do
+    if maestro --platform=ios --udid="$SIMULATOR_UDID" test "$flow_file" \
+      -e APP_URL="$APP_URL" \
+      -e REGISTER_EMAIL="$register_email" \
+      -e REGISTER_PASSWORD="$REGISTER_PASSWORD"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -ge "$FLOW_RETRY_COUNT" ]]; then
+      return 1
+    fi
+
+    echo "iOS maestro flow failed on attempt ${attempt}/${FLOW_RETRY_COUNT}; retrying ${flow_file}" >&2
+    attempt=$((attempt + 1))
+    sleep 3
+  done
 }
 
 if [[ -n "$FLOW_FILE" ]]; then

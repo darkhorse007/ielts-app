@@ -2,7 +2,7 @@
 
 ## 文档信息
 - 版本: v1.9
-- 状态: Approved Decision + Mobile Core Coverage + iOS/Android Smoke Baseline + CI Gate
+- 状态: Approved Decision + Mobile Core Coverage + iOS/Android Smoke Baseline + CI Gate + EAS Build Baseline
 - 适用分支: `self-hosted`
 - 决策日期: 2026-03-23
 
@@ -17,6 +17,7 @@
 3. 当前服务端已经为认证、学习计划、训练、实时口语、写作、模考、分析、提醒提供完整 API/WS 契约。
 4. 当前仓库已经新增 `apps/mobile` 基础应用，接入首日学习链路、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、数据导出、删除账号，并且仍然没有独立移动端后端。
 5. 当前仓库已经补上移动端自动化基线：route-level vitest smoke，以及基于 Maestro 的 iOS simulator 与 Android emulator/device 设备级 smoke 脚本、flow 和 CI workflow。
+6. 当前仓库已经补上移动端发布构建基线：`expo-dev-client`、`apps/mobile/eas.json`、首版 `ios.buildNumber` / `android.versionCode`，以及根级/工作区级 EAS build 命令包装脚本。
 
 ## 3. 选型约束
 1. 必须复用当前 self-hosted 服务端，不为移动端单独造业务后端。
@@ -24,6 +25,7 @@
 3. 必须支持安全存储、WebSocket、音频权限、文件导出、设备分享等移动端能力。
 4. 必须尽量复用现有 React/TypeScript 认知与代码。
 5. 不能把核心学习链路绑死在第三方托管服务上。
+6. 在进入提醒推送、商店提审或大规模内测前，必须先具备稳定的 dev / preview / production build profile。
 
 ## 4. 备选方案对比
 | 方案 | 复用当前 TS 契约 | 达成功能对齐速度 | 原生能力接入 | 自托管适配 | 团队认知切换 | 结论 |
@@ -75,10 +77,17 @@
 2. OTA 更新不是第一阶段前置条件，首期以常规商店包或内部原生安装包交付为准。
 3. 如未来需要 OTA，应在发布治理明确后再评估 `expo-updates`、EAS Update 或自托管更新服务。
 
+### 7.5 构建与分发基线
+1. 当前仓库内置三类 EAS build profile：`development`、`preview`、`production`。
+2. `development` 用于 Dev Client 内部联调；`preview` 用于 QA / 内测安装包；`production` 用于商店构建，并开启自动递增构建号。
+3. `apps/mobile/app.json` 已写入首版 `ios.buildNumber=1` 与 `android.versionCode=1`，避免首次原生构建时再补版本号。
+4. 默认情况下，移动端构建不强制绑定某个 self-hosted 实例；如果需要给内测包预置实例，可在构建前注入 `EXPO_PUBLIC_API_BASE_URL`，`EXPO_PUBLIC_WS_BASE_URL` 可选。
+5. 由于仓库内尚未提交 `extra.eas.projectId`，首次接入某个 Expo / EAS 项目时，应先运行 `npx eas-cli@latest init` 完成项目绑定，再执行构建。
+
 ## 8. 仓库落地建议
 1. 第一步已经完成：新增 `apps/mobile`，打通认证、实例配置、首页骨架、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心，以及 API/WS 连通性。
 2. 第二步已经开始：新增 `packages/shared-client`，先复用 API 契约、校验器和 API 客户端。
-3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
+3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，以及 EAS dev / preview / production build baseline。下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
 4. 在移动端稳定前，不改写现有 Web 客户端结构，也不引入 React Native Web 替代当前 Web 应用。
 
 ## 9. 官方参考

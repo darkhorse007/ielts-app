@@ -1,7 +1,9 @@
 import { Redirect, router } from "expo-router";
+import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { AppState, Pressable, Text, View } from "react-native";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
+import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
@@ -149,9 +151,21 @@ const safeParseSocketPayload = (data: unknown): SpeakingSocketPayload | null => 
 
 const isSocketOpen = (socket: WebSocket | null): boolean => Boolean(socket && socket.readyState === WebSocket.OPEN);
 
+const toPermissionLabel = (status: string): string => {
+  switch (status) {
+    case "granted":
+      return "已授权";
+    case "denied":
+      return "已拒绝";
+    default:
+      return "未决定";
+  }
+};
+
 export default function SpeakingScreen() {
   const { instanceConfig, session: authSession, runWithAuthorizedClient } = useAppSession();
   const socketRef = useRef<WebSocket | null>(null);
+  const shouldReconnectRef = useRef(false);
   const [taskType, setTaskType] = useState<SpeakingTaskType>("core_training");
   const [scenarioType, setScenarioType] = useState<ScenarioType>("campus_service");
   const [topic, setTopic] = useState("Describe a recent IELTS preparation experience.");
@@ -172,6 +186,8 @@ export default function SpeakingScreen() {
   const [replaySegmentCount, setReplaySegmentCount] = useState(0);
   const [pronunciationTasks, setPronunciationTasks] = useState<PronunciationTask[]>([]);
   const [trackedTaskText, setTrackedTaskText] = useState("-");
+  const [microphonePermissionStatus, setMicrophonePermissionStatus] = useState("未决定");
+  const [requestingMicrophonePermission, setRequestingMicrophonePermission] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -192,6 +208,87 @@ export default function SpeakingScreen() {
       closeSocket();
     }
   }, [authSession, instanceConfig]);
+
+  const syncMicrophonePermission = async (): Promise<boolean> => {
+    try {
+      const permission = await getRecordingPermissionsAsync();
+      setMicrophonePermissionStatus(toPermissionLabel(permission.status));
+      return permission.granted;
+    } catch {
+      setMicrophonePermissionStatus("检查失败");
+      return false;
+    }
+  };
+
+  const prepareSpeakingAudioSession = async (): Promise<void> => {
+    try {
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: false
+      });
+      await setIsAudioActiveAsync(true);
+    } catch {
+      // Best-effort only. Permission gating matters more than audio mode tuning here.
+    }
+  };
+
+  const ensureMicrophonePermission = async (): Promise<boolean> => {
+    const alreadyGranted = await syncMicrophonePermission();
+    if (alreadyGranted) {
+      await prepareSpeakingAudioSession();
+      return true;
+    }
+
+    setRequestingMicrophonePermission(true);
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      setMicrophonePermissionStatus(toPermissionLabel(permission.status));
+      if (!permission.granted) {
+        setError("麦克风权限未授予，无法进入实时口语会话");
+        return false;
+      }
+
+      await prepareSpeakingAudioSession();
+      setError(null);
+      setStatusMessage("麦克风权限已授权");
+      return true;
+    } catch (permissionError) {
+      setError(permissionError instanceof Error ? permissionError.message : "申请麦克风权限失败");
+      return false;
+    } finally {
+      setRequestingMicrophonePermission(false);
+    }
+  };
+
+  useEffect(() => {
+    void syncMicrophonePermission();
+  }, []);
+
+  useEffect(() => {
+    let currentState = AppState.currentState ?? "active";
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const movedToBackground = currentState === "active" && nextState !== "active";
+      currentState = nextState;
+
+      if (!movedToBackground) {
+        return;
+      }
+
+      if (socketRef.current && isSocketOpen(socketRef.current)) {
+        closeSocket();
+        setConnectionStatus((current) => (current === "已结束" ? "已结束" : "已断开"));
+        setStatusMessage("应用切到后台，恢复前台后会尝试恢复口语会话");
+      }
+
+      void setIsAudioActiveAsync(false).catch(() => undefined);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const resetLiveFeedback = (): void => {
     setSuggestions([]);
@@ -221,6 +318,7 @@ export default function SpeakingScreen() {
 
   const createSession = async (): Promise<void> => {
     closeSocket();
+    shouldReconnectRef.current = false;
     setLoading(true);
 
     try {
@@ -268,13 +366,15 @@ export default function SpeakingScreen() {
     }
   };
 
-  const loadSessionStatus = async (): Promise<void> => {
+  const loadSessionStatus = async (options?: { restoreForeground?: boolean; skipLoading?: boolean }): Promise<SpeakingSessionResponse | null> => {
     if (!sessionState?.session_id) {
       setError("请先创建口语会话");
-      return;
+      return null;
     }
 
-    setLoading(true);
+    if (!options?.skipLoading) {
+      setLoading(true);
+    }
 
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
@@ -284,16 +384,23 @@ export default function SpeakingScreen() {
         ...response,
         resume_token: resumeToken || response.resume_token
       });
-      setStatusMessage("已拉取服务端会话状态");
+      if (response.resume_token) {
+        setResumeToken(response.resume_token);
+      }
+      setStatusMessage(options?.restoreForeground ? "前台恢复后已同步口语会话状态" : "已拉取服务端会话状态");
       setError(null);
+      return response;
     } catch (sessionError) {
       setError(sessionError instanceof Error ? sessionError.message : "拉取会话状态失败");
+      return null;
     } finally {
-      setLoading(false);
+      if (!options?.skipLoading) {
+        setLoading(false);
+      }
     }
   };
 
-  const connect = (): void => {
+  const connect = async (options?: { skipPermissionCheck?: boolean }): Promise<void> => {
     if (!instanceConfig) {
       setConnectionStatus("未连接");
       setError("请先配置自托管实例");
@@ -303,6 +410,14 @@ export default function SpeakingScreen() {
     if (!sessionState?.session_id || !resumeToken) {
       setError("请先创建口语会话");
       return;
+    }
+
+    if (!options?.skipPermissionCheck) {
+      const granted = await ensureMicrophonePermission();
+      if (!granted) {
+        shouldReconnectRef.current = false;
+        return;
+      }
     }
 
     closeSocket();
@@ -321,6 +436,7 @@ export default function SpeakingScreen() {
         if (socketRef.current !== ws) {
           return;
         }
+        shouldReconnectRef.current = true;
         setConnectionStatus("已连接");
         setStatusMessage("实时连接已建立");
       };
@@ -397,6 +513,7 @@ export default function SpeakingScreen() {
         }
 
         if (payload.type === "session_end") {
+          shouldReconnectRef.current = false;
           setConnectionStatus("已结束");
           setStatusMessage("会话结束");
           setScoreText(formatScoreSummary(payload.summary));
@@ -440,6 +557,7 @@ export default function SpeakingScreen() {
         setConnectionStatus((current) => (current === "已结束" ? "已结束" : "已断开"));
       };
     } catch (connectError) {
+      shouldReconnectRef.current = false;
       setConnectionStatus("未连接");
       setError(connectError instanceof Error ? connectError.message : "连接实时会话失败");
     }
@@ -519,6 +637,7 @@ export default function SpeakingScreen() {
   const endSession = async (): Promise<void> => {
     const socket = socketRef.current;
     if (socket && isSocketOpen(socket)) {
+      shouldReconnectRef.current = false;
       socket.send(
         JSON.stringify({
           type: "session_end"
@@ -535,6 +654,7 @@ export default function SpeakingScreen() {
     }
 
     setLoading(true);
+    shouldReconnectRef.current = false;
 
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
@@ -566,6 +686,7 @@ export default function SpeakingScreen() {
     }
 
     closeSocket();
+    shouldReconnectRef.current = false;
     setLoading(true);
 
     try {
@@ -701,6 +822,33 @@ export default function SpeakingScreen() {
     }
   };
 
+  useAppForegroundEffect(
+    async () => {
+      void syncMicrophonePermission();
+      void setIsAudioActiveAsync(true).catch(() => undefined);
+
+      if (loading || !sessionState?.session_id) {
+        return;
+      }
+
+      const response = await loadSessionStatus({
+        restoreForeground: true,
+        skipLoading: true
+      });
+
+      if (!response || !shouldReconnectRef.current || response.status === "ended") {
+        return;
+      }
+
+      await connect({
+        skipPermissionCheck: true
+      });
+    },
+    {
+      enabled: Boolean(sessionState?.session_id)
+    }
+  );
+
   const selectedScenario = scenarioItems.find((item) => item.scenario_type === scenarioType);
 
   if (!instanceConfig) {
@@ -788,6 +936,22 @@ export default function SpeakingScreen() {
       ) : null}
 
       <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>麦克风权限</Text>
+        <ButtonRow>
+          <StatusPill label={microphonePermissionStatus} tone={microphonePermissionStatus === "已授权" ? "success" : "neutral"} />
+          <StatusPill label={requestingMicrophonePermission ? "申请中" : "待命"} tone="accent" />
+        </ButtonRow>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>
+          实时口语进入连接前会先校验麦克风权限。应用切到后台后会关闭实时连接，并在恢复前台时尝试同步会话状态。
+        </Text>
+        <PrimaryButton
+          label={requestingMicrophonePermission ? "申请中..." : "授权麦克风"}
+          onPress={() => void ensureMicrophonePermission()}
+          disabled={requestingMicrophonePermission}
+        />
+      </InfoCard>
+
+      <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>当前会话</Text>
         <ButtonRow>
           <StatusPill label={connectionStatus} tone={connectionStatus === "已连接" || connectionStatus === "已结束" ? "success" : "neutral"} />
@@ -809,7 +973,7 @@ export default function SpeakingScreen() {
           <SecondaryButton label="拉取会话状态" onPress={() => void loadSessionStatus()} disabled={loading || !sessionState} />
         </ButtonRow>
         <ButtonRow>
-          <PrimaryButton label="连接实时会话" onPress={connect} disabled={!sessionState || !resumeToken} />
+          <PrimaryButton label="连接实时会话" onPress={() => void connect()} disabled={!sessionState || !resumeToken} />
           <SecondaryButton label="结束会话" onPress={() => void endSession()} disabled={loading || !sessionState} />
         </ButtonRow>
       </InfoCard>

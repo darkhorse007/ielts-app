@@ -24,6 +24,7 @@ AVD_NAME="${MOBILE_ANDROID_E2E_AVD_NAME:-}"
 EXPO_GO_PACKAGE="${MOBILE_ANDROID_E2E_EXPO_GO_PACKAGE:-host.exp.exponent}"
 DEVICE_WAIT_SECONDS="${MOBILE_ANDROID_E2E_DEVICE_WAIT_SECONDS:-120}"
 EXPO_GO_WAIT_SECONDS="${MOBILE_ANDROID_E2E_EXPO_GO_WAIT_SECONDS:-60}"
+FLOW_RETRY_COUNT="${MOBILE_ANDROID_E2E_FLOW_RETRY_COUNT:-2}"
 ANDROID_SDK_ROOT_VALUE="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 ADB_BIN="${MOBILE_ANDROID_E2E_ADB_BIN:-}"
 EMULATOR_BIN="${MOBILE_ANDROID_E2E_EMULATOR_BIN:-}"
@@ -380,12 +381,25 @@ bash scripts/ci/start-server-and-wait.sh \
 run_maestro_flow() {
   local flow_file="$1"
   local register_email="$2"
+  local attempt=1
 
-  launch_expo_go_app
-  maestro --platform=android --device="$DEVICE_SERIAL" test "$flow_file" \
-    -e APP_URL="$APP_URL" \
-    -e REGISTER_EMAIL="$register_email" \
-    -e REGISTER_PASSWORD="$REGISTER_PASSWORD"
+  while [[ "$attempt" -le "$FLOW_RETRY_COUNT" ]]; do
+    launch_expo_go_app
+    if maestro --platform=android --device="$DEVICE_SERIAL" test "$flow_file" \
+      -e APP_URL="$APP_URL" \
+      -e REGISTER_EMAIL="$register_email" \
+      -e REGISTER_PASSWORD="$REGISTER_PASSWORD"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -ge "$FLOW_RETRY_COUNT" ]]; then
+      return 1
+    fi
+
+    echo "Android maestro flow failed on attempt ${attempt}/${FLOW_RETRY_COUNT}; retrying ${flow_file}" >&2
+    attempt=$((attempt + 1))
+    sleep 3
+  done
 }
 
 if [[ -n "$FLOW_FILE" ]]; then

@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { Pressable, Share, Text, View } from "react-native";
 import { useState } from "react";
 import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-types";
+import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
@@ -272,6 +273,18 @@ export default function MockExamScreen() {
       setLoading(false);
     }
   };
+
+  useAppForegroundEffect(
+    async () => {
+      if (loading || !exam?.exam_id || exam.status !== "in_progress") {
+        return;
+      }
+      await recoverExam();
+    },
+    {
+      enabled: Boolean(exam?.exam_id && exam.status === "in_progress")
+    }
+  );
 
   return (
     <AppScreen

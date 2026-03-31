@@ -2,6 +2,7 @@ import { Redirect, useLocalSearchParams, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
+import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -60,6 +61,18 @@ export default function DiagnosticScreen() {
       void loadQuestions(initialAssessmentId);
     }
   }, [initialAssessmentId]);
+
+  useAppForegroundEffect(
+    async () => {
+      if (loading || !assessmentId.trim()) {
+        return;
+      }
+      await loadQuestions(assessmentId.trim());
+    },
+    {
+      enabled: Boolean(assessmentId.trim())
+    }
+  );
 
   const submitAnswer = async (): Promise<void> => {
     if (!assessmentId.trim() || !questionId.trim()) {
