@@ -1,13 +1,55 @@
 import { Redirect, router } from "expo-router";
 import { Pressable, Share, Text, View } from "react-native";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type MockSkill = "listening" | "speaking" | "reading" | "writing";
+type MockExamSnapshot = {
+  version: 1;
+  exam: MockExamResponse | null;
+  report: MockExamReportResponse | null;
+  timeLimitSeconds: string;
+  skill: MockSkill;
+  answeredCount: string;
+  listeningBand: string;
+  speakingBand: string;
+  readingBand: string;
+  writingBand: string;
+  exportPreview: string;
+  exportFilename: string;
+  updatedAt: string;
+};
+
+const defaultTimeLimitSeconds = "7200";
+const defaultSkill: MockSkill = "reading";
+const defaultAnsweredCount = "20";
+const defaultListeningBand = "6.5";
+const defaultSpeakingBand = "6";
+const defaultReadingBand = "6";
+const defaultWritingBand = "6";
+
+const isDefaultMockExamSnapshot = (snapshot: MockExamSnapshot): boolean =>
+  snapshot.exam === null &&
+  snapshot.report === null &&
+  snapshot.timeLimitSeconds === defaultTimeLimitSeconds &&
+  snapshot.skill === defaultSkill &&
+  snapshot.answeredCount === defaultAnsweredCount &&
+  snapshot.listeningBand === defaultListeningBand &&
+  snapshot.speakingBand === defaultSpeakingBand &&
+  snapshot.readingBand === defaultReadingBand &&
+  snapshot.writingBand === defaultWritingBand &&
+  snapshot.exportPreview === "-" &&
+  snapshot.exportFilename === "-";
+
+const formatCheckpointTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
 
 const skillOptions: Array<{
   value: MockSkill;
@@ -53,16 +95,20 @@ const formatErrors = (report: MockExamReportResponse | null): string =>
 
 export default function MockExamScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
+  const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSnapshotPersistRef = useRef(false);
   const [exam, setExam] = useState<MockExamResponse | null>(null);
   const [report, setReport] = useState<MockExamReportResponse | null>(null);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState("7200");
-  const [skill, setSkill] = useState<MockSkill>("reading");
-  const [answeredCount, setAnsweredCount] = useState("20");
-  const [listeningBand, setListeningBand] = useState("6.5");
-  const [speakingBand, setSpeakingBand] = useState("6");
-  const [readingBand, setReadingBand] = useState("6");
-  const [writingBand, setWritingBand] = useState("6");
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(defaultTimeLimitSeconds);
+  const [skill, setSkill] = useState<MockSkill>(defaultSkill);
+  const [answeredCount, setAnsweredCount] = useState(defaultAnsweredCount);
+  const [listeningBand, setListeningBand] = useState(defaultListeningBand);
+  const [speakingBand, setSpeakingBand] = useState(defaultSpeakingBand);
+  const [readingBand, setReadingBand] = useState(defaultReadingBand);
+  const [writingBand, setWritingBand] = useState(defaultWritingBand);
   const [statusMessage, setStatusMessage] = useState("未开始");
+  const [checkpointStatus, setCheckpointStatus] = useState("本地中间态未恢复");
+  const [checkpointReady, setCheckpointReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState("-");
@@ -71,6 +117,140 @@ export default function MockExamScreen() {
   if (!authSession) {
     return <Redirect href="/login" />;
   }
+
+  const snapshotStorageKey = buildScopedStorageKey("mock-exam", "draft", "v1", authSession.userId);
+
+  const resetSnapshotState = (): void => {
+    setExam(null);
+    setReport(null);
+    setTimeLimitSeconds(defaultTimeLimitSeconds);
+    setSkill(defaultSkill);
+    setAnsweredCount(defaultAnsweredCount);
+    setListeningBand(defaultListeningBand);
+    setSpeakingBand(defaultSpeakingBand);
+    setReadingBand(defaultReadingBand);
+    setWritingBand(defaultWritingBand);
+    setStatusMessage("未开始");
+    setError(null);
+    setExportPreview("-");
+    setExportFilename("-");
+  };
+
+  const persistSnapshot = useEffectEvent(async (snapshot: MockExamSnapshot) => {
+    if (isDefaultMockExamSnapshot(snapshot)) {
+      await clearStoredJson(snapshotStorageKey);
+      setCheckpointStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(snapshotStorageKey, snapshot);
+    setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    resetSnapshotState();
+    setCheckpointReady(false);
+    setCheckpointStatus("正在恢复本地中间态...");
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    void (async () => {
+      const snapshot = await loadStoredJson<MockExamSnapshot>(snapshotStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setExam(snapshot.exam);
+        setReport(snapshot.report);
+        setTimeLimitSeconds(snapshot.timeLimitSeconds);
+        setSkill(snapshot.skill);
+        setAnsweredCount(snapshot.answeredCount);
+        setListeningBand(snapshot.listeningBand);
+        setSpeakingBand(snapshot.speakingBand);
+        setReadingBand(snapshot.readingBand);
+        setWritingBand(snapshot.writingBand);
+        setExportPreview(snapshot.exportPreview);
+        setExportFilename(snapshot.exportFilename);
+        setStatusMessage(snapshot.exam ? "已恢复本地模考中间态" : "未开始");
+        setCheckpointStatus(`已恢复 ${formatCheckpointTime(snapshot.updatedAt)}`);
+      } else {
+        setCheckpointStatus("已启用自动保存");
+      }
+
+      skipNextSnapshotPersistRef.current = true;
+      setCheckpointReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [snapshotStorageKey]);
+
+  useEffect(() => {
+    if (!checkpointReady) {
+      return;
+    }
+
+    if (skipNextSnapshotPersistRef.current) {
+      skipNextSnapshotPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: MockExamSnapshot = {
+      version: 1,
+      exam,
+      report,
+      timeLimitSeconds,
+      skill,
+      answeredCount,
+      listeningBand,
+      speakingBand,
+      readingBand,
+      writingBand,
+      exportPreview,
+      exportFilename,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+    }
+
+    snapshotSaveTimeoutRef.current = setTimeout(() => {
+      void persistSnapshot(snapshot);
+      snapshotSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    answeredCount,
+    checkpointReady,
+    exam,
+    exportFilename,
+    exportPreview,
+    listeningBand,
+    persistSnapshot,
+    readingBand,
+    report,
+    skill,
+    speakingBand,
+    timeLimitSeconds,
+    writingBand
+  ]);
 
   const createExam = async (): Promise<void> => {
     const optimisticExam: MockExamResponse = {
@@ -274,6 +454,20 @@ export default function MockExamScreen() {
     }
   };
 
+  const clearLocalCheckpoint = async (): Promise<void> => {
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    await clearStoredJson(snapshotStorageKey);
+    skipNextSnapshotPersistRef.current = true;
+    resetSnapshotState();
+    setCheckpointReady(true);
+    setCheckpointStatus("本地中间态已清空");
+    setStatusMessage("已清空本地模考中间态");
+  };
+
   useAppForegroundEffect(
     async () => {
       if (loading || !exam?.exam_id || exam.status !== "in_progress") {
@@ -310,6 +504,18 @@ export default function MockExamScreen() {
             testID="mockExam.create"
           />
           <SecondaryButton label="拉取模考状态" onPress={() => void loadExam()} disabled={loading || !exam} />
+        </ButtonRow>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地中间态恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>checkpoint_status: {checkpointStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          restore_target: {exam?.exam_id ? `exam ${exam.exam_id}` : "当前尚无本地模考 checkpoint"}
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="恢复模考" onPress={() => void recoverExam()} disabled={loading || !exam} />
+          <SecondaryButton label="清空本地中间态" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
         </ButtonRow>
       </InfoCard>
 

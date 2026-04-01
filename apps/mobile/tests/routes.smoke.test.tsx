@@ -147,9 +147,78 @@ describe("mobile route smoke", () => {
 
     render(<MockExamScreen />);
 
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("checkpoint_status: 已启用自动保存"))).toBeTruthy();
+    });
     expect(screen.getByText("模考与报告已进入移动端")).toBeTruthy();
     expect(screen.getByText("创建模考")).toBeTruthy();
     expect(screen.getByText("导出结果")).toBeTruthy();
+  });
+
+  test("mock exam screen restores local checkpoint snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("mock-exam", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        exam: {
+          exam_id: "mock-restored-1",
+          status: "in_progress",
+          time_limit_seconds: 7200,
+          elapsed_seconds: 900,
+          remaining_seconds: 6300,
+          current_skill: "reading",
+          sections: [],
+          created_at: "2026-03-31T00:00:00.000Z",
+          updated_at: "2026-03-31T00:15:00.000Z"
+        },
+        report: {
+          report_id: "report-restored-1",
+          exam_id: "mock-restored-1",
+          total_estimated_band: 6.5,
+          skill_band_estimates: {
+            listening: 6.5,
+            speaking: 6,
+            reading: 6.5,
+            writing: 6
+          },
+          error_distribution: {
+            listening: 3,
+            speaking: 2,
+            reading: 4,
+            writing: 3
+          },
+          next_actions: ["补强阅读限时节奏"],
+          plan_writeback: {
+            applied: false,
+            undo_available: false,
+            reasons: [],
+            changed_tasks: []
+          },
+          generated_at: "2026-03-31T00:20:00.000Z",
+          created_at: "2026-03-31T00:20:00.000Z",
+          updated_at: "2026-03-31T00:20:00.000Z"
+        },
+        timeLimitSeconds: "7200",
+        skill: "reading",
+        answeredCount: "18",
+        listeningBand: "6.5",
+        speakingBand: "6",
+        readingBand: "6.5",
+        writingBand: "6",
+        exportPreview: "restored preview",
+        exportFilename: "restored-report.json",
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<MockExamScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("已恢复本地模考中间态")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("exam_id: mock-restored-1"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("filename: restored-report.json"))).toBeTruthy();
   });
 
   test("account screen loads profile and export/delete controls", async () => {
