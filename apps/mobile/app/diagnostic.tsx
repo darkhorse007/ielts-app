@@ -1,8 +1,9 @@
 import { Redirect, useLocalSearchParams, router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -10,9 +11,41 @@ import { colors } from "../src/ui/theme";
 const pickCurrentQuestion = (response: DiagnosticQuestionsResponse) =>
   response.questions[response.current_question_index] ?? response.questions[0] ?? null;
 
+type DiagnosticSnapshot = {
+  version: 1;
+  assessmentId: string;
+  questionId: string;
+  questionPrompt: string;
+  answer: string;
+  status: string;
+  elapsedSeconds: number;
+  progressText: string;
+  skillBandText: string;
+  planId: string | null;
+  updatedAt: string;
+};
+
+const isDefaultDiagnosticSnapshot = (snapshot: DiagnosticSnapshot): boolean =>
+  snapshot.assessmentId === "" &&
+  snapshot.questionId === "" &&
+  snapshot.questionPrompt === "尚未加载题目" &&
+  snapshot.answer === "" &&
+  snapshot.status === "未开始" &&
+  snapshot.elapsedSeconds === 0 &&
+  snapshot.progressText === "-" &&
+  snapshot.skillBandText === "-" &&
+  snapshot.planId === null;
+
+const formatCheckpointTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
+
 export default function DiagnosticScreen() {
   const params = useLocalSearchParams<{ assessmentId?: string | string[] }>();
   const { session, runWithAuthorizedClient } = useAppSession();
+  const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSnapshotPersistRef = useRef(false);
   const initialAssessmentId = Array.isArray(params.assessmentId) ? params.assessmentId[0] : params.assessmentId;
   const [assessmentId, setAssessmentId] = useState(initialAssessmentId ?? "");
   const [questionId, setQuestionId] = useState("");
@@ -23,12 +56,40 @@ export default function DiagnosticScreen() {
   const [progressText, setProgressText] = useState("-");
   const [skillBandText, setSkillBandText] = useState("-");
   const [planId, setPlanId] = useState<string | null>(null);
+  const [checkpointStatus, setCheckpointStatus] = useState("本地中间态未恢复");
+  const [checkpointReady, setCheckpointReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   if (!session) {
     return <Redirect href="/login" />;
   }
+
+  const snapshotStorageKey = buildScopedStorageKey("diagnostic", "draft", "v1", session.userId);
+
+  const resetSnapshotState = (): void => {
+    setAssessmentId(initialAssessmentId ?? "");
+    setQuestionId("");
+    setQuestionPrompt("尚未加载题目");
+    setAnswer("");
+    setStatus("未开始");
+    setElapsedSeconds(0);
+    setProgressText("-");
+    setSkillBandText("-");
+    setPlanId(null);
+    setError(null);
+  };
+
+  const persistSnapshot = useEffectEvent(async (snapshot: DiagnosticSnapshot) => {
+    if (isDefaultDiagnosticSnapshot(snapshot)) {
+      await clearStoredJson(snapshotStorageKey);
+      setCheckpointStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(snapshotStorageKey, snapshot);
+    setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
+  });
 
   const loadQuestions = async (nextAssessmentId = assessmentId.trim()): Promise<void> => {
     if (!nextAssessmentId) {
@@ -57,10 +118,115 @@ export default function DiagnosticScreen() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
+    resetSnapshotState();
+    setCheckpointReady(false);
+    setCheckpointStatus("正在恢复本地中间态...");
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    void (async () => {
+      if (initialAssessmentId) {
+        skipNextSnapshotPersistRef.current = true;
+        setCheckpointStatus("assessment_id 由路由参数接管");
+        setCheckpointReady(true);
+        return;
+      }
+
+      const snapshot = await loadStoredJson<DiagnosticSnapshot>(snapshotStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setAssessmentId(snapshot.assessmentId);
+        setQuestionId(snapshot.questionId);
+        setQuestionPrompt(snapshot.questionPrompt);
+        setAnswer(snapshot.answer);
+        setStatus(snapshot.status);
+        setElapsedSeconds(snapshot.elapsedSeconds);
+        setProgressText(snapshot.progressText);
+        setSkillBandText(snapshot.skillBandText);
+        setPlanId(snapshot.planId);
+        setCheckpointStatus(`已恢复 ${formatCheckpointTime(snapshot.updatedAt)}`);
+      } else {
+        setCheckpointStatus("已启用自动保存");
+      }
+
+      skipNextSnapshotPersistRef.current = true;
+      setCheckpointReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [initialAssessmentId, snapshotStorageKey]);
+
+  useEffect(() => {
     if (initialAssessmentId) {
       void loadQuestions(initialAssessmentId);
     }
   }, [initialAssessmentId]);
+
+  useEffect(() => {
+    if (!checkpointReady) {
+      return;
+    }
+
+    if (skipNextSnapshotPersistRef.current) {
+      skipNextSnapshotPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: DiagnosticSnapshot = {
+      version: 1,
+      assessmentId,
+      questionId,
+      questionPrompt,
+      answer,
+      status,
+      elapsedSeconds,
+      progressText,
+      skillBandText,
+      planId,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+    }
+
+    snapshotSaveTimeoutRef.current = setTimeout(() => {
+      void persistSnapshot(snapshot);
+      snapshotSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    answer,
+    assessmentId,
+    checkpointReady,
+    elapsedSeconds,
+    persistSnapshot,
+    planId,
+    progressText,
+    questionId,
+    questionPrompt,
+    skillBandText,
+    status
+  ]);
 
   useAppForegroundEffect(
     async () => {
@@ -149,6 +315,19 @@ export default function DiagnosticScreen() {
     }
   };
 
+  const clearLocalCheckpoint = async (): Promise<void> => {
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    await clearStoredJson(snapshotStorageKey);
+    skipNextSnapshotPersistRef.current = true;
+    resetSnapshotState();
+    setCheckpointReady(true);
+    setCheckpointStatus("本地中间态已清空");
+  };
+
   return (
     <AppScreen
       eyebrow="Diagnostic"
@@ -163,6 +342,18 @@ export default function DiagnosticScreen() {
         autoCapitalize="none"
         autoCorrect={false}
       />
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地中间态恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>checkpoint_status: {checkpointStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          restore_target: {assessmentId.trim() ? `assessment ${assessmentId.trim()}` : "当前尚无本地 diagnostic checkpoint"}
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="加载题目" onPress={() => void loadQuestions()} disabled={loading} />
+          <SecondaryButton label="清空本地中间态" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
+        </ButtonRow>
+      </InfoCard>
 
       <InfoCard tone="accent">
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>当前题目</Text>

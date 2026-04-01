@@ -8,6 +8,7 @@ import { buildScopedStorageKey } from "../src/lib/storage";
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
+import DiagnosticScreen from "../app/diagnostic";
 import HomeScreen from "../app/home";
 import ListeningScreen from "../app/listening";
 import ReadingScreen from "../app/reading";
@@ -19,7 +20,8 @@ vi.mock("expo-router", () => ({
   router: {
     push: vi.fn(),
     replace: vi.fn()
-  }
+  },
+  useLocalSearchParams: vi.fn(() => ({}))
 }));
 
 vi.mock("../src/state/app-session", () => ({
@@ -327,6 +329,35 @@ describe("mobile route smoke", () => {
     });
     expect(screen.getByText((content) => content.includes("session_id: listening-restored-1"))).toBeTruthy();
     expect(screen.getByDisplayValue("restored listening answer")).toBeTruthy();
+  });
+
+  test("diagnostic screen restores local checkpoint snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("diagnostic", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        assessmentId: "diag-restored-1",
+        questionId: "diagnostic-q-1",
+        questionPrompt: "Restored diagnostic question",
+        answer: "restored diagnostic answer",
+        status: "in_progress",
+        elapsedSeconds: 180,
+        progressText: "2/12",
+        skillBandText: "-",
+        planId: null,
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<DiagnosticScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("checkpoint_status: 已恢复"))).toBeTruthy();
+    });
+    expect(screen.getByDisplayValue("diag-restored-1")).toBeTruthy();
+    expect(screen.getByDisplayValue("restored diagnostic answer")).toBeTruthy();
+    expect(screen.getByText("Restored diagnostic question")).toBeTruthy();
   });
 
   test("account screen loads profile and export/delete controls", async () => {
