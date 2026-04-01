@@ -9,6 +9,7 @@ import {
 } from "react";
 import { ApiClient, ApiRequestError } from "../lib/api-client";
 import type { StoredSession, TokenResponse } from "../lib/api-types";
+import { cancelReminderNotificationsAsync } from "../lib/notifications";
 import { resolveDefaultInstanceConfig, type InstanceConfig } from "../lib/runtime-config";
 import {
   clearStoredSession,
@@ -93,7 +94,7 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   };
 
   const logout = async (): Promise<void> => {
-    await clearStoredSession();
+    await Promise.all([clearStoredSession(), cancelReminderNotificationsAsync().catch(() => 0)]);
     startTransition(() => {
       setState((current) => ({
         ...current,
@@ -109,7 +110,7 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
 
     await saveStoredInstanceConfig(config);
     if (changed) {
-      await clearStoredSession();
+      await Promise.all([clearStoredSession(), cancelReminderNotificationsAsync().catch(() => 0)]);
     }
 
     startTransition(() => {

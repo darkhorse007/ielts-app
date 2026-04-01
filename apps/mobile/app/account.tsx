@@ -9,12 +9,36 @@ import type {
   RequestDeletionResponse,
   UserProfileResponse
 } from "../src/lib/api-types";
+import {
+  allowsNotifications,
+  cancelReminderNotificationsAsync,
+  getNotificationPermissionsStatusAsync,
+  getScheduledReminderSummaryAsync,
+  requestNotificationPermissionsAsync,
+  scheduleReminderNotificationAsync,
+  toNotificationPermissionLabel
+} from "../src/lib/notifications";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
 const formatValue = (value?: string | number | null): string =>
   value === undefined || value === null || value === "" ? "-" : String(value);
+
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
 
 const buildFallbackProfile = (userId: string): UserProfileResponse => {
   const timestamp = new Date().toISOString();
@@ -102,6 +126,11 @@ export default function AccountScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastAccountAction, setLastAccountAction] = useState("等待操作");
   const [lastAccountResult, setLastAccountResult] = useState("尚未触发请求");
+  const [notificationPermissionStatus, setNotificationPermissionStatus] = useState("检查中");
+  const [localReminderStatus, setLocalReminderStatus] = useState("未安排本地提醒");
+  const [localReminderTarget, setLocalReminderTarget] = useState("-");
+  const [localReminderId, setLocalReminderId] = useState("-");
+  const [syncingNotifications, setSyncingNotifications] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -118,6 +147,36 @@ export default function AccountScreen() {
     setHasHydratedAccount(true);
     setStatusMessage((current) => (current === "未加载" ? "使用本地会话兜底" : current));
   }, [session]);
+
+  const syncNotificationState = async (): Promise<void> => {
+    setSyncingNotifications(true);
+    try {
+      const permission = await getNotificationPermissionsStatusAsync();
+      setNotificationPermissionStatus(toNotificationPermissionLabel(permission));
+
+      const scheduled = await getScheduledReminderSummaryAsync();
+      if (scheduled) {
+        setLocalReminderStatus(`已安排 ${formatIsoDateTime(scheduled.scheduledAt)}`);
+        setLocalReminderTarget(scheduled.deepLink);
+        setLocalReminderId(scheduled.reminderId ?? scheduled.identifier);
+      } else {
+        setLocalReminderStatus("未安排本地提醒");
+        setLocalReminderTarget("-");
+        setLocalReminderId("-");
+      }
+    } catch {
+      setNotificationPermissionStatus("检查失败");
+      setLocalReminderStatus("读取失败");
+      setLocalReminderTarget("-");
+      setLocalReminderId("-");
+    } finally {
+      setSyncingNotifications(false);
+    }
+  };
+
+  useEffect(() => {
+    void syncNotificationState();
+  }, []);
 
   const loadAccount = async (): Promise<void> => {
     if (hydratingAccountRef.current) {
@@ -173,7 +232,7 @@ export default function AccountScreen() {
   }
 
   const accountBusy = loading || hydratingProfile;
-  const reminderBusy = loading || hydratingProfile || hydratingReminder;
+  const reminderBusy = loading || hydratingProfile || hydratingReminder || syncingNotifications;
   const accountReady = Boolean(profile) && hasHydratedAccount && !hydratingProfile;
 
   const saveReminderPreference = async (): Promise<void> => {
@@ -192,11 +251,14 @@ export default function AccountScreen() {
           apiClient.getReminderRecommendation(accessToken)
         );
         setRecommendation(nextRecommendation.subscribed ? nextRecommendation : null);
+        setStatusMessage("提醒设置已更新");
       } else {
         setRecommendation(null);
+        const cleared = await cancelReminderNotificationsAsync();
+        setStatusMessage(cleared > 0 ? "提醒已关闭，已清空本地提醒" : "提醒已关闭");
       }
 
-      setStatusMessage(nextPreference.subscribed ? "提醒设置已更新" : "提醒已关闭");
+      await syncNotificationState();
       setError(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "更新提醒设置失败");
@@ -228,6 +290,75 @@ export default function AccountScreen() {
       setError(null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "加载提醒建议失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const authorizeNotifications = async (): Promise<boolean> => {
+    const current = await getNotificationPermissionsStatusAsync();
+    if (allowsNotifications(current) || !current.available) {
+      setNotificationPermissionStatus(toNotificationPermissionLabel(current));
+      return allowsNotifications(current);
+    }
+
+    const requested = await requestNotificationPermissionsAsync();
+    setNotificationPermissionStatus(toNotificationPermissionLabel(requested));
+    return allowsNotifications(requested);
+  };
+
+  const scheduleLocalReminder = async (): Promise<void> => {
+    if (!recommendation?.subscribed || !recommendation.reminder_id) {
+      setError("请先刷新提醒建议，再安排本地提醒");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const granted = await authorizeNotifications();
+      if (!granted) {
+        const permission = await getNotificationPermissionsStatusAsync();
+        if (!permission.available) {
+          setStatusMessage("当前环境不支持本地提醒");
+          setError("当前运行环境不支持本地通知，请使用 development build 或正式安装包");
+          return;
+        }
+
+        setStatusMessage("通知权限未授权");
+        setError("请先允许学习提醒通知");
+        return;
+      }
+
+      const scheduled = await scheduleReminderNotificationAsync({
+        title: "IELTS 学习提醒",
+        body: recommendation.reason || "打开学习计划继续今天的任务。",
+        deepLink: recommendation.deep_link ?? "/plan",
+        reminderId: recommendation.reminder_id,
+        scheduledAt: recommendation.scheduled_at
+      });
+      setLocalReminderStatus(`已安排 ${formatIsoDateTime(scheduled.scheduledAt)}`);
+      setLocalReminderTarget(scheduled.deepLink);
+      setLocalReminderId(scheduled.reminderId ?? scheduled.identifier);
+      setStatusMessage("已安排本地提醒");
+      setError(null);
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "安排本地提醒失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearLocalReminder = async (): Promise<void> => {
+    setLoading(true);
+    try {
+      const cleared = await cancelReminderNotificationsAsync();
+      setLocalReminderStatus("未安排本地提醒");
+      setLocalReminderTarget("-");
+      setLocalReminderId("-");
+      setStatusMessage(cleared > 0 ? "已清空本地提醒" : "当前没有待清空的本地提醒");
+      setError(null);
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : "清空本地提醒失败");
     } finally {
       setLoading(false);
     }
@@ -525,6 +656,18 @@ export default function AccountScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             deep_link: {formatValue(recommendation?.deep_link)}
           </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            notification_permission: {notificationPermissionStatus}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            local_reminder: {localReminderStatus}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            local_reminder_id: {localReminderId}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            local_target: {localReminderTarget}
+          </Text>
         </View>
         <ButtonRow>
           <PrimaryButton
@@ -552,11 +695,31 @@ export default function AccountScreen() {
         </ButtonRow>
         <ButtonRow>
           <PrimaryButton
+            label="授权通知"
+            onPress={() => void authorizeNotifications()}
+            disabled={reminderBusy}
+          />
+          <SecondaryButton
+            label="安排本地提醒"
+            onPress={() => void scheduleLocalReminder()}
+            disabled={reminderBusy || !recommendation?.reminder_id}
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton
             label="模拟点击提醒"
             onPress={() => void clickReminder()}
             disabled={reminderBusy || !recommendation?.reminder_id}
           />
-          <SecondaryButton label="查看计划" onPress={() => router.push("/plan")} />
+          <SecondaryButton
+            label="清空本地提醒"
+            onPress={() => void clearLocalReminder()}
+            disabled={reminderBusy}
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} />
+          <SecondaryButton label="刷新本地提醒状态" onPress={() => void syncNotificationState()} disabled={reminderBusy} />
         </ButtonRow>
       </InfoCard>
 

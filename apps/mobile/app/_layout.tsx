@@ -1,10 +1,47 @@
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  clearLastNotificationResponseAsync,
+  ensureReminderNotificationChannelAsync,
+  getLastNotificationRouteAsync,
+  subscribeToNotificationRoutesAsync
+} from "../src/lib/notifications";
 import { AppSessionProvider } from "../src/state/app-session";
 import { colors } from "../src/ui/theme";
 
 export default function RootLayout() {
+  useEffect(() => {
+    void ensureReminderNotificationChannelAsync().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: () => void = () => undefined;
+
+    const openNotificationRoute = async (route: string | null): Promise<void> => {
+      if (!active || !route) {
+        return;
+      }
+
+      router.push(route);
+      await clearLastNotificationResponseAsync();
+    };
+
+    void (async () => {
+      await openNotificationRoute(await getLastNotificationRouteAsync());
+      unsubscribe = await subscribeToNotificationRoutesAsync((route) => {
+        void openNotificationRoute(route);
+      });
+    })();
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   return (
     <AppSessionProvider>
       <SafeAreaProvider>

@@ -2,6 +2,7 @@ import React from "react";
 import { vi } from "vitest";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { __DEV__: boolean }).__DEV__ = true;
 
 const normalizeDomProps = (props: Record<string, unknown> | null | undefined): Record<string, unknown> | null | undefined => {
   if (!props || typeof props.testID !== "string") {
@@ -18,6 +19,24 @@ const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 const appStateListeners = new Set<(state: "active" | "background" | "inactive") => void>();
 const secureStoreValues = new Map<string, string>();
+const notificationResponseListeners = new Set<(response: any) => void>();
+const scheduledNotifications: Array<{
+  identifier: string;
+  content: Record<string, unknown>;
+  trigger: Record<string, unknown> | null;
+}> = [];
+let notificationHandler: Record<string, unknown> | null = null;
+let notificationCounter = 0;
+let lastNotificationResponse: Record<string, unknown> | null = null;
+let notificationPermissionState = {
+  granted: true,
+  canAskAgain: true,
+  expires: "never",
+  status: "granted",
+  ios: {
+    status: 2
+  }
+};
 
 (React as typeof React & {
   createElement: typeof React.createElement;
@@ -160,6 +179,12 @@ vi.mock("expo-audio", () => ({
   setIsAudioActiveAsync: vi.fn().mockResolvedValue(undefined)
 }));
 
+vi.mock("expo-constants", () => ({
+  default: {
+    appOwnership: null
+  }
+}));
+
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(async (key: string) => secureStoreValues.get(key) ?? null),
   setItemAsync: vi.fn(async (key: string, value: string) => {
@@ -175,4 +200,98 @@ vi.mock("expo-secure-store", () => ({
     secureStoreValues.set(key, value);
   },
   __getMockItem: (key: string) => secureStoreValues.get(key) ?? null
+}));
+
+vi.mock("expo-notifications", () => ({
+  AndroidImportance: {
+    HIGH: "high"
+  },
+  AndroidNotificationPriority: {
+    HIGH: "high"
+  },
+  IosAuthorizationStatus: {
+    AUTHORIZED: 2,
+    PROVISIONAL: 3,
+    EPHEMERAL: 4
+  },
+  SchedulableTriggerInputTypes: {
+    DATE: "date"
+  },
+  setNotificationHandler: vi.fn((handler: Record<string, unknown>) => {
+    notificationHandler = handler;
+  }),
+  getPermissionsAsync: vi.fn(async () => ({ ...notificationPermissionState })),
+  requestPermissionsAsync: vi.fn(async () => {
+    notificationPermissionState = {
+      granted: true,
+      canAskAgain: true,
+      expires: "never",
+      status: "granted",
+      ios: {
+        status: 2
+      }
+    };
+    return { ...notificationPermissionState };
+  }),
+  setNotificationChannelAsync: vi.fn(async () => null),
+  getAllScheduledNotificationsAsync: vi.fn(async () => scheduledNotifications.map((item) => ({ ...item }))),
+  scheduleNotificationAsync: vi.fn(async (request: { content: Record<string, unknown>; trigger: Record<string, unknown> | null }) => {
+    notificationCounter += 1;
+    const identifier = `notification-${notificationCounter}`;
+    scheduledNotifications.push({
+      identifier,
+      content: request.content,
+      trigger: request.trigger
+    });
+    return identifier;
+  }),
+  cancelScheduledNotificationAsync: vi.fn(async (identifier: string) => {
+    const index = scheduledNotifications.findIndex((item) => item.identifier === identifier);
+    if (index >= 0) {
+      scheduledNotifications.splice(index, 1);
+    }
+  }),
+  addNotificationResponseReceivedListener: vi.fn((listener: (response: Record<string, unknown>) => void) => {
+    notificationResponseListeners.add(listener);
+    return {
+      remove: () => {
+        notificationResponseListeners.delete(listener);
+      }
+    };
+  }),
+  getLastNotificationResponse: vi.fn(() => lastNotificationResponse),
+  clearLastNotificationResponse: vi.fn(() => {
+    lastNotificationResponse = null;
+  }),
+  __resetMockNotifications: () => {
+    notificationHandler = null;
+    notificationCounter = 0;
+    lastNotificationResponse = null;
+    scheduledNotifications.splice(0, scheduledNotifications.length);
+    notificationResponseListeners.clear();
+    notificationPermissionState = {
+      granted: true,
+      canAskAgain: true,
+      expires: "never",
+      status: "granted",
+      ios: {
+        status: 2
+      }
+    };
+  },
+  __getMockScheduledNotifications: () => scheduledNotifications.map((item) => ({ ...item })),
+  __setMockNotificationPermission: (overrides: Partial<typeof notificationPermissionState>) => {
+    notificationPermissionState = {
+      ...notificationPermissionState,
+      ...overrides,
+      ios: {
+        ...notificationPermissionState.ios,
+        ...overrides.ios
+      }
+    };
+  },
+  __emitMockNotificationResponse: (response: Record<string, unknown>) => {
+    lastNotificationResponse = response;
+    notificationResponseListeners.forEach((listener) => listener(response));
+  }
 }));

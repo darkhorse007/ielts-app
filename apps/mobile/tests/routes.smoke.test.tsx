@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -44,6 +45,20 @@ const mockedUseAppSession = vi.mocked(useAppSession);
 const mockedSecureStore = SecureStore as typeof SecureStore & {
   __resetMockStorage: () => void;
   __setMockItem: (key: string, value: string) => void;
+};
+const mockedNotifications = Notifications as typeof Notifications & {
+  __resetMockNotifications: () => void;
+  __getMockScheduledNotifications: () => Array<{
+    identifier: string;
+    content: {
+      title?: string;
+      body?: string;
+      data?: Record<string, unknown>;
+    };
+    trigger: {
+      date?: Date | number;
+    } | null;
+  }>;
 };
 
 const createSessionContext = (overrides?: {
@@ -130,6 +145,7 @@ describe("mobile route smoke", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedSecureStore.__resetMockStorage();
+    mockedNotifications.__resetMockNotifications();
   });
 
   test("home screen renders mock exam and account entry points", async () => {
@@ -369,8 +385,38 @@ describe("mobile route smoke", () => {
     expect(screen.getByText((content) => content.includes("user-1"))).toBeTruthy();
     expect(screen.getByText("account_ready")).toBeTruthy();
     expect(screen.getByText("未加载")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("notification_permission: 已授权"))).toBeTruthy();
+    });
     expect(screen.getByText("导出并分享")).toBeTruthy();
     expect(screen.getByText("立即删除")).toBeTruthy();
+  });
+
+  test("account screen can schedule local reminder notification", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    render(<AccountScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("notification_permission: 已授权"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("刷新提醒建议"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("reminder_id: rem-1"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("安排本地提醒"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("local_reminder: 已安排"))).toBeTruthy();
+    });
+
+    const scheduled = mockedNotifications.__getMockScheduledNotifications();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.content.title).toBe("IELTS 学习提醒");
+    expect(scheduled[0]?.content.data?.deepLink).toBe("/plan");
   });
 
   test("speaking screen renders permission gate and live controls", async () => {

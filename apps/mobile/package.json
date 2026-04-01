@@ -21,6 +21,7 @@
     "expo": "~55.0.9",
     "expo-audio": "~55.0.9",
     "expo-dev-client": "~55.0.19",
+    "expo-notifications": "~55.0.14",
     "expo-router": "~55.0.8",
     "expo-secure-store": "~55.0.9",
     "expo-status-bar": "~55.0.4",
