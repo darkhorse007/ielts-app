@@ -9,6 +9,7 @@ import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
 import HomeScreen from "../app/home";
+import ListeningScreen from "../app/listening";
 import ReadingScreen from "../app/reading";
 import MockExamScreen from "../app/mock-exam";
 import SpeakingScreen from "../app/speaking";
@@ -271,6 +272,61 @@ describe("mobile route smoke", () => {
     });
     expect(screen.getByText((content) => content.includes("session_id: reading-restored-1"))).toBeTruthy();
     expect(screen.getByDisplayValue("B")).toBeTruthy();
+  });
+
+  test("listening screen restores local checkpoint snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("listening", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        taskType: "dictation",
+        session: {
+          session_id: "listening-restored-1",
+          skill: "listening",
+          task_type: "dictation",
+          training_mode: "training",
+          mode: "core_training",
+          status: "in_progress",
+          created_at: "2026-03-31T00:00:00.000Z",
+          updated_at: "2026-03-31T00:10:00.000Z",
+          questions: [
+            {
+              question_id: "listening-q-1",
+              type: "dictation_sentence",
+              prompt: "Restored listening question",
+              audio_segment_index: 0
+            }
+          ]
+        },
+        answers: {
+          "listening-q-1": "restored listening answer"
+        },
+        playbackRate: "1.25",
+        segmentIndex: "2",
+        positionSeconds: "18",
+        replayWrongOnly: true,
+        queueCount: 2,
+        lastPlaybackSnapshot: {
+          playback_rate: 1.25,
+          segment_index: 2,
+          position_seconds: 18,
+          replay_wrong_only: true,
+          last_replayed_question_id: "listening-q-1",
+          last_recovered_at: "2026-03-31T00:12:00.000Z",
+          recovered: true
+        },
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<ListeningScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("已恢复本地听力会话")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("session_id: listening-restored-1"))).toBeTruthy();
+    expect(screen.getByDisplayValue("restored listening answer")).toBeTruthy();
   });
 
   test("account screen loads profile and export/delete controls", async () => {

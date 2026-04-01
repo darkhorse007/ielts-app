@@ -1,13 +1,48 @@
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type ListeningTaskType = "core_training" | "dictation";
+type ListeningSnapshot = {
+  version: 1;
+  taskType: ListeningTaskType;
+  session: PracticeSessionResponse | null;
+  answers: Record<string, string>;
+  playbackRate: string;
+  segmentIndex: string;
+  positionSeconds: string;
+  replayWrongOnly: boolean;
+  queueCount: number;
+  lastPlaybackSnapshot: PlaybackStateResponse | null;
+  updatedAt: string;
+};
+
+const defaultTaskType: ListeningTaskType = "core_training";
+const defaultPlaybackRate = "1";
+const defaultSegmentIndex = "0";
+const defaultPositionSeconds = "0";
+
+const isDefaultListeningSnapshot = (snapshot: ListeningSnapshot): boolean =>
+  snapshot.taskType === defaultTaskType &&
+  snapshot.session === null &&
+  Object.keys(snapshot.answers).length === 0 &&
+  snapshot.playbackRate === defaultPlaybackRate &&
+  snapshot.segmentIndex === defaultSegmentIndex &&
+  snapshot.positionSeconds === defaultPositionSeconds &&
+  snapshot.replayWrongOnly === false &&
+  snapshot.queueCount === 0 &&
+  snapshot.lastPlaybackSnapshot === null;
+
+const formatCheckpointTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
 
 const listeningTaskOptions: Array<{
   value: ListeningTaskType;
@@ -51,15 +86,19 @@ const renderQuestionLabel = (question: PracticeSessionResponse["questions"][numb
 
 export default function ListeningScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
-  const [taskType, setTaskType] = useState<ListeningTaskType>("core_training");
+  const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSnapshotPersistRef = useRef(false);
+  const [taskType, setTaskType] = useState<ListeningTaskType>(defaultTaskType);
   const [session, setSession] = useState<PracticeSessionResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState("未开始");
+  const [checkpointStatus, setCheckpointStatus] = useState("本地会话未恢复");
+  const [checkpointReady, setCheckpointReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState("1");
-  const [segmentIndex, setSegmentIndex] = useState("0");
-  const [positionSeconds, setPositionSeconds] = useState("0");
+  const [playbackRate, setPlaybackRate] = useState(defaultPlaybackRate);
+  const [segmentIndex, setSegmentIndex] = useState(defaultSegmentIndex);
+  const [positionSeconds, setPositionSeconds] = useState(defaultPositionSeconds);
   const [replayWrongOnly, setReplayWrongOnly] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
   const [lastPlaybackSnapshot, setLastPlaybackSnapshot] = useState<PlaybackStateResponse | null>(null);
@@ -67,6 +106,133 @@ export default function ListeningScreen() {
   if (!authSession) {
     return <Redirect href="/login" />;
   }
+
+  const snapshotStorageKey = buildScopedStorageKey("listening", "draft", "v1", authSession.userId);
+
+  const resetSnapshotState = (): void => {
+    setTaskType(defaultTaskType);
+    setSession(null);
+    setAnswers({});
+    setStatusMessage("未开始");
+    setCheckpointStatus("本地会话未恢复");
+    setError(null);
+    setPlaybackRate(defaultPlaybackRate);
+    setSegmentIndex(defaultSegmentIndex);
+    setPositionSeconds(defaultPositionSeconds);
+    setReplayWrongOnly(false);
+    setQueueCount(0);
+    setLastPlaybackSnapshot(null);
+  };
+
+  const persistSnapshot = useEffectEvent(async (snapshot: ListeningSnapshot) => {
+    if (isDefaultListeningSnapshot(snapshot)) {
+      await clearStoredJson(snapshotStorageKey);
+      setCheckpointStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(snapshotStorageKey, snapshot);
+    setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    resetSnapshotState();
+    setCheckpointReady(false);
+    setCheckpointStatus("正在恢复本地会话...");
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    void (async () => {
+      const snapshot = await loadStoredJson<ListeningSnapshot>(snapshotStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setTaskType(snapshot.taskType);
+        setSession(snapshot.session);
+        setAnswers(snapshot.answers);
+        setPlaybackRate(snapshot.playbackRate);
+        setSegmentIndex(snapshot.segmentIndex);
+        setPositionSeconds(snapshot.positionSeconds);
+        setReplayWrongOnly(snapshot.replayWrongOnly);
+        setQueueCount(snapshot.queueCount);
+        setLastPlaybackSnapshot(snapshot.lastPlaybackSnapshot);
+        setStatusMessage(snapshot.session ? "已恢复本地听力会话" : "未开始");
+        setCheckpointStatus(`已恢复 ${formatCheckpointTime(snapshot.updatedAt)}`);
+      } else {
+        setCheckpointStatus("已启用自动保存");
+      }
+
+      skipNextSnapshotPersistRef.current = true;
+      setCheckpointReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [snapshotStorageKey]);
+
+  useEffect(() => {
+    if (!checkpointReady) {
+      return;
+    }
+
+    if (skipNextSnapshotPersistRef.current) {
+      skipNextSnapshotPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: ListeningSnapshot = {
+      version: 1,
+      taskType,
+      session,
+      answers,
+      playbackRate,
+      segmentIndex,
+      positionSeconds,
+      replayWrongOnly,
+      queueCount,
+      lastPlaybackSnapshot,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+    }
+
+    snapshotSaveTimeoutRef.current = setTimeout(() => {
+      void persistSnapshot(snapshot);
+      snapshotSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    answers,
+    checkpointReady,
+    lastPlaybackSnapshot,
+    persistSnapshot,
+    playbackRate,
+    positionSeconds,
+    queueCount,
+    replayWrongOnly,
+    segmentIndex,
+    session,
+    taskType
+  ]);
 
   const updateAnswer = (questionId: string, value: string): void => {
     setAnswers((current) => ({
@@ -209,6 +375,20 @@ export default function ListeningScreen() {
     }
   };
 
+  const clearLocalCheckpoint = async (): Promise<void> => {
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    await clearStoredJson(snapshotStorageKey);
+    skipNextSnapshotPersistRef.current = true;
+    resetSnapshotState();
+    setCheckpointReady(true);
+    setCheckpointStatus("本地会话已清空");
+    setStatusMessage("已清空本地听力会话");
+  };
+
   useAppForegroundEffect(
     async () => {
       if (loading || !session?.session_id) {
@@ -269,6 +449,18 @@ export default function ListeningScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>question_count: {session?.questions.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>retry_queue_count: {queueCount}</Text>
         </View>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地会话恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>checkpoint_status: {checkpointStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          restore_target: {session?.session_id ? `session ${session.session_id}` : "当前尚无本地听力 checkpoint"}
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="加载播放状态" onPress={() => void loadPlayback()} disabled={loading || !session} />
+          <SecondaryButton label="清空本地会话" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
+        </ButtonRow>
       </InfoCard>
 
       {session ? (
