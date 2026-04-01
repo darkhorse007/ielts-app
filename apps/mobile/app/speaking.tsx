@@ -1,9 +1,10 @@
 import { Redirect, router } from "expo-router";
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AppState, Pressable, Text, View } from "react-native";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
@@ -19,6 +20,30 @@ type PronunciationTask = {
   phoneme: string;
   status: PronunciationTaskStatus;
   linkedTurnNos: number[];
+};
+
+type SpeakingSnapshot = {
+  version: 1;
+  taskType: SpeakingTaskType;
+  scenarioType: ScenarioType;
+  topic: string;
+  transcript: string;
+  sessionState: SpeakingSessionResponse | null;
+  resumeToken: string;
+  scenarioItems: SpeakingRolePlayScenariosResponse["items"];
+  currentPart: 1 | 2 | 3;
+  scoreText: string;
+  suggestions: string[];
+  latencyMs: number;
+  traceCount: number;
+  recentEvents: string[];
+  comparisonText: string;
+  heatmapText: string;
+  replaySegmentCount: number;
+  pronunciationTasks: PronunciationTask[];
+  trackedTaskText: string;
+  reconnectIntent: boolean;
+  updatedAt: string;
 };
 
 type SpeakingSocketPayload = {
@@ -162,19 +187,54 @@ const toPermissionLabel = (status: string): string => {
   }
 };
 
+const defaultTaskType: SpeakingTaskType = "core_training";
+const defaultScenarioType: ScenarioType = "campus_service";
+const defaultTopic = "Describe a recent IELTS preparation experience.";
+
+const isDefaultSpeakingSnapshot = (snapshot: SpeakingSnapshot): boolean =>
+  snapshot.taskType === defaultTaskType &&
+  snapshot.scenarioType === defaultScenarioType &&
+  snapshot.topic === defaultTopic &&
+  snapshot.transcript === "" &&
+  snapshot.sessionState === null &&
+  snapshot.resumeToken === "" &&
+  snapshot.scenarioItems.length === 0 &&
+  snapshot.currentPart === 1 &&
+  snapshot.scoreText === "-" &&
+  snapshot.suggestions.length === 0 &&
+  snapshot.latencyMs === 0 &&
+  snapshot.traceCount === 0 &&
+  snapshot.recentEvents.length === 0 &&
+  snapshot.comparisonText === "-" &&
+  snapshot.heatmapText === "-" &&
+  snapshot.replaySegmentCount === 0 &&
+  snapshot.pronunciationTasks.length === 0 &&
+  snapshot.trackedTaskText === "-" &&
+  snapshot.reconnectIntent === false;
+
+const formatCheckpointTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
+
 export default function SpeakingScreen() {
   const { instanceConfig, session: authSession, runWithAuthorizedClient } = useAppSession();
   const socketRef = useRef<WebSocket | null>(null);
   const shouldReconnectRef = useRef(false);
-  const [taskType, setTaskType] = useState<SpeakingTaskType>("core_training");
-  const [scenarioType, setScenarioType] = useState<ScenarioType>("campus_service");
-  const [topic, setTopic] = useState("Describe a recent IELTS preparation experience.");
+  const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSnapshotPersistRef = useRef(false);
+  const pendingRestoreReconnectRef = useRef(false);
+  const [taskType, setTaskType] = useState<SpeakingTaskType>(defaultTaskType);
+  const [scenarioType, setScenarioType] = useState<ScenarioType>(defaultScenarioType);
+  const [topic, setTopic] = useState(defaultTopic);
   const [transcript, setTranscript] = useState("");
   const [sessionState, setSessionState] = useState<SpeakingSessionResponse | null>(null);
   const [resumeToken, setResumeToken] = useState("");
   const [scenarioItems, setScenarioItems] = useState<SpeakingRolePlayScenariosResponse["items"]>([]);
   const [connectionStatus, setConnectionStatus] = useState("未连接");
   const [statusMessage, setStatusMessage] = useState("未开始");
+  const [checkpointStatus, setCheckpointStatus] = useState("本地会话未恢复");
+  const [checkpointReady, setCheckpointReady] = useState(false);
   const [currentPart, setCurrentPart] = useState<1 | 2 | 3>(1);
   const [scoreText, setScoreText] = useState("-");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -191,6 +251,10 @@ export default function SpeakingScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const snapshotStorageKey = authSession
+    ? buildScopedStorageKey("speaking", "draft", "v1", authSession.userId)
+    : null;
+
   const closeSocket = (): void => {
     const existing = socketRef.current;
     if (!existing) {
@@ -201,6 +265,47 @@ export default function SpeakingScreen() {
     existing.close();
   };
 
+  const resetCheckpointState = (): void => {
+    shouldReconnectRef.current = false;
+    pendingRestoreReconnectRef.current = false;
+    setTaskType(defaultTaskType);
+    setScenarioType(defaultScenarioType);
+    setTopic(defaultTopic);
+    setTranscript("");
+    setSessionState(null);
+    setResumeToken("");
+    setScenarioItems([]);
+    setConnectionStatus("未连接");
+    setStatusMessage("未开始");
+    setCurrentPart(1);
+    setSuggestions([]);
+    setLatencyMs(0);
+    setTraceCount(0);
+    setRecentEvents([]);
+    setComparisonText("-");
+    setHeatmapText("-");
+    setReplaySegmentCount(0);
+    setPronunciationTasks([]);
+    setTrackedTaskText("-");
+    setScoreText("-");
+    setError(null);
+  };
+
+  const persistSnapshot = useEffectEvent(async (snapshot: SpeakingSnapshot) => {
+    if (!snapshotStorageKey) {
+      return;
+    }
+
+    if (isDefaultSpeakingSnapshot(snapshot)) {
+      await clearStoredJson(snapshotStorageKey);
+      setCheckpointStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(snapshotStorageKey, snapshot);
+    setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
+  });
+
   useEffect(() => closeSocket, []);
 
   useEffect(() => {
@@ -208,6 +313,86 @@ export default function SpeakingScreen() {
       closeSocket();
     }
   }, [authSession, instanceConfig]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    resetCheckpointState();
+    setCheckpointReady(false);
+    setCheckpointStatus("正在恢复本地会话...");
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    if (!snapshotStorageKey) {
+      setCheckpointStatus("登录后启用自动保存");
+      setCheckpointReady(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const snapshot = await loadStoredJson<SpeakingSnapshot>(snapshotStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setTaskType(snapshot.taskType);
+        setScenarioType(snapshot.scenarioType);
+        setTopic(snapshot.topic);
+        setTranscript(snapshot.transcript);
+        setSessionState(snapshot.sessionState);
+        setResumeToken(snapshot.resumeToken);
+        setScenarioItems(snapshot.scenarioItems);
+        setCurrentPart(snapshot.currentPart);
+        setScoreText(snapshot.scoreText);
+        setSuggestions(snapshot.suggestions);
+        setLatencyMs(snapshot.latencyMs);
+        setTraceCount(snapshot.traceCount);
+        setRecentEvents(snapshot.recentEvents);
+        setComparisonText(snapshot.comparisonText);
+        setHeatmapText(snapshot.heatmapText);
+        setReplaySegmentCount(snapshot.replaySegmentCount);
+        setPronunciationTasks(snapshot.pronunciationTasks);
+        setTrackedTaskText(snapshot.trackedTaskText);
+
+        if (snapshot.sessionState?.status === "ended") {
+          shouldReconnectRef.current = false;
+          pendingRestoreReconnectRef.current = false;
+          setConnectionStatus("已结束");
+          setStatusMessage("已恢复本地口语会话结果");
+        } else if (snapshot.reconnectIntent && snapshot.sessionState?.session_id && snapshot.resumeToken) {
+          shouldReconnectRef.current = true;
+          pendingRestoreReconnectRef.current = true;
+          setConnectionStatus("待恢复");
+          setStatusMessage("已恢复本地口语会话，准备重连实时连接");
+        } else {
+          shouldReconnectRef.current = false;
+          pendingRestoreReconnectRef.current = false;
+          setConnectionStatus(toConnectionLabel(snapshot.sessionState?.status));
+          setStatusMessage(snapshot.sessionState ? "已恢复本地口语会话" : "未开始");
+        }
+
+        setCheckpointStatus(`已恢复 ${formatCheckpointTime(snapshot.updatedAt)}`);
+      } else {
+        setCheckpointStatus("已启用自动保存");
+      }
+
+      skipNextSnapshotPersistRef.current = true;
+      setCheckpointReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [snapshotStorageKey]);
 
   const syncMicrophonePermission = async (): Promise<boolean> => {
     try {
@@ -302,6 +487,79 @@ export default function SpeakingScreen() {
     setTrackedTaskText("-");
     setScoreText("-");
   };
+
+  useEffect(() => {
+    if (!checkpointReady) {
+      return;
+    }
+
+    if (skipNextSnapshotPersistRef.current) {
+      skipNextSnapshotPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: SpeakingSnapshot = {
+      version: 1,
+      taskType,
+      scenarioType,
+      topic,
+      transcript,
+      sessionState,
+      resumeToken,
+      scenarioItems,
+      currentPart,
+      scoreText,
+      suggestions,
+      latencyMs,
+      traceCount,
+      recentEvents,
+      comparisonText,
+      heatmapText,
+      replaySegmentCount,
+      pronunciationTasks,
+      trackedTaskText,
+      reconnectIntent: shouldReconnectRef.current && sessionState?.status !== "ended",
+      updatedAt: new Date().toISOString()
+    };
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+    }
+
+    snapshotSaveTimeoutRef.current = setTimeout(() => {
+      void persistSnapshot(snapshot);
+      snapshotSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    checkpointReady,
+    comparisonText,
+    connectionStatus,
+    currentPart,
+    heatmapText,
+    latencyMs,
+    persistSnapshot,
+    pronunciationTasks,
+    recentEvents,
+    replaySegmentCount,
+    resumeToken,
+    scenarioItems,
+    scenarioType,
+    scoreText,
+    sessionState,
+    suggestions,
+    taskType,
+    topic,
+    traceCount,
+    trackedTaskText,
+    transcript
+  ]);
 
   const applySession = (response: SpeakingSessionResponse): void => {
     setSessionState(response);
@@ -822,6 +1080,25 @@ export default function SpeakingScreen() {
     }
   };
 
+  const clearLocalCheckpoint = async (): Promise<void> => {
+    if (!snapshotStorageKey) {
+      return;
+    }
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    closeSocket();
+    await clearStoredJson(snapshotStorageKey);
+    skipNextSnapshotPersistRef.current = true;
+    resetCheckpointState();
+    setCheckpointReady(true);
+    setCheckpointStatus("本地会话已清空");
+    setStatusMessage("已清空本地口语会话");
+  };
+
   useAppForegroundEffect(
     async () => {
       void syncMicrophonePermission();
@@ -848,6 +1125,16 @@ export default function SpeakingScreen() {
       enabled: Boolean(sessionState?.session_id)
     }
   );
+
+  useEffect(() => {
+    if (!checkpointReady || !pendingRestoreReconnectRef.current || !sessionState?.session_id || !resumeToken) {
+      return;
+    }
+
+    pendingRestoreReconnectRef.current = false;
+    setStatusMessage("已恢复本地口语会话，正在尝试重连实时连接");
+    void connect();
+  }, [checkpointReady, resumeToken, sessionState?.session_id]);
 
   const selectedScenario = scenarioItems.find((item) => item.scenario_type === scenarioType);
 
@@ -949,6 +1236,21 @@ export default function SpeakingScreen() {
           onPress={() => void ensureMicrophonePermission()}
           disabled={requestingMicrophonePermission}
         />
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地会话恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>checkpoint_status: {checkpointStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          restore_target: {sessionState?.session_id ? `session ${sessionState.session_id}` : "当前尚无本地口语 checkpoint"}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          reconnect_intent: {shouldReconnectRef.current ? "true" : "false"}
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="拉取会话状态" onPress={() => void loadSessionStatus()} disabled={loading || !sessionState} />
+          <SecondaryButton label="清空本地会话" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
+        </ButtonRow>
       </InfoCard>
 
       <InfoCard>

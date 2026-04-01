@@ -387,6 +387,73 @@ describe("mobile route smoke", () => {
     });
   });
 
+  test("speaking screen restores local checkpoint snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("speaking", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        taskType: "role_play",
+        scenarioType: "job_interview",
+        topic: "Describe a job interview that challenged you.",
+        transcript: "I prepared examples before the interview.",
+        sessionState: {
+          session_id: "speaking-restored-1",
+          status: "disconnected",
+          task_type: "role_play",
+          scenario_type: "job_interview",
+          resume_token: "resume-speaking-1",
+          resume_until: "2026-03-31T12:50:00.000Z",
+          current_part: 2,
+          topic: "Describe a job interview that challenged you.",
+          turns: 6,
+          created_at: "2026-03-31T12:00:00.000Z",
+          updated_at: "2026-03-31T12:10:00.000Z"
+        },
+        resumeToken: "resume-speaking-1",
+        scenarioItems: [
+          {
+            scenario_type: "job_interview",
+            title: "求职面试",
+            opening_prompt: "Tell me about a time you solved a difficult problem.",
+            npc_role: "Interviewer"
+          }
+        ],
+        currentPart: 2,
+        scoreText: "F6 / L6 / G6 / P6",
+        suggestions: ["Use more specific examples"],
+        latencyMs: 320,
+        traceCount: 4,
+        recentEvents: ["session_resume", "score_update"],
+        comparisonText: "ΔF0.5 ΔL0.5 ΔG0.5 ΔP0.5",
+        heatmapText: "top_word=problem(2) / top_phoneme=p(3)",
+        replaySegmentCount: 2,
+        pronunciationTasks: [
+          {
+            taskId: "task-1",
+            title: "Practice /p/",
+            description: "Focus on plosive release.",
+            phoneme: "p",
+            status: "todo",
+            linkedTurnNos: [2]
+          }
+        ],
+        trackedTaskText: "task-1:todo",
+        reconnectIntent: false,
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<SpeakingScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("checkpoint_status: 已恢复"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("session_id: speaking-restored-1"))).toBeTruthy();
+    expect(screen.getByDisplayValue("Describe a job interview that challenged you.")).toBeTruthy();
+    expect(screen.getByDisplayValue("I prepared examples before the interview.")).toBeTruthy();
+  });
+
   test("writing screen restores local draft snapshot", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
     mockedSecureStore.__setMockItem(
