@@ -9,7 +9,11 @@ import {
 } from "react";
 import { ApiClient, ApiRequestError } from "../lib/api-client";
 import type { StoredSession, TokenResponse } from "../lib/api-types";
-import { cancelReminderNotificationsAsync } from "../lib/notifications";
+import {
+  buildCurrentRemoteReminderDeviceRegistrationAsync,
+  cancelReminderNotificationsAsync,
+  getReminderInstallationIdAsync
+} from "../lib/notifications";
 import { resolveDefaultInstanceConfig, type InstanceConfig } from "../lib/runtime-config";
 import {
   clearStoredSession,
@@ -37,6 +41,7 @@ type AppSessionState = {
 };
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
+const REMOTE_DEVICE_CLEANUP_TIMEOUT_MS = 2000;
 
 const toStoredSession = (tokens: TokenResponse): StoredSession => ({
   accessToken: tokens.access_token,
@@ -44,6 +49,23 @@ const toStoredSession = (tokens: TokenResponse): StoredSession => ({
   expiresAt: Math.floor(Date.now() / 1000) + tokens.expires_in,
   userId: tokens.user_id
 });
+
+const withBestEffortTimeout = async (promise: Promise<unknown>, timeoutMs: number): Promise<void> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    await Promise.race([
+      promise.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timeoutId = setTimeout(() => resolve(), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
 
 export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   const [defaultInstanceConfig] = useState<InstanceConfig | null>(() => resolveDefaultInstanceConfig());
@@ -54,6 +76,7 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   });
   const stateRef = useRef(state);
   const refreshInFlightRef = useRef<Promise<string | null> | null>(null);
+  const syncedReminderDeviceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -82,6 +105,16 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
     };
   }, [defaultInstanceConfig]);
 
+  const unregisterRemoteReminderDevice = async (snapshot: AppSessionState): Promise<void> => {
+    if (!snapshot.instanceConfig || !snapshot.session) {
+      return;
+    }
+
+    const installationId = await getReminderInstallationIdAsync();
+    const apiClient = new ApiClient(snapshot.instanceConfig.apiBaseUrl);
+    await apiClient.deleteReminderDevice(snapshot.session.accessToken, installationId);
+  };
+
   const saveSession = async (tokens: TokenResponse): Promise<void> => {
     const next = toStoredSession(tokens);
     await saveStoredSession(next);
@@ -94,7 +127,12 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   };
 
   const logout = async (): Promise<void> => {
-    await Promise.all([clearStoredSession(), cancelReminderNotificationsAsync().catch(() => 0)]);
+    const snapshot = stateRef.current;
+    await Promise.all([
+      clearStoredSession(),
+      cancelReminderNotificationsAsync().catch(() => 0),
+      withBestEffortTimeout(unregisterRemoteReminderDevice(snapshot), REMOTE_DEVICE_CLEANUP_TIMEOUT_MS)
+    ]);
     startTransition(() => {
       setState((current) => ({
         ...current,
@@ -104,13 +142,18 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   };
 
   const saveInstanceConfig = async (config: InstanceConfig): Promise<void> => {
-    const previous = stateRef.current.instanceConfig;
+    const snapshot = stateRef.current;
+    const previous = snapshot.instanceConfig;
     const changed =
       !previous || previous.apiBaseUrl !== config.apiBaseUrl || previous.wsBaseUrl !== config.wsBaseUrl;
 
     await saveStoredInstanceConfig(config);
     if (changed) {
-      await Promise.all([clearStoredSession(), cancelReminderNotificationsAsync().catch(() => 0)]);
+      await Promise.all([
+        clearStoredSession(),
+        cancelReminderNotificationsAsync().catch(() => 0),
+        withBestEffortTimeout(unregisterRemoteReminderDevice(snapshot), REMOTE_DEVICE_CLEANUP_TIMEOUT_MS)
+      ]);
     }
 
     startTransition(() => {
@@ -183,6 +226,53 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
       throw error;
     }
   };
+
+  useEffect(() => {
+    if (!state.ready || !state.instanceConfig || !state.session) {
+      syncedReminderDeviceKeyRef.current = null;
+      return;
+    }
+
+    const syncKey = `${state.instanceConfig.apiBaseUrl}:${state.session.userId}`;
+    const apiBaseUrl = state.instanceConfig.apiBaseUrl;
+    if (syncedReminderDeviceKeyRef.current === syncKey) {
+      return;
+    }
+
+    syncedReminderDeviceKeyRef.current = syncKey;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const accessToken = await getAccessToken();
+        if (!accessToken || cancelled) {
+          return;
+        }
+
+        const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
+        if (cancelled) {
+          return;
+        }
+
+        const apiClient = new ApiClient(apiBaseUrl);
+        await apiClient.upsertReminderDevice(accessToken, registration.installationId, {
+          platform: registration.platform,
+          permission_status: registration.permissionStatus,
+          push_provider: registration.pushProvider,
+          push_token: registration.pushToken,
+          device_label: registration.deviceLabel,
+          app_build: registration.appBuild,
+          environment: registration.environment
+        });
+      } catch {
+        // Device registration is best-effort and should not block session restore.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.ready, state.instanceConfig, state.session?.userId]);
 
   return (
     <AppSessionContext.Provider
