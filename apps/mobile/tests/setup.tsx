@@ -17,6 +17,7 @@ const originalCreateElement = React.createElement;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 const appStateListeners = new Set<(state: "active" | "background" | "inactive") => void>();
+const secureStoreValues = new Map<string, string>();
 
 (React as typeof React & {
   createElement: typeof React.createElement;
@@ -69,24 +70,32 @@ vi.mock("react-native", () => {
       style?: Record<string, unknown>;
     }) => React.createElement("div", normalizeDomProps(props), children),
     TextInput: ({
-      children,
       onChangeText,
       placeholderTextColor: _placeholderTextColor,
       keyboardType: _keyboardType,
+      autoCorrect: _autoCorrect,
+      autoCapitalize: _autoCapitalize,
+      multiline,
+      numberOfLines: _numberOfLines,
+      textAlignVertical: _textAlignVertical,
       ...props
     }: {
-      children?: React.ReactNode;
       onChangeText?: (value: string) => void;
       placeholderTextColor?: string;
       keyboardType?: string;
+      autoCorrect?: boolean;
+      autoCapitalize?: string;
+      multiline?: boolean;
+      numberOfLines?: number;
+      textAlignVertical?: string;
       value?: string;
       style?: Record<string, unknown>;
     }) =>
-      React.createElement("input", {
+      React.createElement(multiline ? "textarea" : "input", {
         ...normalizeDomProps(props),
         onChange: onChangeText ? (event: { target: { value: string } }) => onChangeText(event.target.value) : undefined,
         readOnly: !onChangeText
-      }, children),
+      }),
     Pressable: ({
       children,
       onPress,
@@ -149,4 +158,21 @@ vi.mock("expo-audio", () => ({
   }),
   setAudioModeAsync: vi.fn().mockResolvedValue(undefined),
   setIsAudioActiveAsync: vi.fn().mockResolvedValue(undefined)
+}));
+
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(async (key: string) => secureStoreValues.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, value: string) => {
+    secureStoreValues.set(key, value);
+  }),
+  deleteItemAsync: vi.fn(async (key: string) => {
+    secureStoreValues.delete(key);
+  }),
+  __resetMockStorage: () => {
+    secureStoreValues.clear();
+  },
+  __setMockItem: (key: string, value: string) => {
+    secureStoreValues.set(key, value);
+  },
+  __getMockItem: (key: string) => secureStoreValues.get(key) ?? null
 }));

@@ -13,6 +13,19 @@ name: Android mock exam smoke
       - tapOn: Close
 - runFlow:
     when:
+      visible: IELTS Mobile
+    commands:
+      - extendedWaitUntil:
+          visible: Close
+          timeout: 10000
+      - tapOn: Close
+- runFlow:
+    when:
+      visible: Close
+    commands:
+      - tapOn: Close
+- runFlow:
+    when:
       visible: 绑定你的 API / WS 实例
     commands:
       - tapOn:

@@ -1,13 +1,55 @@
 import { Redirect, router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { WritingArchiveResponse, WritingEvaluationResponse, WritingTemplateListResponse } from "../src/lib/api-types";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type WritingTaskType = "task1" | "task2";
 type TemplateInsertionMode = "append" | "prepend";
+type WritingComparisonDelta = {
+  tr: number;
+  cc: number;
+  lr: number;
+  gra: number;
+  overall: number;
+};
+type WritingDraftSnapshot = {
+  version: 1;
+  taskType: WritingTaskType;
+  prompt: string;
+  essay: string;
+  rewriteEssay: string;
+  evaluationId: string;
+  comparisonDelta: WritingComparisonDelta | null;
+  selectedTemplateId: string;
+  templateInsertionMode: TemplateInsertionMode;
+  templatePreservedOriginal: boolean;
+  templateAdoptionText: string;
+  updatedAt: string;
+};
+
+const defaultTaskType: WritingTaskType = "task2";
+const defaultPrompt = "Some people think students should learn practical skills at school.";
+const defaultEssay =
+  "I strongly agree with this statement because practical skills can help students adapt to real life more effectively. For example, communication and collaboration are essential in both study and work.";
+const defaultRewriteEssay =
+  "I strongly agree that practical skills should be integrated into school courses because they directly improve students' readiness for work and life.";
+const defaultDraftStatus = "本地草稿未恢复";
+
+const isDefaultDraftSnapshot = (snapshot: WritingDraftSnapshot): boolean =>
+  snapshot.taskType === defaultTaskType &&
+  snapshot.prompt === defaultPrompt &&
+  snapshot.essay === defaultEssay &&
+  snapshot.rewriteEssay === defaultRewriteEssay &&
+  snapshot.evaluationId === "" &&
+  snapshot.comparisonDelta === null &&
+  snapshot.selectedTemplateId === "" &&
+  snapshot.templateInsertionMode === "append" &&
+  snapshot.templatePreservedOriginal === false &&
+  snapshot.templateAdoptionText === "-";
 
 const taskOptions: Array<{
   value: WritingTaskType;
@@ -57,25 +99,22 @@ const formatComparison = (value: {
 } | null): string =>
   value ? `ΔTR${value.tr} ΔCC${value.cc} ΔLR${value.lr} ΔGRA${value.gra} ΔOverall${value.overall}` : "-";
 
+const formatDraftTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
+
 export default function WritingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
-  const [taskType, setTaskType] = useState<WritingTaskType>("task2");
-  const [prompt, setPrompt] = useState("Some people think students should learn practical skills at school.");
-  const [essay, setEssay] = useState(
-    "I strongly agree with this statement because practical skills can help students adapt to real life more effectively. For example, communication and collaboration are essential in both study and work."
-  );
+  const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextDraftPersistRef = useRef(false);
+  const [taskType, setTaskType] = useState<WritingTaskType>(defaultTaskType);
+  const [prompt, setPrompt] = useState(defaultPrompt);
+  const [essay, setEssay] = useState(defaultEssay);
   const [evaluation, setEvaluation] = useState<WritingEvaluationResponse | null>(null);
   const [evaluationId, setEvaluationId] = useState("");
-  const [rewriteEssay, setRewriteEssay] = useState(
-    "I strongly agree that practical skills should be integrated into school courses because they directly improve students' readiness for work and life."
-  );
-  const [comparisonDelta, setComparisonDelta] = useState<{
-    tr: number;
-    cc: number;
-    lr: number;
-    gra: number;
-    overall: number;
-  } | null>(null);
+  const [rewriteEssay, setRewriteEssay] = useState(defaultRewriteEssay);
+  const [comparisonDelta, setComparisonDelta] = useState<WritingComparisonDelta | null>(null);
   const [archives, setArchives] = useState<WritingArchiveResponse["items"]>([]);
   const [templates, setTemplates] = useState<WritingTemplateListResponse["items"]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -83,6 +122,8 @@ export default function WritingScreen() {
   const [templatePreservedOriginal, setTemplatePreservedOriginal] = useState(false);
   const [templateAdoptionText, setTemplateAdoptionText] = useState("-");
   const [statusMessage, setStatusMessage] = useState("未开始");
+  const [draftStatus, setDraftStatus] = useState(defaultDraftStatus);
+  const [draftReady, setDraftReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +132,140 @@ export default function WritingScreen() {
   }
 
   const selectedTemplate = templates.find((item) => item.template_id === selectedTemplateId) ?? null;
+  const draftStorageKey = buildScopedStorageKey("writing", "draft", "v1", authSession.userId);
+
+  const resetDraftState = (): void => {
+    setTaskType(defaultTaskType);
+    setPrompt(defaultPrompt);
+    setEssay(defaultEssay);
+    setEvaluation(null);
+    setEvaluationId("");
+    setRewriteEssay(defaultRewriteEssay);
+    setComparisonDelta(null);
+    setArchives([]);
+    setTemplates([]);
+    setSelectedTemplateId("");
+    setTemplateInsertionMode("append");
+    setTemplatePreservedOriginal(false);
+    setTemplateAdoptionText("-");
+    setStatusMessage("未开始");
+    setError(null);
+  };
+
+  const persistDraft = useEffectEvent(async (snapshot: WritingDraftSnapshot) => {
+    if (isDefaultDraftSnapshot(snapshot)) {
+      await clearStoredJson(draftStorageKey);
+      setDraftStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(draftStorageKey, snapshot);
+    setDraftStatus(`已自动保存 ${formatDraftTime(snapshot.updatedAt)}`);
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    resetDraftState();
+    setDraftReady(false);
+    setDraftStatus("正在恢复本地草稿...");
+    if (draftSaveTimeoutRef.current) {
+      clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
+
+    void (async () => {
+      const snapshot = await loadStoredJson<WritingDraftSnapshot>(draftStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setTaskType(snapshot.taskType);
+        setPrompt(snapshot.prompt);
+        setEssay(snapshot.essay);
+        setEvaluationId(snapshot.evaluationId);
+        setRewriteEssay(snapshot.rewriteEssay);
+        setComparisonDelta(snapshot.comparisonDelta);
+        setSelectedTemplateId(snapshot.selectedTemplateId);
+        setTemplateInsertionMode(snapshot.templateInsertionMode);
+        setTemplatePreservedOriginal(snapshot.templatePreservedOriginal);
+        setTemplateAdoptionText(snapshot.templateAdoptionText);
+        setStatusMessage(
+          snapshot.evaluationId.trim() ? "已恢复本地写作草稿，可继续加载评估结果" : "已恢复本地写作草稿"
+        );
+        setDraftStatus(`已恢复 ${formatDraftTime(snapshot.updatedAt)}`);
+      } else {
+        setDraftStatus("已启用自动保存");
+      }
+
+      skipNextDraftPersistRef.current = true;
+      setDraftReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (draftSaveTimeoutRef.current) {
+        clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftReady) {
+      return;
+    }
+
+    if (skipNextDraftPersistRef.current) {
+      skipNextDraftPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: WritingDraftSnapshot = {
+      version: 1,
+      taskType,
+      prompt,
+      essay,
+      rewriteEssay,
+      evaluationId,
+      comparisonDelta,
+      selectedTemplateId,
+      templateInsertionMode,
+      templatePreservedOriginal,
+      templateAdoptionText,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (draftSaveTimeoutRef.current) {
+      clearTimeout(draftSaveTimeoutRef.current);
+    }
+
+    draftSaveTimeoutRef.current = setTimeout(() => {
+      void persistDraft(snapshot);
+      draftSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (draftSaveTimeoutRef.current) {
+        clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    comparisonDelta,
+    draftReady,
+    essay,
+    evaluationId,
+    persistDraft,
+    prompt,
+    rewriteEssay,
+    selectedTemplateId,
+    taskType,
+    templateAdoptionText,
+    templateInsertionMode,
+    templatePreservedOriginal
+  ]);
 
   const evaluate = async (): Promise<void> => {
     setLoading(true);
@@ -103,6 +278,8 @@ export default function WritingScreen() {
         })
       );
       setEvaluation(result);
+      setTaskType(result.task_type);
+      setPrompt(result.prompt);
       setEvaluationId(result.evaluation_id);
       setStatusMessage(`写作批改完成，overall=${result.scores.overall}`);
       setError(null);
@@ -125,6 +302,8 @@ export default function WritingScreen() {
         apiClient.getWritingEvaluation(accessToken, evaluationId.trim())
       );
       setEvaluation(result);
+      setTaskType(result.task_type);
+      setPrompt(result.prompt);
       setStatusMessage("已加载写作评估结果");
       setError(null);
     } catch (loadError) {
@@ -148,6 +327,8 @@ export default function WritingScreen() {
         })
       );
       setEvaluation(result.evaluation);
+      setTaskType(result.evaluation.task_type);
+      setPrompt(result.evaluation.prompt);
       setEvaluationId(result.evaluation.evaluation_id);
       setComparisonDelta(result.comparison.delta);
       setStatusMessage("改写复评完成");
@@ -157,6 +338,20 @@ export default function WritingScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const clearLocalDraft = async (): Promise<void> => {
+    if (draftSaveTimeoutRef.current) {
+      clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
+
+    await clearStoredJson(draftStorageKey);
+    skipNextDraftPersistRef.current = true;
+    resetDraftState();
+    setDraftReady(true);
+    setDraftStatus("本地草稿已清空");
+    setStatusMessage("已清空本地写作草稿");
   };
 
   const loadArchives = async (): Promise<void> => {
@@ -273,6 +468,18 @@ export default function WritingScreen() {
             );
           })}
         </View>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地草稿恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>draft_status: {draftStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          evaluation_resume: {evaluationId.trim() ? "已保留 evaluation_id，可继续加载结果" : "当前仅保存草稿与改写内容"}
+        </Text>
+        <ButtonRow>
+          <SecondaryButton label="清空本地草稿" onPress={() => void clearLocalDraft()} disabled={loading || !draftReady} />
+          <PrimaryButton label="加载批改结果" onPress={() => void reload()} disabled={loading || !evaluationId.trim()} />
+        </ButtonRow>
       </InfoCard>
 
       <TextField

@@ -2,8 +2,9 @@ import * as SecureStore from "expo-secure-store";
 import type { StoredSession } from "./api-types";
 import type { InstanceConfig } from "./runtime-config";
 
-const INSTANCE_CONFIG_KEY = "ielts.mobile.instance_config";
-const SESSION_KEY = "ielts.mobile.session";
+const STORAGE_PREFIX = "ielts.mobile";
+const INSTANCE_CONFIG_KEY = `${STORAGE_PREFIX}.instance_config`;
+const SESSION_KEY = `${STORAGE_PREFIX}.session`;
 
 const parseJson = <T>(value: string | null): T | null => {
   if (!value) {
@@ -17,24 +18,37 @@ const parseJson = <T>(value: string | null): T | null => {
   }
 };
 
+export const buildScopedStorageKey = (...parts: string[]): string => [STORAGE_PREFIX, ...parts].join(".");
+
+export const loadStoredJson = async <T>(key: string): Promise<T | null> => {
+  const value = await SecureStore.getItemAsync(key);
+  return parseJson<T>(value);
+};
+
+export const saveStoredJson = async (key: string, value: unknown): Promise<void> => {
+  await SecureStore.setItemAsync(key, JSON.stringify(value));
+};
+
+export const clearStoredJson = async (key: string): Promise<void> => {
+  await SecureStore.deleteItemAsync(key);
+};
+
 export const loadStoredInstanceConfig = async (): Promise<InstanceConfig | null> => {
-  const value = await SecureStore.getItemAsync(INSTANCE_CONFIG_KEY);
-  return parseJson<InstanceConfig>(value);
+  return loadStoredJson<InstanceConfig>(INSTANCE_CONFIG_KEY);
 };
 
 export const saveStoredInstanceConfig = async (config: InstanceConfig): Promise<void> => {
-  await SecureStore.setItemAsync(INSTANCE_CONFIG_KEY, JSON.stringify(config));
+  await saveStoredJson(INSTANCE_CONFIG_KEY, config);
 };
 
 export const loadStoredSession = async (): Promise<StoredSession | null> => {
-  const value = await SecureStore.getItemAsync(SESSION_KEY);
-  return parseJson<StoredSession>(value);
+  return loadStoredJson<StoredSession>(SESSION_KEY);
 };
 
 export const saveStoredSession = async (session: StoredSession): Promise<void> => {
-  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
+  await saveStoredJson(SESSION_KEY, session);
 };
 
 export const clearStoredSession = async (): Promise<void> => {
-  await SecureStore.deleteItemAsync(SESSION_KEY);
+  await clearStoredJson(SESSION_KEY);
 };

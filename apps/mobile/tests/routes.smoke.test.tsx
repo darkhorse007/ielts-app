@@ -1,14 +1,17 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
+import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { StoredSession } from "../src/lib/api-types";
+import { buildScopedStorageKey } from "../src/lib/storage";
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
 import HomeScreen from "../app/home";
 import MockExamScreen from "../app/mock-exam";
 import SpeakingScreen from "../app/speaking";
+import WritingScreen from "../app/writing";
 
 vi.mock("expo-router", () => ({
   router: {
@@ -34,6 +37,10 @@ const defaultSession: StoredSession = {
 };
 
 const mockedUseAppSession = vi.mocked(useAppSession);
+const mockedSecureStore = SecureStore as typeof SecureStore & {
+  __resetMockStorage: () => void;
+  __setMockItem: (key: string, value: string) => void;
+};
 
 const createSessionContext = (overrides?: {
   apiClient?: Record<string, (...args: any[]) => Promise<any>>;
@@ -118,6 +125,7 @@ const createSessionContext = (overrides?: {
 describe("mobile route smoke", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedSecureStore.__resetMockStorage();
   });
 
   test("home screen renders mock exam and account entry points", async () => {
@@ -166,5 +174,45 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("麦克风权限")).toBeTruthy();
     expect(screen.getByText("授权麦克风")).toBeTruthy();
     expect(screen.getByText("连接实时会话")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("已授权")).toBeTruthy();
+    });
+  });
+
+  test("writing screen restores local draft snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("writing", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        taskType: "task1",
+        prompt: "Restored prompt",
+        essay: "Restored essay body",
+        rewriteEssay: "Restored rewrite essay",
+        evaluationId: "writing-eval-1",
+        comparisonDelta: {
+          tr: 0.5,
+          cc: 0.5,
+          lr: 0.5,
+          gra: 0.5,
+          overall: 0.5
+        },
+        selectedTemplateId: "template-1",
+        templateInsertionMode: "prepend",
+        templatePreservedOriginal: true,
+        templateAdoptionText: "total=3, top=template-1, rate=0.8",
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<WritingScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("已恢复本地写作草稿，可继续加载评估结果")).toBeTruthy();
+    });
+    expect(screen.getByDisplayValue("Restored prompt")).toBeTruthy();
+    expect(screen.getByDisplayValue("Restored essay body")).toBeTruthy();
+    expect(screen.getByDisplayValue("Restored rewrite essay")).toBeTruthy();
+    expect(screen.getByDisplayValue("writing-eval-1")).toBeTruthy();
   });
 });
