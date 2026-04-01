@@ -1,13 +1,42 @@
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type ReadingMode = "training" | "exam";
+type ReadingSnapshot = {
+  version: 1;
+  trainingMode: ReadingMode;
+  timeLimitSeconds: string;
+  session: PracticeSessionResponse | null;
+  answers: Record<string, string>;
+  timerText: string;
+  timerRecovered: boolean;
+  evidenceCount: number;
+  updatedAt: string;
+};
+
+const defaultReadingMode: ReadingMode = "training";
+const defaultTimeLimitSeconds = "1200";
+
+const isDefaultReadingSnapshot = (snapshot: ReadingSnapshot): boolean =>
+  snapshot.trainingMode === defaultReadingMode &&
+  snapshot.timeLimitSeconds === defaultTimeLimitSeconds &&
+  snapshot.session === null &&
+  Object.keys(snapshot.answers).length === 0 &&
+  snapshot.timerText === "-" &&
+  snapshot.timerRecovered === false &&
+  snapshot.evidenceCount === 0;
+
+const formatCheckpointTime = (value: string): string =>
+  new Date(value).toLocaleTimeString("zh-CN", {
+    hour12: false
+  });
 
 const readingModeOptions: Array<{
   value: ReadingMode;
@@ -42,11 +71,15 @@ const formatTimer = (timer: PracticeSessionResponse["timer"]): string => {
 
 export default function ReadingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
-  const [trainingMode, setTrainingMode] = useState<ReadingMode>("training");
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState("1200");
+  const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSnapshotPersistRef = useRef(false);
+  const [trainingMode, setTrainingMode] = useState<ReadingMode>(defaultReadingMode);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(defaultTimeLimitSeconds);
   const [session, setSession] = useState<PracticeSessionResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState("未开始");
+  const [checkpointStatus, setCheckpointStatus] = useState("本地会话未恢复");
+  const [checkpointReady, setCheckpointReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [timerText, setTimerText] = useState("-");
@@ -56,6 +89,124 @@ export default function ReadingScreen() {
   if (!authSession) {
     return <Redirect href="/login" />;
   }
+
+  const snapshotStorageKey = buildScopedStorageKey("reading", "draft", "v1", authSession.userId);
+
+  const resetSnapshotState = (): void => {
+    setTrainingMode(defaultReadingMode);
+    setTimeLimitSeconds(defaultTimeLimitSeconds);
+    setSession(null);
+    setAnswers({});
+    setStatusMessage("未开始");
+    setError(null);
+    setTimerText("-");
+    setTimerRecovered(false);
+    setEvidenceCount(0);
+  };
+
+  const persistSnapshot = useEffectEvent(async (snapshot: ReadingSnapshot) => {
+    if (isDefaultReadingSnapshot(snapshot)) {
+      await clearStoredJson(snapshotStorageKey);
+      setCheckpointStatus("已启用自动保存");
+      return;
+    }
+
+    await saveStoredJson(snapshotStorageKey, snapshot);
+    setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    resetSnapshotState();
+    setCheckpointReady(false);
+    setCheckpointStatus("正在恢复本地会话...");
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    void (async () => {
+      const snapshot = await loadStoredJson<ReadingSnapshot>(snapshotStorageKey);
+      if (cancelled) {
+        return;
+      }
+
+      if (snapshot?.version === 1) {
+        setTrainingMode(snapshot.trainingMode);
+        setTimeLimitSeconds(snapshot.timeLimitSeconds);
+        setSession(snapshot.session);
+        setAnswers(snapshot.answers);
+        setTimerText(snapshot.timerText);
+        setTimerRecovered(snapshot.timerRecovered);
+        setEvidenceCount(snapshot.evidenceCount);
+        setStatusMessage(snapshot.session ? "已恢复本地阅读会话" : "未开始");
+        setCheckpointStatus(`已恢复 ${formatCheckpointTime(snapshot.updatedAt)}`);
+      } else {
+        setCheckpointStatus("已启用自动保存");
+      }
+
+      skipNextSnapshotPersistRef.current = true;
+      setCheckpointReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [snapshotStorageKey]);
+
+  useEffect(() => {
+    if (!checkpointReady) {
+      return;
+    }
+
+    if (skipNextSnapshotPersistRef.current) {
+      skipNextSnapshotPersistRef.current = false;
+      return;
+    }
+
+    const snapshot: ReadingSnapshot = {
+      version: 1,
+      trainingMode,
+      timeLimitSeconds,
+      session,
+      answers,
+      timerText,
+      timerRecovered,
+      evidenceCount,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+    }
+
+    snapshotSaveTimeoutRef.current = setTimeout(() => {
+      void persistSnapshot(snapshot);
+      snapshotSaveTimeoutRef.current = null;
+    }, 400);
+
+    return () => {
+      if (snapshotSaveTimeoutRef.current) {
+        clearTimeout(snapshotSaveTimeoutRef.current);
+        snapshotSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    answers,
+    checkpointReady,
+    evidenceCount,
+    persistSnapshot,
+    session,
+    timeLimitSeconds,
+    timerRecovered,
+    timerText,
+    trainingMode
+  ]);
 
   const updateAnswer = (questionId: string, value: string): void => {
     setAnswers((current) => ({
@@ -246,6 +397,20 @@ export default function ReadingScreen() {
     }
   };
 
+  const clearLocalCheckpoint = async (): Promise<void> => {
+    if (snapshotSaveTimeoutRef.current) {
+      clearTimeout(snapshotSaveTimeoutRef.current);
+      snapshotSaveTimeoutRef.current = null;
+    }
+
+    await clearStoredJson(snapshotStorageKey);
+    skipNextSnapshotPersistRef.current = true;
+    resetSnapshotState();
+    setCheckpointReady(true);
+    setCheckpointStatus("本地会话已清空");
+    setStatusMessage("已清空本地阅读会话");
+  };
+
   useAppForegroundEffect(
     async () => {
       if (loading || !session?.session_id) {
@@ -315,6 +480,18 @@ export default function ReadingScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>question_count: {session?.questions.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>evidence_count: {evidenceCount}</Text>
         </View>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>本地会话恢复</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>checkpoint_status: {checkpointStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          restore_target: {session?.session_id ? `session ${session.session_id}` : "当前尚无本地阅读 checkpoint"}
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="拉取计时状态" onPress={() => void loadTimer()} disabled={loading || !session} />
+          <SecondaryButton label="清空本地会话" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
+        </ButtonRow>
       </InfoCard>
 
       <InfoCard>

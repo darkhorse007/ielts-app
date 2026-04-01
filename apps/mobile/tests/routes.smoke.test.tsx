@@ -9,6 +9,7 @@ import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
 import HomeScreen from "../app/home";
+import ReadingScreen from "../app/reading";
 import MockExamScreen from "../app/mock-exam";
 import SpeakingScreen from "../app/speaking";
 import WritingScreen from "../app/writing";
@@ -219,6 +220,57 @@ describe("mobile route smoke", () => {
     });
     expect(screen.getByText((content) => content.includes("exam_id: mock-restored-1"))).toBeTruthy();
     expect(screen.getByText((content) => content.includes("filename: restored-report.json"))).toBeTruthy();
+  });
+
+  test("reading screen restores local checkpoint snapshot", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("reading", "draft", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        trainingMode: "exam",
+        timeLimitSeconds: "1500",
+        session: {
+          session_id: "reading-restored-1",
+          skill: "reading",
+          task_type: "core_training",
+          training_mode: "exam",
+          mode: "core_training",
+          status: "in_progress",
+          created_at: "2026-03-31T00:00:00.000Z",
+          updated_at: "2026-03-31T00:10:00.000Z",
+          timer: {
+            status: "running",
+            limit_seconds: 1500,
+            elapsed_seconds: 300,
+            remaining_seconds: 1200
+          },
+          questions: [
+            {
+              question_id: "reading-q-1",
+              type: "multiple_choice",
+              prompt: "Restored reading question",
+              options: ["A", "B", "C"]
+            }
+          ]
+        },
+        answers: {
+          "reading-q-1": "B"
+        },
+        timerText: "running / elapsed 300s / remain 1200s",
+        timerRecovered: true,
+        evidenceCount: 1,
+        updatedAt: "2026-03-31T12:34:56.000Z"
+      })
+    );
+
+    render(<ReadingScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("已恢复本地阅读会话")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("session_id: reading-restored-1"))).toBeTruthy();
+    expect(screen.getByDisplayValue("B")).toBeTruthy();
   });
 
   test("account screen loads profile and export/delete controls", async () => {
