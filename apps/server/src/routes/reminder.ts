@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../domain/auth-service.js";
 import type { ReminderService } from "../domain/reminder-service.js";
+import type { ReminderDeviceRegistration } from "../domain/types.js";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
 
 const reminderPreferenceUpdateSchema = z.object({
@@ -12,9 +13,64 @@ const reminderParamsSchema = z.object({
   reminder_id: z.string().uuid()
 });
 
+const reminderDeviceParamsSchema = z.object({
+  installation_id: z.string().trim().min(1).max(128)
+});
+
+const reminderDeviceUpsertSchema = z.object({
+  platform: z.enum(["ios", "android"]),
+  permission_status: z.enum(["granted", "provisional", "undetermined", "denied", "unsupported"]),
+  push_provider: z.enum(["apns", "fcm"]).optional(),
+  push_token: z.string().trim().min(16).max(4096).optional(),
+  device_label: z.string().trim().min(1).max(128).optional(),
+  app_build: z.string().trim().min(1).max(64).optional(),
+  environment: z.enum(["development", "preview", "production"])
+});
+
 const toError = (code: string, message: string): { code: string; message: string } => ({
   code,
   message
+});
+
+const toPushTokenPreview = (pushToken?: string): string | undefined => {
+  if (!pushToken) {
+    return undefined;
+  }
+
+  if (pushToken.length <= 10) {
+    return pushToken;
+  }
+
+  return `${pushToken.slice(0, 6)}...${pushToken.slice(-4)}`;
+};
+
+const toReminderDeviceResponse = (
+  reminderService: ReminderService,
+  device: ReminderDeviceRegistration
+): {
+  installation_id: string;
+  platform: "ios" | "android";
+  permission_status: "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+  push_provider?: "apns" | "fcm";
+  push_token_preview?: string;
+  device_label?: string;
+  app_build?: string;
+  environment: "development" | "preview" | "production";
+  delivery_ready: boolean;
+  created_at: string;
+  updated_at: string;
+} => ({
+  installation_id: device.installationId,
+  platform: device.platform,
+  permission_status: device.permissionStatus,
+  push_provider: device.pushProvider,
+  push_token_preview: toPushTokenPreview(device.pushToken),
+  device_label: device.deviceLabel,
+  app_build: device.appBuild,
+  environment: device.environment,
+  delivery_ready: reminderService.isDeviceDeliverable(device),
+  created_at: device.createdAt,
+  updated_at: device.updatedAt
 });
 
 export const registerReminderRoutes = async (
@@ -80,6 +136,68 @@ export const registerReminderRoutes = async (
       created_at: result.recommendation.createdAt
     });
   });
+
+  app.get("/v1/reminders/devices", { preHandler: authenticate(services.authService) }, async (request, reply) => {
+    const authRequest = request as AuthenticatedRequest;
+    const devices = services.reminderService.listDevices(authRequest.auth.userId);
+    reply.code(200).send({
+      total_count: devices.length,
+      deliverable_count: devices.filter((item) => services.reminderService.isDeviceDeliverable(item)).length,
+      items: devices.map((item) => toReminderDeviceResponse(services.reminderService, item))
+    });
+  });
+
+  app.put("/v1/reminders/devices/:installation_id", { preHandler: authenticate(services.authService) }, async (request, reply) => {
+    const parsedParams = reminderDeviceParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      reply.code(400).send(toError("VALIDATION_ERROR", "installation_id is invalid"));
+      return;
+    }
+
+    const parsedBody = reminderDeviceUpsertSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      reply.code(400).send(toError("VALIDATION_ERROR", "reminder device payload is invalid"));
+      return;
+    }
+
+    const authRequest = request as AuthenticatedRequest;
+    const payload = parsedBody.data;
+    const device = services.reminderService.upsertDevice({
+      userId: authRequest.auth.userId,
+      installationId: parsedParams.data.installation_id,
+      platform: payload.platform,
+      permissionStatus: payload.permission_status,
+      pushProvider: payload.push_provider,
+      pushToken: payload.push_token,
+      deviceLabel: payload.device_label,
+      appBuild: payload.app_build,
+      environment: payload.environment
+    });
+
+    reply.code(200).send(toReminderDeviceResponse(services.reminderService, device));
+  });
+
+  app.delete(
+    "/v1/reminders/devices/:installation_id",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const parsedParams = reminderDeviceParamsSchema.safeParse(request.params);
+      if (!parsedParams.success) {
+        reply.code(400).send(toError("VALIDATION_ERROR", "installation_id is invalid"));
+        return;
+      }
+
+      const authRequest = request as AuthenticatedRequest;
+      const removed = services.reminderService.removeDevice({
+        userId: authRequest.auth.userId,
+        installationId: parsedParams.data.installation_id
+      });
+      reply.code(200).send({
+        installation_id: parsedParams.data.installation_id,
+        removed
+      });
+    }
+  );
 
   app.post("/v1/reminders/:reminder_id/click", { preHandler: authenticate(services.authService) }, async (request, reply) => {
     const parsed = reminderParamsSchema.safeParse(request.params);

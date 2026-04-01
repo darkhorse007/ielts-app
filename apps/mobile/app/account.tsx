@@ -4,6 +4,7 @@ import { Share, Text, View } from "react-native";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type {
   DeleteAccountResponse,
+  ReminderDeviceRegistrationListResponse,
   ReminderPreferenceResponse,
   ReminderRecommendationResponse,
   RequestDeletionResponse,
@@ -11,8 +12,10 @@ import type {
 } from "../src/lib/api-types";
 import {
   allowsNotifications,
+  buildCurrentRemoteReminderDeviceRegistrationAsync,
   cancelReminderNotificationsAsync,
   getNotificationPermissionsStatusAsync,
+  getReminderInstallationIdAsync,
   getScheduledReminderSummaryAsync,
   requestNotificationPermissionsAsync,
   scheduleReminderNotificationAsync,
@@ -130,6 +133,15 @@ export default function AccountScreen() {
   const [localReminderStatus, setLocalReminderStatus] = useState("未安排本地提醒");
   const [localReminderTarget, setLocalReminderTarget] = useState("-");
   const [localReminderId, setLocalReminderId] = useState("-");
+  const [currentInstallationId, setCurrentInstallationId] = useState("-");
+  const [remoteDeviceStatus, setRemoteDeviceStatus] = useState("当前设备未登记");
+  const [remoteDeviceDelivery, setRemoteDeviceDelivery] = useState("-");
+  const [remoteDeviceProvider, setRemoteDeviceProvider] = useState("-");
+  const [remoteDeviceTokenPreview, setRemoteDeviceTokenPreview] = useState("-");
+  const [remoteDeviceEnvironment, setRemoteDeviceEnvironment] = useState("-");
+  const [remoteDeviceUpdatedAt, setRemoteDeviceUpdatedAt] = useState("-");
+  const [remoteDeviceTotalCount, setRemoteDeviceTotalCount] = useState(0);
+  const [remoteDeviceDeliverableCount, setRemoteDeviceDeliverableCount] = useState(0);
   const [syncingNotifications, setSyncingNotifications] = useState(false);
 
   useEffect(() => {
@@ -174,8 +186,58 @@ export default function AccountScreen() {
     }
   };
 
+  const applyReminderDeviceSnapshot = (
+    snapshot: ReminderDeviceRegistrationListResponse,
+    installationId: string
+  ): void => {
+    setCurrentInstallationId(installationId);
+    setRemoteDeviceTotalCount(snapshot.total_count);
+    setRemoteDeviceDeliverableCount(snapshot.deliverable_count);
+
+    const currentDevice = snapshot.items.find((item) => item.installation_id === installationId);
+    if (!currentDevice) {
+      setRemoteDeviceStatus("当前设备未登记");
+      setRemoteDeviceDelivery("-");
+      setRemoteDeviceProvider("-");
+      setRemoteDeviceTokenPreview("-");
+      setRemoteDeviceEnvironment("-");
+      setRemoteDeviceUpdatedAt("-");
+      return;
+    }
+
+    setRemoteDeviceStatus(currentDevice.permission_status);
+    setRemoteDeviceDelivery(currentDevice.delivery_ready ? "ready" : "pending");
+    setRemoteDeviceProvider(currentDevice.push_provider ?? "-");
+    setRemoteDeviceTokenPreview(currentDevice.push_token_preview ?? "-");
+    setRemoteDeviceEnvironment(currentDevice.environment);
+    setRemoteDeviceUpdatedAt(formatIsoDateTime(currentDevice.updated_at));
+  };
+
+  const syncRemoteReminderDeviceState = async (preferredInstallationId?: string): Promise<void> => {
+    setSyncingNotifications(true);
+    try {
+      const installationId = preferredInstallationId ?? (await getReminderInstallationIdAsync());
+      const snapshot = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.listReminderDevices(accessToken));
+      applyReminderDeviceSnapshot(snapshot, installationId);
+      setError(null);
+    } catch (deviceError) {
+      setRemoteDeviceStatus("同步失败");
+      setRemoteDeviceDelivery("-");
+      setRemoteDeviceProvider("-");
+      setRemoteDeviceTokenPreview("-");
+      setRemoteDeviceEnvironment("-");
+      setRemoteDeviceUpdatedAt("-");
+      setError(toRequestErrorMessage(deviceError, "加载提醒设备失败"));
+    } finally {
+      setSyncingNotifications(false);
+    }
+  };
+
   useEffect(() => {
-    void syncNotificationState();
+    void (async () => {
+      await syncNotificationState();
+      await syncRemoteReminderDeviceState();
+    })();
   }, []);
 
   const loadAccount = async (): Promise<void> => {
@@ -343,6 +405,53 @@ export default function AccountScreen() {
       setError(null);
     } catch (scheduleError) {
       setError(scheduleError instanceof Error ? scheduleError.message : "安排本地提醒失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const syncRemoteReminderDevice = async (): Promise<void> => {
+    setLoading(true);
+    try {
+      const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
+      await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.upsertReminderDevice(accessToken, registration.installationId, {
+          platform: registration.platform,
+          permission_status: registration.permissionStatus,
+          push_provider: registration.pushProvider,
+          push_token: registration.pushToken,
+          device_label: registration.deviceLabel,
+          app_build: registration.appBuild,
+          environment: registration.environment
+        })
+      );
+      await syncRemoteReminderDeviceState(registration.installationId);
+
+      if (registration.pushToken) {
+        setStatusMessage("已同步远程提醒设备");
+      } else if (registration.permissionStatus === "unsupported") {
+        setStatusMessage("已登记当前环境，但不支持远程推送");
+      } else {
+        setStatusMessage("已同步设备状态，待补充可用 push token");
+      }
+      setError(null);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "同步远程提醒设备失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeRemoteReminderDevice = async (): Promise<void> => {
+    setLoading(true);
+    try {
+      const installationId = currentInstallationId !== "-" ? currentInstallationId : await getReminderInstallationIdAsync();
+      await runWithAuthorizedClient((apiClient, accessToken) => apiClient.deleteReminderDevice(accessToken, installationId));
+      await syncRemoteReminderDeviceState(installationId);
+      setStatusMessage("已撤销远程提醒设备");
+      setError(null);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "撤销远程提醒设备失败");
     } finally {
       setLoading(false);
     }
@@ -668,6 +777,30 @@ export default function AccountScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             local_target: {localReminderTarget}
           </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_installation_id: {currentInstallationId}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_device_status: {remoteDeviceStatus}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_delivery: {remoteDeviceDelivery}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_provider: {remoteDeviceProvider}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_token_preview: {remoteDeviceTokenPreview}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_environment: {remoteDeviceEnvironment}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_updated_at: {remoteDeviceUpdatedAt}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_device_counts: {remoteDeviceDeliverableCount}/{remoteDeviceTotalCount}
+          </Text>
         </View>
         <ButtonRow>
           <PrimaryButton
@@ -707,6 +840,18 @@ export default function AccountScreen() {
         </ButtonRow>
         <ButtonRow>
           <PrimaryButton
+            label="同步远程设备"
+            onPress={() => void syncRemoteReminderDevice()}
+            disabled={reminderBusy}
+          />
+          <SecondaryButton
+            label="撤销远程设备"
+            onPress={() => void removeRemoteReminderDevice()}
+            disabled={reminderBusy}
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton
             label="模拟点击提醒"
             onPress={() => void clickReminder()}
             disabled={reminderBusy || !recommendation?.reminder_id}
@@ -720,6 +865,14 @@ export default function AccountScreen() {
         <ButtonRow>
           <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} />
           <SecondaryButton label="刷新本地提醒状态" onPress={() => void syncNotificationState()} disabled={reminderBusy} />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton
+            label="刷新远程设备状态"
+            onPress={() => void syncRemoteReminderDeviceState()}
+            disabled={reminderBusy}
+          />
+          <SecondaryButton label="查看进度" onPress={() => router.push("/progress")} />
         </ButtonRow>
       </InfoCard>
 

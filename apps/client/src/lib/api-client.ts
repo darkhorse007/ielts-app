@@ -24,6 +24,9 @@ import type {
   ProgressSyncPayload,
   ProgressSyncResponse,
   ReminderClickResponse,
+  ReminderDeviceDeleteResponse,
+  ReminderDeviceRegistrationListResponse,
+  ReminderDeviceRegistrationResponse,
   ReminderPreferenceResponse,
   ReminderRecommendationResponse,
   RegisterPayload,
@@ -543,6 +546,49 @@ export class ApiClient {
   async clickReminder(accessToken: string, reminderId: string): Promise<ReminderClickResponse> {
     return this.request<ReminderClickResponse>(`/v1/reminders/${encodeURIComponent(reminderId)}/click`, {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+  }
+
+  async listReminderDevices(accessToken: string): Promise<ReminderDeviceRegistrationListResponse> {
+    return this.request<ReminderDeviceRegistrationListResponse>("/v1/reminders/devices", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+  }
+
+  async upsertReminderDevice(
+    accessToken: string,
+    installationId: string,
+    payload: {
+      platform: "ios" | "android";
+      permission_status: "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+      push_provider?: "apns" | "fcm";
+      push_token?: string;
+      device_label?: string;
+      app_build?: string;
+      environment: "development" | "preview" | "production";
+    }
+  ): Promise<ReminderDeviceRegistrationResponse> {
+    return this.request<ReminderDeviceRegistrationResponse>(
+      `/v1/reminders/devices/${encodeURIComponent(installationId)}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
+  async deleteReminderDevice(accessToken: string, installationId: string): Promise<ReminderDeviceDeleteResponse> {
+    return this.request<ReminderDeviceDeleteResponse>(`/v1/reminders/devices/${encodeURIComponent(installationId)}`, {
+      method: "DELETE",
       headers: {
         Authorization: `Bearer ${accessToken}`
       }

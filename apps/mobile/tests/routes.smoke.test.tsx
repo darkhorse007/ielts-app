@@ -4,7 +4,7 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { StoredSession } from "../src/lib/api-types";
+import type { ReminderDeviceRegistrationResponse, StoredSession } from "../src/lib/api-types";
 import { buildScopedStorageKey } from "../src/lib/storage";
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
@@ -59,13 +59,79 @@ const mockedNotifications = Notifications as typeof Notifications & {
       date?: Date | number;
     } | null;
   }>;
+  __setMockDevicePushToken: (token: { type: string; data: string }) => void;
+};
+
+const toPushTokenPreview = (pushToken?: string): string | undefined => {
+  if (!pushToken) {
+    return undefined;
+  }
+
+  if (pushToken.length <= 10) {
+    return pushToken;
+  }
+
+  return `${pushToken.slice(0, 6)}...${pushToken.slice(-4)}`;
 };
 
 const createSessionContext = (overrides?: {
   apiClient?: Record<string, (...args: any[]) => Promise<any>>;
   session?: StoredSession | null;
   instanceConfig?: InstanceConfig | null;
+  reminderDevices?: ReminderDeviceRegistrationResponse[];
 }): ReturnType<typeof useAppSession> => {
+  const reminderDevicesByInstallationId = new Map<string, ReminderDeviceRegistrationResponse>(
+    (overrides?.reminderDevices ?? []).map((item) => [item.installation_id, { ...item }])
+  );
+  const listReminderDevices = vi.fn(async () => {
+    const items = Array.from(reminderDevicesByInstallationId.values()).sort((left, right) =>
+      right.updated_at.localeCompare(left.updated_at)
+    );
+    return {
+      total_count: items.length,
+      deliverable_count: items.filter((item) => item.delivery_ready).length,
+      items
+    };
+  });
+  const upsertReminderDevice = vi.fn(
+    async (
+      _accessToken: string,
+      installationId: string,
+      payload: {
+        platform: "ios" | "android";
+        permission_status: "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+        push_provider?: "apns" | "fcm";
+        push_token?: string;
+        device_label?: string;
+        app_build?: string;
+        environment: "development" | "preview" | "production";
+      }
+    ) => {
+      const existing = reminderDevicesByInstallationId.get(installationId);
+      const timestamp = new Date().toISOString();
+      const next: ReminderDeviceRegistrationResponse = {
+        installation_id: installationId,
+        platform: payload.platform,
+        permission_status: payload.permission_status,
+        push_provider: payload.push_provider,
+        push_token_preview: toPushTokenPreview(payload.push_token),
+        device_label: payload.device_label,
+        app_build: payload.app_build,
+        environment: payload.environment,
+        delivery_ready:
+          Boolean(payload.push_token) &&
+          (payload.permission_status === "granted" || payload.permission_status === "provisional"),
+        created_at: existing?.created_at ?? timestamp,
+        updated_at: timestamp
+      };
+      reminderDevicesByInstallationId.set(installationId, next);
+      return next;
+    }
+  );
+  const deleteReminderDevice = vi.fn(async (_accessToken: string, installationId: string) => ({
+    installation_id: installationId,
+    removed: reminderDevicesByInstallationId.delete(installationId)
+  }));
   const apiClient = {
     getProfile: vi.fn().mockResolvedValue({
       id: "user-1",
@@ -114,6 +180,9 @@ const createSessionContext = (overrides?: {
       removed_mock_exams: 1,
       removed_mock_exam_reports: 1
     }),
+    listReminderDevices,
+    upsertReminderDevice,
+    deleteReminderDevice,
     createMockExam: vi.fn().mockResolvedValue({
       exam_id: "mock-1",
       status: "in_progress",
@@ -388,6 +457,7 @@ describe("mobile route smoke", () => {
     await waitFor(() => {
       expect(screen.getByText((content) => content.includes("notification_permission: 已授权"))).toBeTruthy();
     });
+    expect(screen.getByText((content) => content.includes("remote_device_status: 当前设备未登记"))).toBeTruthy();
     expect(screen.getByText("导出并分享")).toBeTruthy();
     expect(screen.getByText("立即删除")).toBeTruthy();
   });
@@ -417,6 +487,39 @@ describe("mobile route smoke", () => {
     expect(scheduled).toHaveLength(1);
     expect(scheduled[0]?.content.title).toBe("IELTS 学习提醒");
     expect(scheduled[0]?.content.data?.deepLink).toBe("/plan");
+  });
+
+  test("account screen can sync and revoke remote reminder device", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(buildScopedStorageKey("installation", "id", "v1"), JSON.stringify("installation-ios-1"));
+    mockedNotifications.__setMockDevicePushToken({
+      type: "ios",
+      data: "native-token-abcdef1234567890"
+    });
+
+    render(<AccountScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("remote_installation_id: installation-ios-1"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("remote_device_counts: 0/0"))).toBeTruthy();
+
+    fireEvent.click(screen.getByText("同步远程设备"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("remote_device_status: granted"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("remote_provider: apns"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("remote_token_preview: native...7890"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("remote_environment: development"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("remote_device_counts: 1/1"))).toBeTruthy();
+
+    fireEvent.click(screen.getByText("撤销远程设备"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("remote_device_status: 当前设备未登记"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("remote_device_counts: 0/0"))).toBeTruthy();
   });
 
   test("speaking screen renders permission gate and live controls", async () => {

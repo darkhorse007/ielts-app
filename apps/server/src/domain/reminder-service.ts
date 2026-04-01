@@ -2,7 +2,15 @@ import { randomUUID } from "node:crypto";
 import { appendAudit } from "./audit.js";
 import { nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
-import type { ReminderPreference, ReminderRecommendation } from "./types.js";
+import type {
+  ReminderBuildEnvironment,
+  ReminderDevicePermissionStatus,
+  ReminderDevicePlatform,
+  ReminderDeviceRegistration,
+  ReminderPreference,
+  ReminderPushProvider,
+  ReminderRecommendation
+} from "./types.js";
 
 const DEFAULT_ACTIVE_HOUR_UTC = 20;
 const MAX_REMINDER_RECOMMENDATIONS = 1000;
@@ -145,6 +153,86 @@ export class ReminderService {
     return reminder;
   }
 
+  listDevices(userId: string): ReminderDeviceRegistration[] {
+    return Array.from(this.store.reminderDevicesByUserAndInstallation.values())
+      .filter((item) => item.userId === userId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+
+  upsertDevice(input: {
+    userId: string;
+    installationId: string;
+    platform: ReminderDevicePlatform;
+    permissionStatus: ReminderDevicePermissionStatus;
+    pushProvider?: ReminderPushProvider;
+    pushToken?: string;
+    deviceLabel?: string;
+    appBuild?: string;
+    environment: ReminderBuildEnvironment;
+  }): ReminderDeviceRegistration {
+    const timestamp = nowIso();
+    const key = this.getReminderDeviceKey(input.userId, input.installationId);
+    const existing = this.store.reminderDevicesByUserAndInstallation.get(key);
+    const next: ReminderDeviceRegistration = {
+      userId: input.userId,
+      installationId: input.installationId,
+      platform: input.platform,
+      permissionStatus: input.permissionStatus,
+      pushProvider: input.pushProvider,
+      pushToken: input.pushToken,
+      deviceLabel: input.deviceLabel,
+      appBuild: input.appBuild,
+      environment: input.environment,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp
+    };
+
+    this.store.reminderDevicesByUserAndInstallation.set(key, next);
+
+    appendAudit(this.store, "reminder_device_registered", {
+      userId: input.userId,
+      metadata: {
+        installationId: next.installationId,
+        platform: next.platform,
+        permissionStatus: next.permissionStatus,
+        pushProvider: next.pushProvider,
+        hasPushToken: Boolean(next.pushToken),
+        environment: next.environment
+      }
+    });
+
+    return next;
+  }
+
+  removeDevice(input: {
+    userId: string;
+    installationId: string;
+  }): boolean {
+    const key = this.getReminderDeviceKey(input.userId, input.installationId);
+    const existing = this.store.reminderDevicesByUserAndInstallation.get(key);
+    if (!existing) {
+      return false;
+    }
+
+    this.store.reminderDevicesByUserAndInstallation.delete(key);
+    appendAudit(this.store, "reminder_device_removed", {
+      userId: input.userId,
+      metadata: {
+        installationId: existing.installationId,
+        platform: existing.platform,
+        pushProvider: existing.pushProvider,
+        hadPushToken: Boolean(existing.pushToken)
+      }
+    });
+    return true;
+  }
+
+  isDeviceDeliverable(device: ReminderDeviceRegistration): boolean {
+    return (
+      Boolean(device.pushToken) && (device.permissionStatus === "granted" || device.permissionStatus === "provisional")
+    );
+  }
+
   private inferActiveHourUtc(userId: string): {
     hour: number;
     eventCount: number;
@@ -279,5 +367,9 @@ export class ReminderService {
         break;
       }
     }
+  }
+
+  private getReminderDeviceKey(userId: string, installationId: string): string {
+    return `${userId}:${installationId}`;
   }
 }

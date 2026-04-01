@@ -92,6 +92,24 @@ describe("S34 user data export", () => {
     });
     expect(reminderRecommendation.statusCode).toBe(200);
 
+    const reminderDevice = await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/export-installation-1",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-abcdef1234567890",
+        device_label: "iPhone Export",
+        app_build: "1.0.0",
+        environment: "production"
+      }
+    });
+    expect(reminderDevice.statusCode).toBe(200);
+
     const exported = await context.app.inject({
       method: "GET",
       url: "/v1/users/me/export",
@@ -118,6 +136,11 @@ describe("S34 user data export", () => {
         recommendations: Array<{
           id: string;
         }>;
+        devices: Array<{
+          installationId: string;
+          permissionStatus: string;
+          pushProvider?: string;
+        }>;
       };
       analytics: {
         total_events: number;
@@ -130,6 +153,10 @@ describe("S34 user data export", () => {
     expect(body.auth.sessions[0].deviceId).toBe("macos");
     expect(body.reminders.preference?.subscribed).toBe(true);
     expect(body.reminders.recommendations.length).toBe(1);
+    expect(body.reminders.devices).toHaveLength(1);
+    expect(body.reminders.devices[0]?.installationId).toBe("export-installation-1");
+    expect(body.reminders.devices[0]?.permissionStatus).toBe("granted");
+    expect(body.reminders.devices[0]?.pushProvider).toBe("apns");
     expect(body.analytics.total_events).toBe(1);
     expect(body.exclusions).toEqual(
       expect.arrayContaining(["password_hash", "refresh_token_hash", "internal_audit_events", "backup_copies"])

@@ -8,6 +8,7 @@ import type {
   MockExam,
   MockExamReport,
   PracticeSession,
+  ReminderDeviceRegistration,
   ReminderPreference,
   ReminderRecommendation,
   ProgressConflict,
@@ -110,6 +111,7 @@ export class InMemoryStore {
   readonly analyticsEvents: AnalyticsEvent[];
   readonly reminderPreferencesByUserId = new Map<string, ReminderPreference>();
   readonly reminderRecommendationsById = new Map<string, ReminderRecommendation>();
+  readonly reminderDevicesByUserAndInstallation = new Map<string, ReminderDeviceRegistration>();
   readonly abExperimentsByKey = new Map<string, AbExperiment>();
   readonly abExperimentAssignmentByExperimentAndUser = new Map<string, string>();
   readonly abExperimentExposureCountByExperimentAndVariant = new Map<string, number>();

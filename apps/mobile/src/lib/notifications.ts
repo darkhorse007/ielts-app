@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { buildScopedStorageKey, loadStoredJson, saveStoredJson } from "./storage";
 
 type NotificationsModule = typeof import("expo-notifications");
 
@@ -21,10 +22,22 @@ export type ScheduledReminderSummary = {
   scheduledAt: string | null;
 };
 
+export type RemoteReminderDeviceRegistration = {
+  installationId: string;
+  platform: "ios" | "android";
+  permissionStatus: "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+  pushProvider?: "apns" | "fcm";
+  pushToken?: string;
+  deviceLabel: string;
+  appBuild?: string;
+  environment: "development" | "preview" | "production";
+};
+
 const reminderChannelId = "study-reminders";
 const reminderKind = "study-reminder";
 const fallbackReminderDelaySeconds = 5;
 const authorizedIosStatuses = new Set([2, 3, 4]);
+const installationIdStorageKey = buildScopedStorageKey("installation", "id", "v1");
 
 let notificationsModulePromise: Promise<NotificationsModule | null> | null = null;
 let notificationHandlerConfigured = false;
@@ -38,6 +51,27 @@ const unavailablePermissions: NotificationPermissionSnapshot = {
 };
 
 const shouldSkipNotificationsModule = (): boolean => Platform.OS === "android" && Constants.appOwnership === "expo";
+
+const createInstallationId = (): string => {
+  const maybeRandomUuid = globalThis.crypto?.randomUUID?.();
+  if (maybeRandomUuid) {
+    return maybeRandomUuid;
+  }
+
+  return `${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const getNotificationBuildEnvironment = (): "development" | "preview" | "production" => {
+  if (__DEV__) {
+    return "development";
+  }
+
+  if (Constants.executionEnvironment === "standalone") {
+    return "production";
+  }
+
+  return "preview";
+};
 
 const loadNotificationsModule = async (): Promise<NotificationsModule | null> => {
   if (shouldSkipNotificationsModule()) {
@@ -126,6 +160,39 @@ export const toNotificationPermissionLabel = (settings: NotificationPermissionSn
   return settings.canAskAgain ? "未决定" : "已拒绝";
 };
 
+export const toRemotePermissionStatus = (
+  settings: NotificationPermissionSnapshot
+): "granted" | "provisional" | "undetermined" | "denied" | "unsupported" => {
+  if (!settings.available) {
+    return "unsupported";
+  }
+
+  if (settings.ios?.status === 3) {
+    return "provisional";
+  }
+
+  if (allowsNotifications(settings)) {
+    return "granted";
+  }
+
+  if (String(settings.status) === "undetermined" || settings.canAskAgain) {
+    return "undetermined";
+  }
+
+  return "denied";
+};
+
+export const getReminderInstallationIdAsync = async (): Promise<string> => {
+  const existing = await loadStoredJson<string>(installationIdStorageKey);
+  if (existing) {
+    return existing;
+  }
+
+  const created = createInstallationId();
+  await saveStoredJson(installationIdStorageKey, created);
+  return created;
+};
+
 export const ensureReminderNotificationChannelAsync = async (): Promise<void> => {
   const notifications = await loadNotificationsModule();
   if (!notifications || Platform.OS !== "android") {
@@ -179,6 +246,49 @@ export const requestNotificationPermissionsAsync = async (): Promise<Notificatio
     status: permissions.status,
     ios: permissions.ios
   };
+};
+
+export const buildCurrentRemoteReminderDeviceRegistrationAsync = async (): Promise<RemoteReminderDeviceRegistration> => {
+  const installationId = await getReminderInstallationIdAsync();
+  const permission = await getNotificationPermissionsStatusAsync();
+  const permissionStatus = toRemotePermissionStatus(permission);
+  const environment = getNotificationBuildEnvironment();
+  const deviceLabel = `mobile-${Platform.OS}`;
+  const appBuild = Constants.expoConfig?.version;
+
+  const registration: RemoteReminderDeviceRegistration = {
+    installationId,
+    platform: Platform.OS === "android" ? "android" : "ios",
+    permissionStatus,
+    deviceLabel,
+    appBuild,
+    environment
+  };
+
+  if (
+    permissionStatus !== "granted" &&
+    permissionStatus !== "provisional" &&
+    permissionStatus !== "undetermined"
+  ) {
+    return registration;
+  }
+
+  const notifications = await loadNotificationsModule();
+  if (!notifications || Constants.appOwnership === "expo" || !notifications.getDevicePushTokenAsync) {
+    return registration;
+  }
+
+  try {
+    const token = await notifications.getDevicePushTokenAsync();
+    if (typeof token.data === "string" && token.data.trim()) {
+      registration.pushProvider = token.type === "ios" ? "apns" : "fcm";
+      registration.pushToken = token.data.trim();
+    }
+  } catch {
+    // Best-effort registration. The server can still track capability without a resolved native token.
+  }
+
+  return registration;
 };
 
 export const getScheduledReminderSummaryAsync = async (): Promise<ScheduledReminderSummary | null> => {

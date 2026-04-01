@@ -193,6 +193,31 @@ export type ReminderClickResponse = {
   clicked_at?: string;
 };
 
+export type ReminderDeviceRegistrationResponse = {
+  installation_id: string;
+  platform: "ios" | "android";
+  permission_status: "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+  push_provider?: "apns" | "fcm";
+  push_token_preview?: string;
+  device_label?: string;
+  app_build?: string;
+  environment: "development" | "preview" | "production";
+  delivery_ready: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReminderDeviceRegistrationListResponse = {
+  total_count: number;
+  deliverable_count: number;
+  items: ReminderDeviceRegistrationResponse[];
+};
+
+export type ReminderDeviceDeleteResponse = {
+  installation_id: string;
+  removed: boolean;
+};
+
 export type StudyPlanResponse = {
   plan_id: string;
   status: "active" | "archived";

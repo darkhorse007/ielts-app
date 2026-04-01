@@ -218,6 +218,15 @@ export class AccountService {
       removedReminderRecommendations += 1;
     }
 
+    let removedReminderDevices = 0;
+    for (const [key, device] of this.store.reminderDevicesByUserAndInstallation.entries()) {
+      if (device.userId !== userId) {
+        continue;
+      }
+      this.store.reminderDevicesByUserAndInstallation.delete(key);
+      removedReminderDevices += 1;
+    }
+
     appendAudit(this.store, "user_deleted", {
       userId,
       metadata: {
@@ -235,7 +244,8 @@ export class AccountService {
         removedMockExams: mockExamIdsToRemove.length,
         removedMockExamReports: mockReportIdsToRemove.length,
         removedReminderPreferences,
-        removedReminderRecommendations
+        removedReminderRecommendations,
+        removedReminderDevices
       }
     });
 
@@ -326,6 +336,9 @@ export class AccountService {
     const reminderRecommendations = Array.from(this.store.reminderRecommendationsById.values()).filter(
       (item) => item.userId === userId
     );
+    const reminderDevices = Array.from(this.store.reminderDevicesByUserAndInstallation.values()).filter(
+      (item) => item.userId === userId
+    );
 
     const analyticsEvents = this.store.analyticsEvents.filter((item) => item.userId === userId);
 
@@ -375,7 +388,8 @@ export class AccountService {
       },
       reminders: {
         preference: reminderPreference ? clone(reminderPreference) : undefined,
-        recommendations: clone(reminderRecommendations)
+        recommendations: clone(reminderRecommendations),
+        devices: clone(reminderDevices)
       },
       analytics: {
         total_events: analyticsEvents.length,
@@ -396,7 +410,8 @@ export class AccountService {
         generatedAt,
         analyticsEventCount: analyticsEvents.length,
         studyPlanCount: studyPlans.length,
-        reminderRecommendationCount: reminderRecommendations.length
+        reminderRecommendationCount: reminderRecommendations.length,
+        reminderDeviceCount: reminderDevices.length
       }
     });
 

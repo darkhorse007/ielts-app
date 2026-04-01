@@ -25,9 +25,20 @@ const scheduledNotifications: Array<{
   content: Record<string, unknown>;
   trigger: Record<string, unknown> | null;
 }> = [];
+const mockConstants = {
+  appOwnership: null as string | null,
+  executionEnvironment: "standalone",
+  expoConfig: {
+    version: "1.0.0-test"
+  }
+};
 let notificationHandler: Record<string, unknown> | null = null;
 let notificationCounter = 0;
 let lastNotificationResponse: Record<string, unknown> | null = null;
+let mockDevicePushToken = {
+  type: "ios",
+  data: "native-token-1234567890"
+};
 let notificationPermissionState = {
   granted: true,
   canAskAgain: true,
@@ -180,8 +191,35 @@ vi.mock("expo-audio", () => ({
 }));
 
 vi.mock("expo-constants", () => ({
-  default: {
-    appOwnership: null
+  default: mockConstants,
+  __resetMockConstants: () => {
+    mockConstants.appOwnership = null;
+    mockConstants.executionEnvironment = "standalone";
+    mockConstants.expoConfig = {
+      version: "1.0.0-test"
+    };
+  },
+  __setMockConstants: (
+    overrides: Partial<{
+      appOwnership: string | null;
+      executionEnvironment: string;
+      expoConfig: {
+        version?: string;
+      };
+    }>
+  ) => {
+    if (Object.prototype.hasOwnProperty.call(overrides, "appOwnership")) {
+      mockConstants.appOwnership = overrides.appOwnership ?? null;
+    }
+    if (typeof overrides.executionEnvironment === "string") {
+      mockConstants.executionEnvironment = overrides.executionEnvironment;
+    }
+    if (overrides.expoConfig) {
+      mockConstants.expoConfig = {
+        ...mockConstants.expoConfig,
+        ...overrides.expoConfig
+      };
+    }
   }
 }));
 
@@ -233,6 +271,7 @@ vi.mock("expo-notifications", () => ({
     };
     return { ...notificationPermissionState };
   }),
+  getDevicePushTokenAsync: vi.fn(async () => ({ ...mockDevicePushToken })),
   setNotificationChannelAsync: vi.fn(async () => null),
   getAllScheduledNotificationsAsync: vi.fn(async () => scheduledNotifications.map((item) => ({ ...item }))),
   scheduleNotificationAsync: vi.fn(async (request: { content: Record<string, unknown>; trigger: Record<string, unknown> | null }) => {
@@ -267,6 +306,10 @@ vi.mock("expo-notifications", () => ({
     notificationHandler = null;
     notificationCounter = 0;
     lastNotificationResponse = null;
+    mockDevicePushToken = {
+      type: "ios",
+      data: "native-token-1234567890"
+    };
     scheduledNotifications.splice(0, scheduledNotifications.length);
     notificationResponseListeners.clear();
     notificationPermissionState = {
@@ -288,6 +331,11 @@ vi.mock("expo-notifications", () => ({
         ...notificationPermissionState.ios,
         ...overrides.ios
       }
+    };
+  },
+  __setMockDevicePushToken: (token: { type: string; data: string }) => {
+    mockDevicePushToken = {
+      ...token
     };
   },
   __emitMockNotificationResponse: (response: Record<string, unknown>) => {

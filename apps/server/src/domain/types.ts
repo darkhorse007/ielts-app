@@ -115,6 +115,8 @@ export type AuditEventType =
   | "reminder_preference_updated"
   | "reminder_recommendation_generated"
   | "reminder_clicked"
+  | "reminder_device_registered"
+  | "reminder_device_removed"
   | "churn_risk_scored"
   | "churn_strategy_triggered"
   | "churn_effect_queried"
@@ -1005,6 +1007,28 @@ export type ReminderRecommendation = {
   taskId?: string;
   createdAt: string;
   clickedAt?: string;
+};
+
+export type ReminderDevicePlatform = "ios" | "android";
+
+export type ReminderPushProvider = "apns" | "fcm";
+
+export type ReminderDevicePermissionStatus = "granted" | "provisional" | "undetermined" | "denied" | "unsupported";
+
+export type ReminderBuildEnvironment = "development" | "preview" | "production";
+
+export type ReminderDeviceRegistration = {
+  userId: string;
+  installationId: string;
+  platform: ReminderDevicePlatform;
+  permissionStatus: ReminderDevicePermissionStatus;
+  pushProvider?: ReminderPushProvider;
+  pushToken?: string;
+  deviceLabel?: string;
+  appBuild?: string;
+  environment: ReminderBuildEnvironment;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ChurnRiskLevel = "low" | "medium" | "high";

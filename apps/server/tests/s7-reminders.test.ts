@@ -207,4 +207,177 @@ describe("S7 personalized reminders", () => {
     expect(clickByOutsider.statusCode).toBe(404);
     expect(clickByOutsider.json().code).toBe("REMINDER_NOT_FOUND");
   });
+
+  test("registers lists and removes reminder devices", async () => {
+    const user = await registerAndLogin();
+    const installationId = "ios-installation-1";
+
+    const registerDevice = await context.app.inject({
+      method: "PUT",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-abcdef1234567890",
+        device_label: "iPhone 15 Pro",
+        app_build: "1.0.0",
+        environment: "production"
+      }
+    });
+    expect(registerDevice.statusCode).toBe(200);
+    expect(registerDevice.json().installation_id).toBe(installationId);
+    expect(registerDevice.json().delivery_ready).toBe(true);
+    expect(registerDevice.json().push_token_preview).toBe("native...7890");
+
+    const listDevices = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(listDevices.statusCode).toBe(200);
+    expect(listDevices.json().total_count).toBe(1);
+    expect(listDevices.json().deliverable_count).toBe(1);
+    expect(listDevices.json().items[0].installation_id).toBe(installationId);
+
+    const deleteDevice = await context.app.inject({
+      method: "DELETE",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(deleteDevice.statusCode).toBe(200);
+    expect(deleteDevice.json()).toEqual({
+      installation_id: installationId,
+      removed: true
+    });
+
+    const listAfterDelete = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(listAfterDelete.statusCode).toBe(200);
+    expect(listAfterDelete.json().total_count).toBe(0);
+    expect(listAfterDelete.json().deliverable_count).toBe(0);
+  });
+
+  test("updates the same reminder installation without creating duplicates", async () => {
+    const user = await registerAndLogin();
+    const installationId = "ios-installation-2";
+
+    const firstUpsert = await context.app.inject({
+      method: "PUT",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "denied",
+        device_label: "iPhone 14",
+        environment: "preview"
+      }
+    });
+    expect(firstUpsert.statusCode).toBe(200);
+    expect(firstUpsert.json().delivery_ready).toBe(false);
+
+    const secondUpsert = await context.app.inject({
+      method: "PUT",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-fedcba0987654321",
+        device_label: "iPhone 14",
+        app_build: "1.0.1",
+        environment: "production"
+      }
+    });
+    expect(secondUpsert.statusCode).toBe(200);
+    expect(secondUpsert.json().installation_id).toBe(installationId);
+    expect(secondUpsert.json().delivery_ready).toBe(true);
+    expect(secondUpsert.json().push_token_preview).toBe("native...4321");
+
+    const listDevices = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(listDevices.statusCode).toBe(200);
+    expect(listDevices.json().total_count).toBe(1);
+    expect(listDevices.json().deliverable_count).toBe(1);
+    expect(listDevices.json().items[0].permission_status).toBe("granted");
+    expect(listDevices.json().items[0].app_build).toBe("1.0.1");
+  });
+
+  test("keeps reminder devices isolated across users", async () => {
+    const owner = await registerAndLogin();
+    const outsider = await registerAndLogin();
+    const installationId = "shared-installation-id";
+
+    const ownerUpsert = await context.app.inject({
+      method: "PUT",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${owner.access_token}`
+      },
+      payload: {
+        platform: "android",
+        permission_status: "granted",
+        push_provider: "fcm",
+        push_token: "android-token-abcdef1234567890",
+        environment: "production"
+      }
+    });
+    expect(ownerUpsert.statusCode).toBe(200);
+
+    const outsiderDelete = await context.app.inject({
+      method: "DELETE",
+      url: `/v1/reminders/devices/${installationId}`,
+      headers: {
+        authorization: `Bearer ${outsider.access_token}`
+      }
+    });
+    expect(outsiderDelete.statusCode).toBe(200);
+    expect(outsiderDelete.json()).toEqual({
+      installation_id: installationId,
+      removed: false
+    });
+
+    const ownerDevices = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${owner.access_token}`
+      }
+    });
+    expect(ownerDevices.statusCode).toBe(200);
+    expect(ownerDevices.json().total_count).toBe(1);
+    expect(ownerDevices.json().items[0].installation_id).toBe(installationId);
+
+    const outsiderDevices = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${outsider.access_token}`
+      }
+    });
+    expect(outsiderDevices.statusCode).toBe(200);
+    expect(outsiderDevices.json().total_count).toBe(0);
+  });
 });
