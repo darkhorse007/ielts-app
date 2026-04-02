@@ -16,7 +16,7 @@
 2. 已经存在可抽取的 API 与领域层代码，包括 `apps/client/src/lib/api-client.ts`、`api-types.ts`、`validators.ts`、`session-manager.ts`、`runtime-config.ts`。
 3. 当前服务端已经为认证、学习计划、训练、实时口语、写作、模考、分析、提醒提供完整 API/WS 契约。
 4. 当前仓库已经新增 `apps/mobile` 基础应用，接入首日学习链路、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、数据导出、删除账号，并且仍然没有独立移动端后端。
-5. 当前仓库已经补上移动端自动化基线：route-level vitest smoke，以及基于 Maestro 的 iOS simulator 与 Android emulator/device 设备级 smoke 脚本、flow 和 CI workflow。
+5. 当前仓库已经补上移动端自动化基线：route-level vitest smoke，以及基于 Maestro 的 iOS simulator 与 Android emulator/device 设备级 smoke 脚本、flow 和 CI workflow；其中 account smoke 已覆盖 reminder recommendation、本地提醒安排、远程设备同步与账号删除链路。
 6. 当前仓库已经补上移动端发布构建基线：`expo-dev-client`、`apps/mobile/eas.json`、首版 `ios.buildNumber` / `android.versionCode`，以及根级/工作区级 EAS build 命令包装脚本。
 
 ## 3. 选型约束
@@ -87,7 +87,7 @@
 ## 8. 仓库落地建议
 1. 第一步已经完成：新增 `apps/mobile`，打通认证、实例配置、首页骨架、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心，以及 API/WS 连通性。
 2. 第二步已经开始：新增 `packages/shared-client`，先复用 API 契约、校验器和 API 客户端。
-3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，以及 EAS dev / preview / production build baseline，并已落地通知点击 deep link 恢复、提醒 click 回写、前台自动 device token 重同步。下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
+3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，以及 EAS dev / preview / production build baseline，并已落地通知点击 deep link 恢复、提醒 click 回写、前台自动 device token 重同步，且将 reminder recommendation / local scheduling / remote device sync 纳入 account smoke。下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
 4. 在移动端稳定前，不改写现有 Web 客户端结构，也不引入 React Native Web 替代当前 Web 应用。
 
 ## 9. 官方参考

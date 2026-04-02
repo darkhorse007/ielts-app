@@ -854,11 +854,13 @@ export default function AccountScreen() {
             label="保存提醒设置"
             onPress={() => void saveReminderPreference()}
             disabled={reminderBusy}
+            testID="account.reminderSave"
           />
           <SecondaryButton
             label="刷新提醒建议"
             onPress={() => void refreshRecommendation()}
             disabled={reminderBusy}
+            testID="account.reminderRefresh"
           />
         </ButtonRow>
         <ButtonRow>
@@ -866,11 +868,13 @@ export default function AccountScreen() {
             label="授权通知"
             onPress={() => void authorizeNotifications()}
             disabled={reminderBusy}
+            testID="account.reminderAuthorize"
           />
           <SecondaryButton
             label="安排本地提醒"
             onPress={() => void scheduleLocalReminder()}
             disabled={reminderBusy || !recommendation?.reminder_id}
+            testID="account.reminderScheduleLocal"
           />
         </ButtonRow>
         <ButtonRow>
@@ -878,11 +882,13 @@ export default function AccountScreen() {
             label="同步远程设备"
             onPress={() => void syncRemoteReminderDevice()}
             disabled={reminderBusy}
+            testID="account.reminderSyncRemote"
           />
           <SecondaryButton
             label="撤销远程设备"
             onPress={() => void removeRemoteReminderDevice()}
             disabled={reminderBusy}
+            testID="account.reminderRemoveRemote"
           />
         </ButtonRow>
         <ButtonRow>
@@ -890,24 +896,32 @@ export default function AccountScreen() {
             label="模拟点击提醒"
             onPress={() => void clickReminder()}
             disabled={reminderBusy || !recommendation?.reminder_id}
+            testID="account.reminderClick"
           />
           <SecondaryButton
             label="清空本地提醒"
             onPress={() => void clearLocalReminder()}
             disabled={reminderBusy}
+            testID="account.reminderClearLocal"
           />
         </ButtonRow>
         <ButtonRow>
-          <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} />
-          <SecondaryButton label="刷新本地提醒状态" onPress={() => void syncNotificationState()} disabled={reminderBusy} />
+          <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} testID="account.plan" />
+          <SecondaryButton
+            label="刷新本地提醒状态"
+            onPress={() => void syncNotificationState()}
+            disabled={reminderBusy}
+            testID="account.reminderRefreshLocalState"
+          />
         </ButtonRow>
         <ButtonRow>
           <PrimaryButton
             label="刷新远程设备状态"
             onPress={() => void syncRemoteReminderDeviceState()}
             disabled={reminderBusy}
+            testID="account.reminderRefreshRemoteState"
           />
-          <SecondaryButton label="查看进度" onPress={() => router.push("/progress")} />
+          <SecondaryButton label="查看进度" onPress={() => router.push("/progress")} testID="account.progress" />
         </ButtonRow>
       </InfoCard>
 

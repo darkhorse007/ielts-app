@@ -94,6 +94,32 @@ name: iOS account smoke
     timeout: 15000
 - scrollUntilVisible:
     element:
+      id: account.reminderRefresh
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: account.reminderRefresh
+- scrollUntilVisible:
+    element:
+      text: "deep_link: /plan"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: account.reminderScheduleLocal
+- scrollUntilVisible:
+    element:
+      text: "local_target: /plan"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: account.reminderSyncRemote
+- scrollUntilVisible:
+    element:
+      text: "remote_device_status: granted"
+    direction: UP
+    timeout: 15000
+- scrollUntilVisible:
+    element:
       id: account.requestDeletion
     direction: DOWN
     timeout: 15000
