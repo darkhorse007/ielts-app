@@ -49,6 +49,7 @@ import {
 } from "./domain/analytics-repository.js";
 import { ReminderService } from "./domain/reminder-service.js";
 import { ReminderDeliveryService, type ReminderPushProviderSenders } from "./domain/reminder-delivery-service.js";
+import { createReminderPushProviderSenders } from "./domain/reminder-push-provider-senders.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -91,8 +92,14 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   analyticsRepository?: AnalyticsRepository;
   reminderDeliveryApnsEnabled?: boolean;
   reminderDeliveryApnsBundleId?: string;
+  reminderDeliveryApnsTeamId?: string;
+  reminderDeliveryApnsKeyId?: string;
+  reminderDeliveryApnsPrivateKey?: string;
   reminderDeliveryFcmEnabled?: boolean;
   reminderDeliveryFcmProjectId?: string;
+  reminderDeliveryFcmClientEmail?: string;
+  reminderDeliveryFcmPrivateKey?: string;
+  reminderDeliveryFcmTokenUri?: string;
   reminderDeliverySenders?: ReminderPushProviderSenders;
   allowedBrowserOrigins?: string[];
   enableInternalDebugRoutes?: boolean;
@@ -234,16 +241,32 @@ export const buildServer = (options?: BuildServerOptions): {
   const mockExamService = new MockExamService(store);
   const analyticsService = new AnalyticsService(store, analyticsRepository);
   const reminderService = new ReminderService(store);
-  const reminderDeliveryService = new ReminderDeliveryService(store, reminderService, {
+  const reminderProviderSettings = {
     apns: {
       enabled: options?.reminderDeliveryApnsEnabled ?? false,
-      bundleId: options?.reminderDeliveryApnsBundleId
+      bundleId: options?.reminderDeliveryApnsBundleId,
+      teamId: options?.reminderDeliveryApnsTeamId,
+      keyId: options?.reminderDeliveryApnsKeyId,
+      privateKey: options?.reminderDeliveryApnsPrivateKey
     },
     fcm: {
       enabled: options?.reminderDeliveryFcmEnabled ?? false,
-      projectId: options?.reminderDeliveryFcmProjectId
+      projectId: options?.reminderDeliveryFcmProjectId,
+      clientEmail: options?.reminderDeliveryFcmClientEmail,
+      privateKey: options?.reminderDeliveryFcmPrivateKey,
+      tokenUri: options?.reminderDeliveryFcmTokenUri
     }
-  }, options?.reminderDeliverySenders);
+  };
+  const defaultReminderDeliverySenders = createReminderPushProviderSenders(reminderProviderSettings);
+  const reminderDeliveryService = new ReminderDeliveryService(
+    store,
+    reminderService,
+    reminderProviderSettings,
+    {
+      ...defaultReminderDeliverySenders,
+      ...options?.reminderDeliverySenders
+    }
+  );
 
   const app = Fastify({
     logger: false

@@ -2,8 +2,8 @@ import { buildServer } from "./app.js";
 import {
   resolveAllowedBrowserOriginsFromEnv,
   resolveAuthSecretFromEnv,
-  resolveBooleanFlagFromEnv,
-  resolveInternalDebugRoutesEnabledFromEnv
+  resolveInternalDebugRoutesEnabledFromEnv,
+  resolveReminderPushRuntimeConfigFromEnv
 } from "./domain/config.js";
 const authAccountStorageBackend = process.env.AUTH_ACCOUNT_STORAGE_BACKEND === "postgres" ? "postgres" : "memory";
 const authAccountStorageConnectionString = process.env.AUTH_ACCOUNT_STORAGE_CONNECTION_STRING;
@@ -52,17 +52,15 @@ const analyticsStorageConnectionString =
   process.env.LEARNER_STATE_STORAGE_CONNECTION_STRING ??
   process.env.AUTH_ACCOUNT_STORAGE_CONNECTION_STRING;
 const analyticsStorageSchema = process.env.ANALYTICS_STORAGE_SCHEMA;
-const reminderDeliveryApnsEnabled = resolveBooleanFlagFromEnv("REMINDER_PUSH_APNS_ENABLED", process.env, false);
-const reminderDeliveryApnsBundleId = process.env.REMINDER_PUSH_APNS_BUNDLE_ID?.trim() || undefined;
-const reminderDeliveryFcmEnabled = resolveBooleanFlagFromEnv("REMINDER_PUSH_FCM_ENABLED", process.env, false);
-const reminderDeliveryFcmProjectId = process.env.REMINDER_PUSH_FCM_PROJECT_ID?.trim() || undefined;
 let authSecret = "";
 let allowedBrowserOrigins: string[] = [];
 let enableInternalDebugRoutes = false;
+let reminderPushRuntimeConfig = resolveReminderPushRuntimeConfigFromEnv({});
 try {
   authSecret = resolveAuthSecretFromEnv(process.env);
   allowedBrowserOrigins = resolveAllowedBrowserOriginsFromEnv(process.env);
   enableInternalDebugRoutes = resolveInternalDebugRoutesEnabledFromEnv(process.env);
+  reminderPushRuntimeConfig = resolveReminderPushRuntimeConfigFromEnv(process.env);
 } catch (error) {
   const message = error instanceof Error ? error.message : "SERVER_CONFIG_INVALID";
   console.error(
@@ -71,36 +69,52 @@ try {
   process.exit(1);
 }
 
-const { app } = buildServer({
-  authSecret,
-  authAccountStorageBackend,
-  authAccountStorageConnectionString,
-  authAccountStorageSchema,
-  learnerStateStorageBackend,
-  learnerStateStorageConnectionString,
-  learnerStateStorageSchema,
-  practiceStateStorageBackend,
-  practiceStateStorageConnectionString,
-  practiceStateStorageSchema,
-  speakingStateStorageBackend,
-  speakingStateStorageConnectionString,
-  speakingStateStorageSchema,
-  writingStateStorageBackend,
-  writingStateStorageConnectionString,
-  writingStateStorageSchema,
-  mockStateStorageBackend,
-  mockStateStorageConnectionString,
-  mockStateStorageSchema,
-  analyticsStorageBackend,
-  analyticsStorageConnectionString,
-  analyticsStorageSchema,
-  reminderDeliveryApnsEnabled,
-  reminderDeliveryApnsBundleId,
-  reminderDeliveryFcmEnabled,
-  reminderDeliveryFcmProjectId,
-  allowedBrowserOrigins,
-  enableInternalDebugRoutes
-});
+let app: ReturnType<typeof buildServer>["app"];
+try {
+  ({ app } = buildServer({
+    authSecret,
+    authAccountStorageBackend,
+    authAccountStorageConnectionString,
+    authAccountStorageSchema,
+    learnerStateStorageBackend,
+    learnerStateStorageConnectionString,
+    learnerStateStorageSchema,
+    practiceStateStorageBackend,
+    practiceStateStorageConnectionString,
+    practiceStateStorageSchema,
+    speakingStateStorageBackend,
+    speakingStateStorageConnectionString,
+    speakingStateStorageSchema,
+    writingStateStorageBackend,
+    writingStateStorageConnectionString,
+    writingStateStorageSchema,
+    mockStateStorageBackend,
+    mockStateStorageConnectionString,
+    mockStateStorageSchema,
+    analyticsStorageBackend,
+    analyticsStorageConnectionString,
+    analyticsStorageSchema,
+    reminderDeliveryApnsEnabled: reminderPushRuntimeConfig.apns.enabled,
+    reminderDeliveryApnsBundleId: reminderPushRuntimeConfig.apns.bundleId,
+    reminderDeliveryApnsTeamId: reminderPushRuntimeConfig.apns.teamId,
+    reminderDeliveryApnsKeyId: reminderPushRuntimeConfig.apns.keyId,
+    reminderDeliveryApnsPrivateKey: reminderPushRuntimeConfig.apns.privateKey,
+    reminderDeliveryFcmEnabled: reminderPushRuntimeConfig.fcm.enabled,
+    reminderDeliveryFcmProjectId: reminderPushRuntimeConfig.fcm.projectId,
+    reminderDeliveryFcmClientEmail: reminderPushRuntimeConfig.fcm.clientEmail,
+    reminderDeliveryFcmPrivateKey: reminderPushRuntimeConfig.fcm.privateKey,
+    reminderDeliveryFcmTokenUri: reminderPushRuntimeConfig.fcm.tokenUri,
+    allowedBrowserOrigins,
+    enableInternalDebugRoutes
+  }));
+} catch (error) {
+  const message = error instanceof Error ? error.message : "SERVER_CONFIG_INVALID";
+  console.error(
+    `[server-config] ${message}. Check AUTH_SECRET, BROWSER_ALLOWED_ORIGINS, INTERNAL_DEBUG_ROUTES_ENABLED, and REMINDER_PUSH_* before starting apps/server.`
+  );
+  process.exit(1);
+}
+
 const port = Number(process.env.PORT ?? 8787);
 
 const main = async (): Promise<void> => {

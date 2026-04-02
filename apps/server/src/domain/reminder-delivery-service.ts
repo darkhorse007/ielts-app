@@ -14,10 +14,16 @@ export type ReminderPushProviderRuntimeSettings = {
   apns: {
     enabled: boolean;
     bundleId?: string;
+    teamId?: string;
+    keyId?: string;
+    privateKey?: string;
   };
   fcm: {
     enabled: boolean;
     projectId?: string;
+    clientEmail?: string;
+    privateKey?: string;
+    tokenUri?: string;
   };
 };
 
@@ -116,6 +122,7 @@ type ProviderRuntimeState = {
   missingFields: string[];
   bundleId?: string;
   projectId?: string;
+  senderAvailable: boolean;
 };
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
@@ -135,11 +142,17 @@ const normalizeProviderRuntimeSettings = (
 ): ReminderPushProviderRuntimeSettings => ({
   apns: {
     enabled: settings?.apns?.enabled ?? false,
-    bundleId: settings?.apns?.bundleId?.trim() || undefined
+    bundleId: settings?.apns?.bundleId?.trim() || undefined,
+    teamId: settings?.apns?.teamId?.trim() || undefined,
+    keyId: settings?.apns?.keyId?.trim() || undefined,
+    privateKey: settings?.apns?.privateKey?.trim() || undefined
   },
   fcm: {
     enabled: settings?.fcm?.enabled ?? false,
-    projectId: settings?.fcm?.projectId?.trim() || undefined
+    projectId: settings?.fcm?.projectId?.trim() || undefined,
+    clientEmail: settings?.fcm?.clientEmail?.trim() || undefined,
+    privateKey: settings?.fcm?.privateKey?.trim() || undefined,
+    tokenUri: settings?.fcm?.tokenUri?.trim() || undefined
   }
 });
 
@@ -247,23 +260,40 @@ export class ReminderDeliveryService {
   }
 
   private getProviderStates(): Record<ReminderPushProvider, ProviderRuntimeState> {
-    const apnsMissingFields = this.providerSettings.apns.bundleId ? [] : ["bundle_id"];
-    const fcmMissingFields = this.providerSettings.fcm.projectId ? [] : ["project_id"];
+    const apnsSenderAvailable = Boolean(this.senders.apns);
+    const fcmSenderAvailable = Boolean(this.senders.fcm);
+    const apnsMissingFields = apnsSenderAvailable
+      ? []
+      : [
+          this.providerSettings.apns.bundleId ? null : "bundle_id",
+          this.providerSettings.apns.teamId ? null : "team_id",
+          this.providerSettings.apns.keyId ? null : "key_id",
+          this.providerSettings.apns.privateKey ? null : "private_key"
+        ].filter((value): value is string => Boolean(value));
+    const fcmMissingFields = fcmSenderAvailable
+      ? []
+      : [
+          this.providerSettings.fcm.projectId ? null : "project_id",
+          this.providerSettings.fcm.clientEmail ? null : "client_email",
+          this.providerSettings.fcm.privateKey ? null : "private_key"
+        ].filter((value): value is string => Boolean(value));
 
     return {
       apns: {
         enabled: this.providerSettings.apns.enabled,
-        configured: apnsMissingFields.length === 0,
-        ready: this.providerSettings.apns.enabled && apnsMissingFields.length === 0,
+        configured: apnsSenderAvailable || apnsMissingFields.length === 0,
+        ready: this.providerSettings.apns.enabled && (apnsSenderAvailable || apnsMissingFields.length === 0),
         missingFields: apnsMissingFields,
-        bundleId: this.providerSettings.apns.bundleId
+        bundleId: this.providerSettings.apns.bundleId,
+        senderAvailable: apnsSenderAvailable
       },
       fcm: {
         enabled: this.providerSettings.fcm.enabled,
-        configured: fcmMissingFields.length === 0,
-        ready: this.providerSettings.fcm.enabled && fcmMissingFields.length === 0,
+        configured: fcmSenderAvailable || fcmMissingFields.length === 0,
+        ready: this.providerSettings.fcm.enabled && (fcmSenderAvailable || fcmMissingFields.length === 0),
         missingFields: fcmMissingFields,
-        projectId: this.providerSettings.fcm.projectId
+        projectId: this.providerSettings.fcm.projectId,
+        senderAvailable: fcmSenderAvailable
       }
     };
   }

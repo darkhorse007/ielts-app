@@ -222,7 +222,10 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 ### 7.6 分析与提醒
 1. 客户端通过 `/v1/analytics/events/batch` 上报事件
 2. 服务端基于事件生成 summary 和提醒推荐
-3. `/v1/reminders/*` 提供偏好、推荐、点击追踪、设备登记，以及 dispatch preview
+3. `/v1/reminders/*` 提供偏好、推荐、点击追踪、设备登记、dispatch preview 与真实 dispatch attempt 记录
+4. self-hosted server 在未注入自定义 sender 时，默认通过 APNs token auth 与 FCM HTTP v1 直接发送移动端提醒
+5. APNs 运行时配置使用 `REMINDER_PUSH_APNS_ENABLED`、`REMINDER_PUSH_APNS_BUNDLE_ID`、`REMINDER_PUSH_APNS_TEAM_ID`、`REMINDER_PUSH_APNS_KEY_ID`、`REMINDER_PUSH_APNS_PRIVATE_KEY(_FILE)`
+6. FCM 运行时配置使用 `REMINDER_PUSH_FCM_ENABLED`、`REMINDER_PUSH_FCM_PROJECT_ID`、`REMINDER_PUSH_FCM_CLIENT_EMAIL`、`REMINDER_PUSH_FCM_PRIVATE_KEY(_FILE)`，或 `REMINDER_PUSH_FCM_SERVICE_ACCOUNT_JSON(_FILE)`
 
 ### 7.7 移动端状态恢复
 1. 应用启动时读取安全存储中的实例配置与会话信息
@@ -243,6 +246,7 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 4. 移动端 token 与实例配置必须保存在安全存储中
 5. 麦克风、通知等设备权限按需申请，不默认常驻开启
 6. 内部调试接口默认关闭，只用于本地或受控环境
+7. 推送私钥建议通过 `*_FILE` 挂载，不直接写入进程环境日志或镜像层
 
 ## 10. 当前架构刻意不做的事
 1. 不维护中心化 Admin 网关
