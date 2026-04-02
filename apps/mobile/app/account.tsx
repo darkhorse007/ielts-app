@@ -140,6 +140,11 @@ export default function AccountScreen() {
   const [remoteDeviceTokenPreview, setRemoteDeviceTokenPreview] = useState("-");
   const [remoteDeviceEnvironment, setRemoteDeviceEnvironment] = useState("-");
   const [remoteDeviceUpdatedAt, setRemoteDeviceUpdatedAt] = useState("-");
+  const [remoteLastDeliveryStatus, setRemoteLastDeliveryStatus] = useState("-");
+  const [remoteLastDeliveryFailureCode, setRemoteLastDeliveryFailureCode] = useState("-");
+  const [remoteLastDeliveryFailureMessage, setRemoteLastDeliveryFailureMessage] = useState("-");
+  const [remoteLastDeliveryRetryCount, setRemoteLastDeliveryRetryCount] = useState("-");
+  const [remoteLastDeliveryUpdatedAt, setRemoteLastDeliveryUpdatedAt] = useState("-");
   const [remoteDeviceTotalCount, setRemoteDeviceTotalCount] = useState(0);
   const [remoteDeviceDeliverableCount, setRemoteDeviceDeliverableCount] = useState(0);
   const [syncingNotifications, setSyncingNotifications] = useState(false);
@@ -202,6 +207,11 @@ export default function AccountScreen() {
       setRemoteDeviceTokenPreview("-");
       setRemoteDeviceEnvironment("-");
       setRemoteDeviceUpdatedAt("-");
+      setRemoteLastDeliveryStatus("-");
+      setRemoteLastDeliveryFailureCode("-");
+      setRemoteLastDeliveryFailureMessage("-");
+      setRemoteLastDeliveryRetryCount("-");
+      setRemoteLastDeliveryUpdatedAt("-");
       return;
     }
 
@@ -211,6 +221,13 @@ export default function AccountScreen() {
     setRemoteDeviceTokenPreview(currentDevice.push_token_preview ?? "-");
     setRemoteDeviceEnvironment(currentDevice.environment);
     setRemoteDeviceUpdatedAt(formatIsoDateTime(currentDevice.updated_at));
+    setRemoteLastDeliveryStatus(currentDevice.last_delivery_attempt?.status ?? "-");
+    setRemoteLastDeliveryFailureCode(currentDevice.last_delivery_attempt?.failure_code ?? "-");
+    setRemoteLastDeliveryFailureMessage(currentDevice.last_delivery_attempt?.failure_message ?? "-");
+    setRemoteLastDeliveryRetryCount(
+      currentDevice.last_delivery_attempt ? String(currentDevice.last_delivery_attempt.retry_count) : "-"
+    );
+    setRemoteLastDeliveryUpdatedAt(formatIsoDateTime(currentDevice.last_delivery_attempt?.updated_at));
   };
 
   const syncRemoteReminderDeviceState = async (preferredInstallationId?: string): Promise<void> => {
@@ -227,6 +244,11 @@ export default function AccountScreen() {
       setRemoteDeviceTokenPreview("-");
       setRemoteDeviceEnvironment("-");
       setRemoteDeviceUpdatedAt("-");
+      setRemoteLastDeliveryStatus("-");
+      setRemoteLastDeliveryFailureCode("-");
+      setRemoteLastDeliveryFailureMessage("-");
+      setRemoteLastDeliveryRetryCount("-");
+      setRemoteLastDeliveryUpdatedAt("-");
       setError(toRequestErrorMessage(deviceError, "加载提醒设备失败"));
     } finally {
       setSyncingNotifications(false);
@@ -797,6 +819,21 @@ export default function AccountScreen() {
           </Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             remote_updated_at: {remoteDeviceUpdatedAt}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_last_delivery_status: {remoteLastDeliveryStatus}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_last_delivery_failure_code: {remoteLastDeliveryFailureCode}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_last_delivery_failure_message: {remoteLastDeliveryFailureMessage}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_last_delivery_retry_count: {remoteLastDeliveryRetryCount}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            remote_last_delivery_updated_at: {remoteLastDeliveryUpdatedAt}
           </Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             remote_device_counts: {remoteDeviceDeliverableCount}/{remoteDeviceTotalCount}

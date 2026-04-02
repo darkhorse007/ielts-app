@@ -228,6 +228,7 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 6. FCM 运行时配置使用 `REMINDER_PUSH_FCM_ENABLED`、`REMINDER_PUSH_FCM_PROJECT_ID`、`REMINDER_PUSH_FCM_CLIENT_EMAIL`、`REMINDER_PUSH_FCM_PRIVATE_KEY(_FILE)`，或 `REMINDER_PUSH_FCM_SERVICE_ACCOUNT_JSON(_FILE)`
 7. dispatch 会在单次请求内对 `NETWORK_ERROR`、`RATE_LIMITED`、`PROVIDER_UNAVAILABLE` 做有界重试，并在 attempt 中记录 `retryCount`
 8. dispatch failure code 归一化为 `SENDER_UNAVAILABLE`、`NETWORK_ERROR`、`AUTH_ERROR`、`INVALID_REQUEST`、`DEVICE_UNREGISTERED`、`RATE_LIMITED`、`PROVIDER_UNAVAILABLE`、`PROVIDER_ERROR`
+9. `/v1/reminders/devices` 当前会返回每台设备最近一次 `last_delivery_attempt`，供 mobile account 页面直接展示最新投递状态与失败原因
 
 ### 7.7 移动端状态恢复
 1. 应用启动时读取安全存储中的实例配置与会话信息

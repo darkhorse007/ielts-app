@@ -294,6 +294,20 @@ export class ReminderDeliveryService {
     return result;
   }
 
+  listLatestAttemptsByInstallationId(userId: string): Map<string, ReminderDeliveryAttempt> {
+    const attempts = Array.from(this.store.reminderDeliveryAttemptsById.values()).filter((item) => item.userId === userId);
+    const latestByInstallationId = new Map<string, ReminderDeliveryAttempt>();
+
+    for (const attempt of attempts) {
+      const current = latestByInstallationId.get(attempt.installationId);
+      if (!current || current.updatedAt.localeCompare(attempt.updatedAt) <= 0) {
+        latestByInstallationId.set(attempt.installationId, attempt);
+      }
+    }
+
+    return latestByInstallationId;
+  }
+
   private getProviderStates(): Record<ReminderPushProvider, ProviderRuntimeState> {
     const apnsSenderAvailable = Boolean(this.senders.apns);
     const fcmSenderAvailable = Boolean(this.senders.fcm);

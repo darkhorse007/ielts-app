@@ -522,6 +522,49 @@ describe("mobile route smoke", () => {
     expect(screen.getByText((content) => content.includes("remote_device_counts: 0/0"))).toBeTruthy();
   });
 
+  test("account screen shows the latest remote delivery attempt for current device", async () => {
+    mockedSecureStore.__setMockItem(buildScopedStorageKey("installation", "id", "v1"), JSON.stringify("installation-ios-1"));
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        reminderDevices: [
+          {
+            installation_id: "installation-ios-1",
+            platform: "ios",
+            permission_status: "granted",
+            push_provider: "apns",
+            push_token_preview: "native...7890",
+            environment: "production",
+            delivery_ready: true,
+            created_at: "2026-04-02T00:00:00.000Z",
+            updated_at: "2026-04-02T00:00:00.000Z",
+            last_delivery_attempt: {
+              attempt_id: "attempt-1",
+              reminder_id: "rem-1",
+              status: "failed",
+              push_provider: "apns",
+              failure_code: "RATE_LIMITED",
+              failure_message: "APNS: 429: TooManyRequests",
+              retry_count: 2,
+              created_at: "2026-04-02T01:00:00.000Z",
+              updated_at: "2026-04-02T01:00:00.000Z"
+            }
+          }
+        ]
+      })
+    );
+
+    render(<AccountScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("remote_last_delivery_status: failed"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("remote_last_delivery_failure_code: RATE_LIMITED"))).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("remote_last_delivery_failure_message: APNS: 429: TooManyRequests"))
+    ).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("remote_last_delivery_retry_count: 2"))).toBeTruthy();
+  });
+
   test("speaking screen renders permission gate and live controls", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
 

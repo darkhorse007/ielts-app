@@ -205,6 +205,28 @@ export type ReminderDeviceRegistrationResponse = {
   delivery_ready: boolean;
   created_at: string;
   updated_at: string;
+  last_delivery_attempt?: {
+    attempt_id: string;
+    reminder_id: string;
+    status: "sent" | "skipped" | "duplicate" | "failed";
+    push_provider?: "apns" | "fcm";
+    provider_message_id?: string;
+    duplicate_of_attempt_id?: string;
+    skip_reason?: string;
+    failure_code?:
+      | "SENDER_UNAVAILABLE"
+      | "NETWORK_ERROR"
+      | "AUTH_ERROR"
+      | "INVALID_REQUEST"
+      | "DEVICE_UNREGISTERED"
+      | "RATE_LIMITED"
+      | "PROVIDER_UNAVAILABLE"
+      | "PROVIDER_ERROR";
+    failure_message?: string;
+    retry_count: number;
+    created_at: string;
+    updated_at: string;
+  };
 };
 
 export type ReminderDeviceRegistrationListResponse = {

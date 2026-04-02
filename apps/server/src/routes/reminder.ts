@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AuthService } from "../domain/auth-service.js";
 import type { ReminderDeliveryService } from "../domain/reminder-delivery-service.js";
 import type { ReminderService } from "../domain/reminder-service.js";
-import type { ReminderDeviceRegistration } from "../domain/types.js";
+import type { ReminderDeliveryAttempt, ReminderDeviceRegistration } from "../domain/types.js";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
 
 const reminderPreferenceUpdateSchema = z.object({
@@ -47,7 +47,8 @@ const toPushTokenPreview = (pushToken?: string): string | undefined => {
 
 const toReminderDeviceResponse = (
   reminderService: ReminderService,
-  device: ReminderDeviceRegistration
+  device: ReminderDeviceRegistration,
+  latestDeliveryAttempt?: ReminderDeliveryAttempt
 ): {
   installation_id: string;
   platform: "ios" | "android";
@@ -60,6 +61,20 @@ const toReminderDeviceResponse = (
   delivery_ready: boolean;
   created_at: string;
   updated_at: string;
+  last_delivery_attempt?: {
+    attempt_id: string;
+    reminder_id: string;
+    status: "sent" | "skipped" | "duplicate" | "failed";
+    push_provider?: "apns" | "fcm";
+    provider_message_id?: string;
+    duplicate_of_attempt_id?: string;
+    skip_reason?: string;
+    failure_code?: string;
+    failure_message?: string;
+    retry_count: number;
+    created_at: string;
+    updated_at: string;
+  };
 } => ({
   installation_id: device.installationId,
   platform: device.platform,
@@ -71,7 +86,23 @@ const toReminderDeviceResponse = (
   environment: device.environment,
   delivery_ready: reminderService.isDeviceDeliverable(device),
   created_at: device.createdAt,
-  updated_at: device.updatedAt
+  updated_at: device.updatedAt,
+  last_delivery_attempt: latestDeliveryAttempt
+    ? {
+        attempt_id: latestDeliveryAttempt.id,
+        reminder_id: latestDeliveryAttempt.reminderId,
+        status: latestDeliveryAttempt.status,
+        push_provider: latestDeliveryAttempt.pushProvider,
+        provider_message_id: latestDeliveryAttempt.providerMessageId,
+        duplicate_of_attempt_id: latestDeliveryAttempt.duplicateOfAttemptId,
+        skip_reason: latestDeliveryAttempt.skipReason,
+        failure_code: latestDeliveryAttempt.failureCode,
+        failure_message: latestDeliveryAttempt.failureMessage,
+        retry_count: latestDeliveryAttempt.retryCount,
+        created_at: latestDeliveryAttempt.createdAt,
+        updated_at: latestDeliveryAttempt.updatedAt
+      }
+    : undefined
 });
 
 export const registerReminderRoutes = async (
@@ -142,10 +173,19 @@ export const registerReminderRoutes = async (
   app.get("/v1/reminders/devices", { preHandler: authenticate(services.authService) }, async (request, reply) => {
     const authRequest = request as AuthenticatedRequest;
     const devices = services.reminderService.listDevices(authRequest.auth.userId);
+    const latestAttemptsByInstallationId = services.reminderDeliveryService.listLatestAttemptsByInstallationId(
+      authRequest.auth.userId
+    );
     reply.code(200).send({
       total_count: devices.length,
       deliverable_count: devices.filter((item) => services.reminderService.isDeviceDeliverable(item)).length,
-      items: devices.map((item) => toReminderDeviceResponse(services.reminderService, item))
+      items: devices.map((item) =>
+        toReminderDeviceResponse(
+          services.reminderService,
+          item,
+          latestAttemptsByInstallationId.get(item.installationId)
+        )
+      )
     });
   });
 

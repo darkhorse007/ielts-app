@@ -655,6 +655,40 @@ describe("S7 personalized reminders", () => {
       status: "duplicate",
       duplicate_of_attempt_id: sentAttempt?.attempt_id
     });
+
+    const devicesAfterDispatch = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/devices",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(devicesAfterDispatch.statusCode).toBe(200);
+    const listedDevices = devicesAfterDispatch.json().items as Array<{
+      installation_id: string;
+      last_delivery_attempt?: {
+        status: string;
+        failure_code?: string;
+        skip_reason?: string;
+        retry_count: number;
+        duplicate_of_attempt_id?: string;
+      };
+    }>;
+    expect(listedDevices.find((item) => item.installation_id === "dispatch-ios-success")?.last_delivery_attempt).toMatchObject({
+      status: "duplicate",
+      duplicate_of_attempt_id: sentAttempt?.attempt_id,
+      retry_count: 0
+    });
+    expect(listedDevices.find((item) => item.installation_id === "dispatch-android-fail")?.last_delivery_attempt).toMatchObject({
+      status: "failed",
+      failure_code: "PROVIDER_ERROR",
+      retry_count: 0
+    });
+    expect(listedDevices.find((item) => item.installation_id === "dispatch-ios-denied")?.last_delivery_attempt).toMatchObject({
+      status: "skipped",
+      skip_reason: "DEVICE_NOT_DELIVERABLE",
+      retry_count: 0
+    });
   });
 
   test("retries retryable provider failures before succeeding", async () => {
