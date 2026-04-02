@@ -85,6 +85,22 @@ vi.mock("react-native", () => {
     ({ children, ...props }: { children?: React.ReactNode; style?: Record<string, unknown> }) =>
       React.createElement(name, normalizeDomProps(props), children);
 
+  const appState = {
+    currentState: "active" as "active" | "background" | "inactive",
+    addEventListener: (_type: "change", listener: (state: "active" | "background" | "inactive") => void) => {
+      appStateListeners.add(listener);
+      return {
+        remove: () => {
+          appStateListeners.delete(listener);
+        }
+      };
+    },
+    __emitMockStateChange: (nextState: "active" | "background" | "inactive") => {
+      appState.currentState = nextState;
+      appStateListeners.forEach((listener) => listener(nextState));
+    }
+  };
+
   return {
     View: createHost("div"),
     Text: createHost("span"),
@@ -149,17 +165,7 @@ vi.mock("react-native", () => {
     Platform: {
       OS: "ios"
     },
-    AppState: {
-      currentState: "active",
-      addEventListener: (_type: "change", listener: (state: "active" | "background" | "inactive") => void) => {
-        appStateListeners.add(listener);
-        return {
-          remove: () => {
-            appStateListeners.delete(listener);
-          }
-        };
-      }
-    },
+    AppState: appState,
     Share: {
       share: vi.fn().mockResolvedValue({
         action: "sharedAction"

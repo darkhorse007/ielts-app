@@ -232,11 +232,14 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 10. 若 provider 返回 `DEVICE_UNREGISTERED`，dispatch 会自动移除 stale device，并在本次 dispatch 结果中返回 `device_removed / removed_device_count`
 11. server 可通过 `REMINDER_DISPATCH_SCHEDULER_ENABLED`、`REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS`、`REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE` 启用周期性 due reminder sweep，也可通过 `/internal/reminders/dispatch-due` 手动触发
 12. `/health` 在保持 `status: "ok"` 健康检查契约不变的前提下，可额外暴露 `reminder_dispatch_scheduler` snapshot；`/internal/reminders/scheduler-status` 则提供更直接的内部排障视图
+13. mobile 端会在通知权限变化、device token 变化或应用回到前台后，自动重同步当前安装实例到 `/v1/reminders/devices/:installation_id`
+14. mobile 端收到并点击学习提醒后，会先恢复 deep link，再 best-effort 调用 `/v1/reminders/:reminder_id/click` 回写点击事件
 
 ### 7.7 移动端状态恢复
 1. 应用启动时读取安全存储中的实例配置与会话信息
 2. 若 access token 已失效，客户端通过 `/v1/auth/refresh` 尝试续期
 3. 训练、诊断、口语、模考等中断后优先从服务端恢复状态，再结合本地缓存恢复 UI
+4. 若应用由提醒通知唤起，移动端会根据通知里的 deep link 直接恢复到对应页面
 
 ## 8. 可用性与错误模型
 1. `/health` 用于健康检查，并可附带 reminder scheduler 当前状态

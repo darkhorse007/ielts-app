@@ -14,6 +14,7 @@ import {
   cancelReminderNotificationsAsync,
   getReminderInstallationIdAsync
 } from "../lib/notifications";
+import { useAppForegroundEffect } from "../hooks/use-app-foreground-effect";
 import { resolveDefaultInstanceConfig, type InstanceConfig } from "../lib/runtime-config";
 import {
   clearStoredSession,
@@ -31,6 +32,7 @@ type AppSessionContextValue = {
   saveInstanceConfig: (config: InstanceConfig) => Promise<void>;
   saveSession: (tokens: TokenResponse) => Promise<void>;
   logout: () => Promise<void>;
+  syncReminderDevice: (options?: { force?: boolean }) => Promise<void>;
   runWithAuthorizedClient: <T>(execute: (apiClient: ApiClient, accessToken: string) => Promise<T>) => Promise<T>;
 };
 
@@ -76,7 +78,8 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
   });
   const stateRef = useRef(state);
   const refreshInFlightRef = useRef<Promise<string | null> | null>(null);
-  const syncedReminderDeviceKeyRef = useRef<string | null>(null);
+  const syncedReminderDeviceSignatureRef = useRef<string | null>(null);
+  const reminderDeviceSyncInFlightRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -124,6 +127,67 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
         session: next
       }));
     });
+  };
+
+  const syncReminderDevice = async (options?: { force?: boolean; snapshot?: AppSessionState }): Promise<void> => {
+    const snapshot = options?.snapshot ?? stateRef.current;
+    if (!snapshot.instanceConfig || !snapshot.session) {
+      syncedReminderDeviceSignatureRef.current = null;
+      return;
+    }
+
+    const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
+    const signature = JSON.stringify({
+      apiBaseUrl: snapshot.instanceConfig.apiBaseUrl,
+      userId: snapshot.session.userId,
+      installationId: registration.installationId,
+      platform: registration.platform,
+      permissionStatus: registration.permissionStatus,
+      pushProvider: registration.pushProvider ?? null,
+      pushToken: registration.pushToken ?? null,
+      deviceLabel: registration.deviceLabel,
+      appBuild: registration.appBuild ?? null,
+      environment: registration.environment
+    });
+
+    if (!options?.force && syncedReminderDeviceSignatureRef.current === signature) {
+      return;
+    }
+
+    if (reminderDeviceSyncInFlightRef.current) {
+      await reminderDeviceSyncInFlightRef.current;
+      if (!options?.force && syncedReminderDeviceSignatureRef.current === signature) {
+        return;
+      }
+    }
+
+    const request = (async () => {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        return;
+      }
+
+      const apiClient = new ApiClient(snapshot.instanceConfig!.apiBaseUrl);
+      await apiClient.upsertReminderDevice(accessToken, registration.installationId, {
+        platform: registration.platform,
+        permission_status: registration.permissionStatus,
+        push_provider: registration.pushProvider,
+        push_token: registration.pushToken,
+        device_label: registration.deviceLabel,
+        app_build: registration.appBuild,
+        environment: registration.environment
+      });
+      syncedReminderDeviceSignatureRef.current = signature;
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        if (reminderDeviceSyncInFlightRef.current === request) {
+          reminderDeviceSyncInFlightRef.current = null;
+        }
+      });
+
+    reminderDeviceSyncInFlightRef.current = request;
+    await request;
   };
 
   const logout = async (): Promise<void> => {
@@ -229,50 +293,20 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
 
   useEffect(() => {
     if (!state.ready || !state.instanceConfig || !state.session) {
-      syncedReminderDeviceKeyRef.current = null;
+      syncedReminderDeviceSignatureRef.current = null;
       return;
     }
 
-    const syncKey = `${state.instanceConfig.apiBaseUrl}:${state.session.userId}`;
-    const apiBaseUrl = state.instanceConfig.apiBaseUrl;
-    if (syncedReminderDeviceKeyRef.current === syncKey) {
-      return;
+    void syncReminderDevice().catch(() => undefined);
+  }, [state.ready, state.instanceConfig?.apiBaseUrl, state.session?.userId]);
+
+  useAppForegroundEffect(
+    () => syncReminderDevice().catch(() => undefined),
+    {
+      enabled: Boolean(state.ready && state.instanceConfig && state.session),
+      cooldownMs: 1500
     }
-
-    syncedReminderDeviceKeyRef.current = syncKey;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const accessToken = await getAccessToken();
-        if (!accessToken || cancelled) {
-          return;
-        }
-
-        const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
-        if (cancelled) {
-          return;
-        }
-
-        const apiClient = new ApiClient(apiBaseUrl);
-        await apiClient.upsertReminderDevice(accessToken, registration.installationId, {
-          platform: registration.platform,
-          permission_status: registration.permissionStatus,
-          push_provider: registration.pushProvider,
-          push_token: registration.pushToken,
-          device_label: registration.deviceLabel,
-          app_build: registration.appBuild,
-          environment: registration.environment
-        });
-      } catch {
-        // Device registration is best-effort and should not block session restore.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state.ready, state.instanceConfig, state.session?.userId]);
+  );
 
   return (
     <AppSessionContext.Provider
@@ -284,6 +318,7 @@ export const AppSessionProvider = ({ children }: PropsWithChildren) => {
         saveInstanceConfig,
         saveSession,
         logout,
+        syncReminderDevice: (options) => syncReminderDevice(options),
         runWithAuthorizedClient
       }}
     >

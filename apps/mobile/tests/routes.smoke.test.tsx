@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReminderDeviceRegistrationResponse, StoredSession } from "../src/lib/api-types";
 import { buildScopedStorageKey } from "../src/lib/storage";
+import { buildCurrentRemoteReminderDeviceRegistrationAsync } from "../src/lib/notifications";
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import AccountScreen from "../app/account";
@@ -196,6 +197,18 @@ const createSessionContext = (overrides?: {
     }),
     ...overrides?.apiClient
   };
+  const syncReminderDevice = vi.fn(async () => {
+    const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
+    await upsertReminderDevice("access-token", registration.installationId, {
+      platform: registration.platform,
+      permission_status: registration.permissionStatus,
+      push_provider: registration.pushProvider,
+      push_token: registration.pushToken,
+      device_label: registration.deviceLabel,
+      app_build: registration.appBuild,
+      environment: registration.environment
+    });
+  });
 
   return {
     ready: true,
@@ -205,6 +218,7 @@ const createSessionContext = (overrides?: {
     saveInstanceConfig: vi.fn(),
     saveSession: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
+    syncReminderDevice,
     runWithAuthorizedClient: async <T,>(execute: (client: any, accessToken: string) => Promise<T>): Promise<T> =>
       execute(apiClient, "access-token")
   } as unknown as ReturnType<typeof useAppSession>;

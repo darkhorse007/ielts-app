@@ -22,6 +22,11 @@ export type ScheduledReminderSummary = {
   scheduledAt: string | null;
 };
 
+export type ReminderNotificationRouteTarget = {
+  route: string;
+  reminderId: string | null;
+};
+
 export type RemoteReminderDeviceRegistration = {
   installationId: string;
   platform: "ios" | "android";
@@ -107,6 +112,15 @@ const isReminderRequest = (request: {
     data?: Record<string, unknown>;
   };
 }): boolean => request.content.data?.kind === reminderKind;
+
+const normalizeReminderId = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
 
 const normalizeDeepLink = (value: unknown): string | null => {
   if (typeof value !== "string") {
@@ -373,6 +387,27 @@ export const scheduleReminderNotificationAsync = async (input: {
   };
 };
 
+export const getNotificationRouteTarget = (response: {
+  notification: {
+    request: {
+      content: {
+        data?: Record<string, unknown>;
+      };
+    };
+  };
+} | null | undefined): ReminderNotificationRouteTarget | null => {
+  const data = response?.notification.request.content.data;
+  const route = normalizeDeepLink(data?.deepLink);
+  if (!route) {
+    return null;
+  }
+
+  return {
+    route,
+    reminderId: normalizeReminderId(data?.reminderId)
+  };
+};
+
 export const getNotificationRoute = (response: {
   notification: {
     request: {
@@ -381,15 +416,19 @@ export const getNotificationRoute = (response: {
       };
     };
   };
-} | null | undefined): string | null => normalizeDeepLink(response?.notification.request.content.data?.deepLink);
+} | null | undefined): string | null => getNotificationRouteTarget(response)?.route ?? null;
 
-export const getLastNotificationRouteAsync = async (): Promise<string | null> => {
+export const getLastNotificationRouteTargetAsync = async (): Promise<ReminderNotificationRouteTarget | null> => {
   const notifications = await loadNotificationsModule();
   if (!notifications) {
     return null;
   }
 
-  return getNotificationRoute(notifications.getLastNotificationResponse());
+  return getNotificationRouteTarget(notifications.getLastNotificationResponse());
+};
+
+export const getLastNotificationRouteAsync = async (): Promise<string | null> => {
+  return (await getLastNotificationRouteTargetAsync())?.route ?? null;
 };
 
 export const clearLastNotificationResponseAsync = async (): Promise<void> => {
@@ -400,15 +439,23 @@ export const clearLastNotificationResponseAsync = async (): Promise<void> => {
 export const subscribeToNotificationRoutesAsync = async (
   onRoute: (route: string) => void
 ): Promise<() => void> => {
+  return subscribeToNotificationRouteTargetsAsync((target) => {
+    onRoute(target.route);
+  });
+};
+
+export const subscribeToNotificationRouteTargetsAsync = async (
+  onTarget: (target: ReminderNotificationRouteTarget) => void
+): Promise<() => void> => {
   const notifications = await loadNotificationsModule();
   if (!notifications) {
     return () => undefined;
   }
 
   const subscription = notifications.addNotificationResponseReceivedListener((response) => {
-    const route = getNotificationRoute(response);
-    if (route) {
-      onRoute(route);
+    const target = getNotificationRouteTarget(response);
+    if (target) {
+      onTarget(target);
     }
   });
 

@@ -110,7 +110,7 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<
 };
 
 export default function AccountScreen() {
-  const { instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
+  const { instanceConfig, session, logout, runWithAuthorizedClient, syncReminderDevice } = useAppSession();
   const hydratingAccountRef = useRef(false);
   const [profile, setProfile] = useState<UserProfileResponse | null>(() =>
     session ? buildFallbackProfile(session.userId) : null
@@ -383,11 +383,19 @@ export default function AccountScreen() {
     const current = await getNotificationPermissionsStatusAsync();
     if (allowsNotifications(current) || !current.available) {
       setNotificationPermissionStatus(toNotificationPermissionLabel(current));
+      await syncReminderDevice();
+      if (session) {
+        await syncRemoteReminderDeviceState();
+      }
       return allowsNotifications(current);
     }
 
     const requested = await requestNotificationPermissionsAsync();
     setNotificationPermissionStatus(toNotificationPermissionLabel(requested));
+    await syncReminderDevice({ force: true });
+    if (session) {
+      await syncRemoteReminderDeviceState();
+    }
     return allowsNotifications(requested);
   };
 
@@ -436,17 +444,7 @@ export default function AccountScreen() {
     setLoading(true);
     try {
       const registration = await buildCurrentRemoteReminderDeviceRegistrationAsync();
-      await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.upsertReminderDevice(accessToken, registration.installationId, {
-          platform: registration.platform,
-          permission_status: registration.permissionStatus,
-          push_provider: registration.pushProvider,
-          push_token: registration.pushToken,
-          device_label: registration.deviceLabel,
-          app_build: registration.appBuild,
-          environment: registration.environment
-        })
-      );
+      await syncReminderDevice({ force: true });
       await syncRemoteReminderDeviceState(registration.installationId);
 
       if (registration.pushToken) {

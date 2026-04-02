@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as Notifications from "expo-notifications";
+import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { StoredSession } from "../src/lib/api-types";
@@ -15,6 +16,9 @@ const mockedSecureStore = SecureStore as typeof SecureStore & {
 const mockedNotifications = Notifications as typeof Notifications & {
   __resetMockNotifications: () => void;
   __setMockDevicePushToken: (token: { type: string; data: string }) => void;
+};
+const mockedAppState = AppState as typeof AppState & {
+  __emitMockStateChange: (state: "active" | "background" | "inactive") => void;
 };
 
 const instanceConfig: InstanceConfig = {
@@ -175,5 +179,56 @@ describe("mobile app session reminder device sync", () => {
 
     expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("DELETE");
     await expect(loadStoredSession()).resolves.toBeNull();
+  });
+
+  test("re-syncs the current reminder device after returning to foreground with a new push token", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      return new Response(
+        JSON.stringify({
+          installation_id: "installation-ios-1",
+          platform: "ios",
+          permission_status: "granted",
+          push_provider: "apns",
+          push_token_preview: "native...7890",
+          environment: "development",
+          delivery_ready: true,
+          created_at: "2026-04-01T00:00:00.000Z",
+          updated_at: "2026-04-01T00:00:00.000Z"
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppSessionProvider>
+        <SessionProbe />
+      </AppSessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    mockedNotifications.__setMockDevicePushToken({
+      type: "ios",
+      data: "native-token-updated-999999"
+    });
+    mockedAppState.__emitMockStateChange("background");
+    mockedAppState.__emitMockStateChange("active");
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const secondPayload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      push_token?: string;
+    };
+    expect(secondPayload.push_token).toBe("native-token-updated-999999");
   });
 });
