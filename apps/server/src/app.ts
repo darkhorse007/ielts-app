@@ -61,6 +61,21 @@ import { registerMockExamRoutes } from "./routes/mock-exam.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerReminderRoutes } from "./routes/reminder.js";
 
+export type ReminderDispatchSchedulerStatusSnapshot = {
+  enabled: boolean;
+  intervalSeconds?: number;
+  batchSize?: number;
+  running: boolean;
+  lastTrigger?: "startup" | "interval";
+  lastStartedAt?: string;
+  lastCompletedAt?: string;
+  lastSuccessAt?: string;
+  lastError?: string;
+  lastDueCount?: number;
+  lastDispatchedReminderCount?: number;
+  lastSkippedAlreadyAttemptedCount?: number;
+};
+
 type BuildServerOptions = Partial<ServiceConfig> & {
   authAccountStorageBackend?: "memory" | "postgres";
   authAccountStorageConnectionString?: string;
@@ -101,12 +116,48 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   reminderDeliveryFcmPrivateKey?: string;
   reminderDeliveryFcmTokenUri?: string;
   reminderDeliverySenders?: ReminderPushProviderSenders;
+  reminderDispatchSchedulerStatus?: ReminderDispatchSchedulerStatusSnapshot;
   allowedBrowserOrigins?: string[];
   enableInternalDebugRoutes?: boolean;
 };
 
 const ACCESS_CONTROL_ALLOW_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
 const DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS = "Authorization, Content-Type, Idempotency-Key, X-Device-Id";
+
+const serializeReminderDispatchSchedulerStatus = (
+  status?: ReminderDispatchSchedulerStatusSnapshot
+):
+  | {
+      enabled: boolean;
+      running: boolean;
+      interval_seconds?: number;
+      batch_size?: number;
+      last_trigger?: "startup" | "interval";
+      last_started_at?: string;
+      last_completed_at?: string;
+      last_success_at?: string;
+      last_error?: string;
+      last_due_count?: number;
+      last_dispatched_reminder_count?: number;
+      last_skipped_already_attempted_count?: number;
+    }
+  | undefined =>
+  status
+    ? {
+        enabled: status.enabled,
+        running: status.running,
+        interval_seconds: status.intervalSeconds,
+        batch_size: status.batchSize,
+        last_trigger: status.lastTrigger,
+        last_started_at: status.lastStartedAt,
+        last_completed_at: status.lastCompletedAt,
+        last_success_at: status.lastSuccessAt,
+        last_error: status.lastError,
+        last_due_count: status.lastDueCount,
+        last_dispatched_reminder_count: status.lastDispatchedReminderCount,
+        last_skipped_already_attempted_count: status.lastSkippedAlreadyAttemptedCount
+      }
+    : undefined;
 
 const setCorsHeaders = (
   reply: { header: (name: string, value: string) => void },
@@ -147,6 +198,7 @@ export const buildServer = (options?: BuildServerOptions): {
   };
   const allowedBrowserOrigins = options?.allowedBrowserOrigins ?? [];
   const enableInternalDebugRoutes = options?.enableInternalDebugRoutes ?? false;
+  const reminderDispatchSchedulerStatus = options?.reminderDispatchSchedulerStatus;
 
   const authAccountRepository =
     options?.authAccountRepository ??
@@ -318,7 +370,8 @@ export const buildServer = (options?: BuildServerOptions): {
   });
 
   app.get("/health", async () => ({
-    status: "ok"
+    status: "ok",
+    reminder_dispatch_scheduler: serializeReminderDispatchSchedulerStatus(reminderDispatchSchedulerStatus)
   }));
 
   if (enableInternalDebugRoutes) {
@@ -377,6 +430,10 @@ export const buildServer = (options?: BuildServerOptions): {
         }))
       });
     });
+
+    app.get("/internal/reminders/scheduler-status", async () => ({
+      reminder_dispatch_scheduler: serializeReminderDispatchSchedulerStatus(reminderDispatchSchedulerStatus)
+    }));
   }
 
   app.register(async (child) => {

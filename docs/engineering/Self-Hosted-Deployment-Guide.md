@@ -157,13 +157,14 @@ npm run smoke:postgres:e2e-local
 ```
 
 ## 9. 部署后检查项
-1. `/health` 返回 `{"status":"ok"}`
+1. `/health` 至少返回 `status: "ok"`，并可附带 `reminder_dispatch_scheduler`
 2. 可以完成注册和登录
 3. 可以完成一次 onboarding 和诊断
 4. 可以创建一次训练会话和一次模考
 5. 可以进入 `/account` 导出个人数据
 6. 口语实时会话可以在浏览器端成功建立 WebSocket
 7. 如已启用移动提醒推送，可通过 `POST /internal/reminders/dispatch-due` 或等待 scheduler 周期触发，验证 due reminder 能产生 dispatch attempt
+8. 如已启用 reminder scheduler，可通过 `/health` 查看 `reminder_dispatch_scheduler` 摘要；如同时开启 `INTERNAL_DEBUG_ROUTES_ENABLED=true`，还可访问 `GET /internal/reminders/scheduler-status`
 
 ## 10. 当前不需要配置的能力
 以下环境变量和系统能力已经不属于 `self-hosted` 分支，不需要再配置：
@@ -178,3 +179,8 @@ npm run smoke:postgres:e2e-local
 1. `REMINDER_DISPATCH_SCHEDULER_ENABLED=true`
 2. `REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS=60`
 3. `REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE=20`
+
+启用后可结合以下接口确认运行状态：
+
+1. `GET /health`
+2. `GET /internal/reminders/scheduler-status`，仅当 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时开放

@@ -1,4 +1,4 @@
-import { buildServer } from "./app.js";
+import { buildServer, type ReminderDispatchSchedulerStatusSnapshot } from "./app.js";
 import {
   resolveAllowedBrowserOriginsFromEnv,
   resolveAuthSecretFromEnv,
@@ -72,6 +72,13 @@ try {
   process.exit(1);
 }
 
+const reminderDispatchSchedulerStatus: ReminderDispatchSchedulerStatusSnapshot = {
+  enabled: reminderDispatchSchedulerRuntimeConfig.enabled,
+  intervalSeconds: reminderDispatchSchedulerRuntimeConfig.intervalSeconds,
+  batchSize: reminderDispatchSchedulerRuntimeConfig.batchSize,
+  running: false
+};
+
 let app: ReturnType<typeof buildServer>["app"];
 let reminderDeliveryService: ReturnType<typeof buildServer>["reminderDeliveryService"];
 try {
@@ -109,6 +116,7 @@ try {
     reminderDeliveryFcmPrivateKey: reminderPushRuntimeConfig.fcm.privateKey,
     reminderDeliveryFcmTokenUri: reminderPushRuntimeConfig.fcm.tokenUri,
     allowedBrowserOrigins,
+    reminderDispatchSchedulerStatus,
     enableInternalDebugRoutes
   }));
 } catch (error) {
@@ -130,16 +138,26 @@ app.addHook("onClose", async () => {
   }
 });
 
-const runReminderDispatchSchedulerSweep = async (): Promise<void> => {
+const runReminderDispatchSchedulerSweep = async (trigger: "startup" | "interval"): Promise<void> => {
   if (!reminderDispatchSchedulerRuntimeConfig.enabled || reminderDispatchSchedulerInFlight) {
     return;
   }
 
   reminderDispatchSchedulerInFlight = true;
+  reminderDispatchSchedulerStatus.running = true;
+  reminderDispatchSchedulerStatus.lastTrigger = trigger;
+  reminderDispatchSchedulerStatus.lastStartedAt = new Date().toISOString();
   try {
     const result = await reminderDeliveryService.dispatchDueRecommendations({
       limit: reminderDispatchSchedulerRuntimeConfig.batchSize
     });
+    const completedAt = new Date().toISOString();
+    reminderDispatchSchedulerStatus.lastCompletedAt = completedAt;
+    reminderDispatchSchedulerStatus.lastSuccessAt = completedAt;
+    reminderDispatchSchedulerStatus.lastError = undefined;
+    reminderDispatchSchedulerStatus.lastDueCount = result.dueCount;
+    reminderDispatchSchedulerStatus.lastDispatchedReminderCount = result.dispatchedReminderCount;
+    reminderDispatchSchedulerStatus.lastSkippedAlreadyAttemptedCount = result.skippedAlreadyAttemptedCount;
     if (result.dueCount > 0 || result.skippedAlreadyAttemptedCount > 0) {
       console.info(
         `[reminder-dispatch-scheduler] due=${result.dueCount} dispatched=${result.dispatchedReminderCount} skipped_already_attempted=${result.skippedAlreadyAttemptedCount}`
@@ -147,8 +165,11 @@ const runReminderDispatchSchedulerSweep = async (): Promise<void> => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "scheduler sweep failed";
+    reminderDispatchSchedulerStatus.lastCompletedAt = new Date().toISOString();
+    reminderDispatchSchedulerStatus.lastError = message;
     console.error(`[reminder-dispatch-scheduler] ${message}`);
   } finally {
+    reminderDispatchSchedulerStatus.running = false;
     reminderDispatchSchedulerInFlight = false;
   }
 };
@@ -160,9 +181,9 @@ const main = async (): Promise<void> => {
       port
     });
     if (reminderDispatchSchedulerRuntimeConfig.enabled) {
-      void runReminderDispatchSchedulerSweep();
+      void runReminderDispatchSchedulerSweep("startup");
       reminderDispatchSchedulerTimer = setInterval(() => {
-        void runReminderDispatchSchedulerSweep();
+        void runReminderDispatchSchedulerSweep("interval");
       }, reminderDispatchSchedulerRuntimeConfig.intervalSeconds * 1000);
       console.info(
         `[reminder-dispatch-scheduler] enabled interval=${reminderDispatchSchedulerRuntimeConfig.intervalSeconds}s batch=${reminderDispatchSchedulerRuntimeConfig.batchSize}`
