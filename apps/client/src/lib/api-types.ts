@@ -224,6 +224,7 @@ export type ReminderDeviceRegistrationResponse = {
       | "PROVIDER_ERROR";
     failure_message?: string;
     retry_count: number;
+    device_removed?: boolean;
     created_at: string;
     updated_at: string;
   };

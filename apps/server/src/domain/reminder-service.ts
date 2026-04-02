@@ -207,6 +207,7 @@ export class ReminderService {
   removeDevice(input: {
     userId: string;
     installationId: string;
+    source?: "manual" | "provider_unregistered";
   }): boolean {
     const key = this.getReminderDeviceKey(input.userId, input.installationId);
     const existing = this.store.reminderDevicesByUserAndInstallation.get(key);
@@ -221,7 +222,8 @@ export class ReminderService {
         installationId: existing.installationId,
         platform: existing.platform,
         pushProvider: existing.pushProvider,
-        hadPushToken: Boolean(existing.pushToken)
+        hadPushToken: Boolean(existing.pushToken),
+        source: input.source ?? "manual"
       }
     });
     return true;

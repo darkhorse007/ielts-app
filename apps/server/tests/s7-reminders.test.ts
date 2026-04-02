@@ -592,6 +592,7 @@ describe("S7 personalized reminders", () => {
     expect(firstDispatch.json().failed_count).toBe(1);
     expect(firstDispatch.json().skipped_count).toBe(1);
     expect(firstDispatch.json().duplicate_count).toBe(0);
+    expect(firstDispatch.json().removed_device_count).toBe(0);
     expect(sentMessages).toEqual([
       {
         provider: "apns",
@@ -608,6 +609,7 @@ describe("S7 personalized reminders", () => {
       failure_code?: string;
       retry_count: number;
       attempt_id: string;
+      device_removed?: boolean;
     }>;
     const sentAttempt = firstItems.find((item) => item.installation_id === "dispatch-ios-success");
     expect(sentAttempt).toMatchObject({
@@ -638,6 +640,7 @@ describe("S7 personalized reminders", () => {
     expect(secondDispatch.json().duplicate_count).toBe(1);
     expect(secondDispatch.json().failed_count).toBe(1);
     expect(secondDispatch.json().skipped_count).toBe(1);
+    expect(secondDispatch.json().removed_device_count).toBe(0);
     expect(sentMessages).toEqual([
       {
         provider: "apns",
@@ -689,6 +692,84 @@ describe("S7 personalized reminders", () => {
       skip_reason: "DEVICE_NOT_DELIVERABLE",
       retry_count: 0
     });
+  });
+
+  test("auto removes stale devices after provider reports unregistered", async () => {
+    const cleanupContext = await build({
+      reminderDeliveryFcmEnabled: true,
+      reminderDeliveryFcmProjectId: "fcm-self-hosted",
+      reminderDeliverySenders: {
+        fcm: async () => {
+          throw new ReminderPushProviderDispatchError({
+            failureCode: "DEVICE_UNREGISTERED",
+            retryable: false,
+            message: "provider reported device token unregistered"
+          });
+        }
+      }
+    });
+
+    try {
+      const user = await registerAndLoginOn(cleanupContext);
+      seedActivePlan(user.user_id, cleanupContext);
+
+      const recommendation = await cleanupContext.app.inject({
+        method: "GET",
+        url: "/v1/reminders/recommendation",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+      const reminderId = recommendation.json().reminder_id as string;
+
+      await cleanupContext.app.inject({
+        method: "PUT",
+        url: "/v1/reminders/devices/stale-android-1",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        },
+        payload: {
+          platform: "android",
+          permission_status: "granted",
+          push_provider: "fcm",
+          push_token: "android-token-stale-abcdef1234567890",
+          environment: "production"
+        }
+      });
+
+      const dispatch = await cleanupContext.app.inject({
+        method: "POST",
+        url: `/v1/reminders/${reminderId}/dispatch`,
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+
+      expect(dispatch.statusCode).toBe(200);
+      expect(dispatch.json().dispatch_count).toBe(0);
+      expect(dispatch.json().failed_count).toBe(1);
+      expect(dispatch.json().removed_device_count).toBe(1);
+      expect(dispatch.json().items[0]).toMatchObject({
+        installation_id: "stale-android-1",
+        status: "failed",
+        failure_code: "DEVICE_UNREGISTERED",
+        device_removed: true,
+        retry_count: 0
+      });
+
+      const devicesAfterDispatch = await cleanupContext.app.inject({
+        method: "GET",
+        url: "/v1/reminders/devices",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+      expect(devicesAfterDispatch.statusCode).toBe(200);
+      expect(devicesAfterDispatch.json().total_count).toBe(0);
+      expect(devicesAfterDispatch.json().deliverable_count).toBe(0);
+    } finally {
+      await cleanupContext.app.close();
+    }
   });
 
   test("retries retryable provider failures before succeeding", async () => {

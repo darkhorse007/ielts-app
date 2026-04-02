@@ -231,7 +231,8 @@
 9. `POST /v1/reminders/:reminder_id/click`
 10. `GET /v1/reminders/devices` 的 item 结果当前额外包含 `last_delivery_attempt`
 11. `POST /v1/reminders/:reminder_id/dispatch` 的 item 结果当前额外包含 `retry_count`
-12. `POST /v1/reminders/:reminder_id/dispatch` 的 `failure_code` 当前归一化为 `SENDER_UNAVAILABLE`、`NETWORK_ERROR`、`AUTH_ERROR`、`INVALID_REQUEST`、`DEVICE_UNREGISTERED`、`RATE_LIMITED`、`PROVIDER_UNAVAILABLE`、`PROVIDER_ERROR`
+12. `POST /v1/reminders/:reminder_id/dispatch` 的 item 结果当前额外包含 `device_removed`，顶层结果额外包含 `removed_device_count`
+13. `POST /v1/reminders/:reminder_id/dispatch` 的 `failure_code` 当前归一化为 `SENDER_UNAVAILABLE`、`NETWORK_ERROR`、`AUTH_ERROR`、`INVALID_REQUEST`、`DEVICE_UNREGISTERED`、`RATE_LIMITED`、`PROVIDER_UNAVAILABLE`、`PROVIDER_ERROR`
 
 ### 4.11 Internal And Health
 1. `GET /health`

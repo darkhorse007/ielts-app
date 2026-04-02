@@ -105,6 +105,7 @@ export type ReminderDispatchExecuteItem = {
   failureCode?: ReminderDispatchFailureCode;
   failureMessage?: string;
   retryCount: number;
+  deviceRemoved?: boolean;
   updatedAt: string;
 };
 
@@ -115,6 +116,7 @@ export type ReminderDispatchExecuteResult = {
   duplicateCount: number;
   skippedCount: number;
   failedCount: number;
+  removedDeviceCount: number;
   items: ReminderDispatchExecuteItem[];
 };
 
@@ -277,6 +279,7 @@ export class ReminderDeliveryService {
       duplicateCount: items.filter((item) => item.status === "duplicate").length,
       skippedCount: items.filter((item) => item.status === "skipped").length,
       failedCount: items.filter((item) => item.status === "failed").length,
+      removedDeviceCount: items.filter((item) => item.deviceRemoved).length,
       items
     };
 
@@ -287,7 +290,8 @@ export class ReminderDeliveryService {
         dispatchCount: result.dispatchCount,
         duplicateCount: result.duplicateCount,
         skippedCount: result.skippedCount,
-        failedCount: result.failedCount
+        failedCount: result.failedCount,
+        removedDeviceCount: result.removedDeviceCount
       }
     });
 
@@ -496,6 +500,15 @@ export class ReminderDeliveryService {
       failureMessage: execution.failure.failureMessage,
       retryCount: execution.retryCount
     });
+    if (execution.failure.failureCode === "DEVICE_UNREGISTERED") {
+      failedAttempt.deviceRemoved = this.reminderService.removeDevice({
+        userId: reminder.userId,
+        installationId: device.installationId,
+        source: "provider_unregistered"
+      });
+      failedAttempt.updatedAt = nowIso();
+      this.store.reminderDeliveryAttemptsById.set(failedAttempt.id, failedAttempt);
+    }
     return this.toExecuteItem(failedAttempt, device.platform);
   }
 
@@ -558,6 +571,7 @@ export class ReminderDeliveryService {
     failureCode?: ReminderDispatchFailureCode;
     failureMessage?: string;
     retryCount: number;
+    deviceRemoved?: boolean;
   }): ReminderDeliveryAttempt {
     const timestamp = nowIso();
     const attempt: ReminderDeliveryAttempt = {
@@ -574,6 +588,7 @@ export class ReminderDeliveryService {
       failureCode: input.failureCode,
       failureMessage: input.failureMessage,
       retryCount: input.retryCount,
+      deviceRemoved: input.deviceRemoved,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -597,6 +612,7 @@ export class ReminderDeliveryService {
       failureCode: attempt.failureCode,
       failureMessage: attempt.failureMessage,
       retryCount: attempt.retryCount,
+      deviceRemoved: attempt.deviceRemoved,
       updatedAt: attempt.updatedAt
     };
   }

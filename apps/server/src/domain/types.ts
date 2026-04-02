@@ -1059,6 +1059,7 @@ export type ReminderDeliveryAttempt = {
   failureCode?: ReminderDispatchFailureCode;
   failureMessage?: string;
   retryCount: number;
+  deviceRemoved?: boolean;
   createdAt: string;
   updatedAt: string;
 };

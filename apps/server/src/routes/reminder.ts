@@ -72,6 +72,7 @@ const toReminderDeviceResponse = (
     failure_code?: string;
     failure_message?: string;
     retry_count: number;
+    device_removed?: boolean;
     created_at: string;
     updated_at: string;
   };
@@ -99,6 +100,7 @@ const toReminderDeviceResponse = (
         failure_code: latestDeliveryAttempt.failureCode,
         failure_message: latestDeliveryAttempt.failureMessage,
         retry_count: latestDeliveryAttempt.retryCount,
+        device_removed: latestDeliveryAttempt.deviceRemoved,
         created_at: latestDeliveryAttempt.createdAt,
         updated_at: latestDeliveryAttempt.updatedAt
       }
@@ -232,7 +234,8 @@ export const registerReminderRoutes = async (
       const authRequest = request as AuthenticatedRequest;
       const removed = services.reminderService.removeDevice({
         userId: authRequest.auth.userId,
-        installationId: parsedParams.data.installation_id
+        installationId: parsedParams.data.installation_id,
+        source: "manual"
       });
       reply.code(200).send({
         installation_id: parsedParams.data.installation_id,
@@ -338,6 +341,7 @@ export const registerReminderRoutes = async (
           duplicate_count: result.duplicateCount,
           skipped_count: result.skippedCount,
           failed_count: result.failedCount,
+          removed_device_count: result.removedDeviceCount,
           items: result.items.map((item) => ({
             attempt_id: item.attemptId,
             installation_id: item.installationId,
@@ -350,6 +354,7 @@ export const registerReminderRoutes = async (
             failure_code: item.failureCode,
             failure_message: item.failureMessage,
             retry_count: item.retryCount,
+            device_removed: item.deviceRemoved,
             updated_at: item.updatedAt
           }))
         });
