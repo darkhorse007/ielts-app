@@ -3,7 +3,8 @@ import { describe, expect, test } from "vitest";
 import type { ReminderPushDispatchPayload } from "../src/domain/reminder-delivery-service.js";
 import {
   createApnsProviderToken,
-  createReminderPushProviderSenders
+  createReminderPushProviderSenders,
+  isReminderPushProviderDispatchError
 } from "../src/domain/reminder-push-provider-senders.js";
 
 const decodeBase64UrlJson = <T>(value: string): T => JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as T;
@@ -267,5 +268,121 @@ describe("S35 reminder push provider senders", () => {
       scheduledAt: "2026-04-02T12:00:00.000Z",
       kind: "study-reminder"
     });
+  });
+
+  test("classifies fcm unregistered failures as permanent device errors", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: {
+        type: "pkcs8",
+        format: "pem"
+      },
+      publicKeyEncoding: {
+        type: "spki",
+        format: "pem"
+      }
+    });
+    const senders = createReminderPushProviderSenders(
+      {
+        fcm: {
+          enabled: true,
+          projectId: "project-123",
+          clientEmail: "push@example.iam.gserviceaccount.com",
+          privateKey,
+          tokenUri: "https://oauth2.googleapis.com/token"
+        }
+      },
+      {
+        fetchImpl: async (input) => {
+          if (String(input) === "https://oauth2.googleapis.com/token") {
+            return new Response(
+              JSON.stringify({
+                access_token: "oauth-token-123",
+                expires_in: 3600
+              }),
+              {
+                status: 200
+              }
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              error: {
+                status: "UNREGISTERED",
+                message: "Requested entity was not found."
+              }
+            }),
+            {
+              status: 404
+            }
+          );
+        }
+      }
+    );
+
+    try {
+      await senders.fcm?.(buildPayload());
+      expect.unreachable("expected fcm sender to fail");
+    } catch (error) {
+      expect(isReminderPushProviderDispatchError(error)).toBe(true);
+      expect(error).toMatchObject({
+        failureCode: "DEVICE_UNREGISTERED",
+        retryable: false
+      });
+    }
+  });
+
+  test("classifies apns rate limits as retryable provider failures", async () => {
+    const { privateKey } = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+      privateKeyEncoding: {
+        type: "pkcs8",
+        format: "pem"
+      },
+      publicKeyEncoding: {
+        type: "spki",
+        format: "pem"
+      }
+    });
+    const senders = createReminderPushProviderSenders(
+      {
+        apns: {
+          enabled: true,
+          bundleId: "com.selfhosted.ielts",
+          teamId: "TEAM123",
+          keyId: "KEY123",
+          privateKey
+        }
+      },
+      {
+        sendApnsRequest: async () => ({
+          statusCode: 429,
+          bodyText: JSON.stringify({
+            reason: "TooManyRequests"
+          }),
+          apnsId: "apns-message-1"
+        })
+      }
+    );
+
+    try {
+      await senders.apns?.(
+        buildPayload({
+          device: {
+            ...buildPayload().device,
+            platform: "ios",
+            pushProvider: "apns"
+          }
+        })
+      );
+      expect.unreachable("expected apns sender to fail");
+    } catch (error) {
+      expect(isReminderPushProviderDispatchError(error)).toBe(true);
+      expect(error).toMatchObject({
+        failureCode: "RATE_LIMITED",
+        retryable: true
+      });
+    }
   });
 });

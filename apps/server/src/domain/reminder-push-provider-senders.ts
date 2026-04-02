@@ -14,6 +14,7 @@ import type {
   ReminderPushProviderSenders,
   ReminderPushProviderRuntimeSettings
 } from "./reminder-delivery-service.js";
+import type { ReminderDispatchFailureCode } from "./types.js";
 
 const APNS_PRODUCTION_ORIGIN = "https://api.push.apple.com";
 const APNS_SANDBOX_ORIGIN = "https://api.sandbox.push.apple.com";
@@ -76,6 +77,30 @@ type FcmReadySettings = {
 
 type JsonRecord = Record<string, unknown>;
 
+type ReminderPushProviderDispatchErrorInput = {
+  failureCode: ReminderDispatchFailureCode;
+  retryable: boolean;
+  message: string;
+  providerStatus?: number;
+  providerReason?: string;
+};
+
+const APNS_AUTH_ERROR_REASONS = new Set([
+  "ExpiredProviderToken",
+  "InvalidProviderToken",
+  "MissingProviderToken",
+  "BadCertificate",
+  "BadCertificateEnvironment",
+  "Forbidden"
+]);
+const APNS_DEVICE_UNREGISTERED_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
+const APNS_RATE_LIMIT_REASONS = new Set(["TooManyRequests", "TooManyProviderTokenUpdates"]);
+const APNS_PROVIDER_UNAVAILABLE_REASONS = new Set(["InternalServerError", "ServiceUnavailable", "Shutdown"]);
+const GOOGLE_DEVICE_UNREGISTERED_REASONS = new Set(["UNREGISTERED", "NOT_FOUND"]);
+const GOOGLE_AUTH_ERROR_REASONS = new Set(["THIRD_PARTY_AUTH_ERROR", "SENDER_ID_MISMATCH", "UNAUTHENTICATED"]);
+const GOOGLE_RATE_LIMIT_REASONS = new Set(["QUOTA_EXCEEDED", "RESOURCE_EXHAUSTED"]);
+const GOOGLE_PROVIDER_UNAVAILABLE_REASONS = new Set(["UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED"]);
+
 const toBase64UrlJson = (value: Record<string, unknown>): string =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 
@@ -83,6 +108,30 @@ const normalizeOptional = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
 };
+
+export class ReminderPushProviderDispatchError extends Error {
+  readonly failureCode: ReminderDispatchFailureCode;
+  readonly retryable: boolean;
+  readonly providerStatus?: number;
+  readonly providerReason?: string;
+
+  constructor(input: ReminderPushProviderDispatchErrorInput) {
+    super(input.message);
+    this.name = "ReminderPushProviderDispatchError";
+    this.failureCode = input.failureCode;
+    this.retryable = input.retryable;
+    this.providerStatus = input.providerStatus;
+    this.providerReason = input.providerReason;
+  }
+}
+
+export const isReminderPushProviderDispatchError = (
+  error: unknown
+): error is ReminderPushProviderDispatchError => error instanceof ReminderPushProviderDispatchError;
+
+const createProviderDispatchError = (
+  input: ReminderPushProviderDispatchErrorInput
+): ReminderPushProviderDispatchError => new ReminderPushProviderDispatchError(input);
 
 const buildCompactJwt = (input: {
   header: Record<string, unknown>;
@@ -179,7 +228,7 @@ const readJsonRecord = (bodyText: string): JsonRecord | undefined => {
   }
 };
 
-const getErrorMessageFromJson = (value: JsonRecord | undefined): string | undefined => {
+const getErrorReasonFromJson = (value: JsonRecord | undefined): string | undefined => {
   if (!value) {
     return undefined;
   }
@@ -191,11 +240,28 @@ const getErrorMessageFromJson = (value: JsonRecord | undefined): string | undefi
   const nestedError = value.error;
   if (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)) {
     const nestedErrorRecord = nestedError as JsonRecord;
-    if (typeof nestedErrorRecord.message === "string" && nestedErrorRecord.message.trim()) {
-      return nestedErrorRecord.message.trim();
-    }
     if (typeof nestedErrorRecord.status === "string" && nestedErrorRecord.status.trim()) {
       return nestedErrorRecord.status.trim();
+    }
+  }
+
+  if (typeof value.status === "string" && value.status.trim()) {
+    return value.status.trim();
+  }
+
+  return undefined;
+};
+
+const getErrorMessageFromJson = (value: JsonRecord | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const nestedError = value.error;
+  if (nestedError && typeof nestedError === "object" && !Array.isArray(nestedError)) {
+    const nestedErrorRecord = nestedError as JsonRecord;
+    if (typeof nestedErrorRecord.message === "string" && nestedErrorRecord.message.trim()) {
+      return nestedErrorRecord.message.trim();
     }
   }
 
@@ -203,8 +269,216 @@ const getErrorMessageFromJson = (value: JsonRecord | undefined): string | undefi
     return value.message.trim();
   }
 
+  if (typeof value.reason === "string" && value.reason.trim()) {
+    return value.reason.trim();
+  }
+
   return undefined;
 };
+
+const getUnknownErrorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message.trim() ? error.message : fallback;
+
+const toProviderErrorMessage = (
+  provider: "APNS" | "FCM" | "FCM_AUTH",
+  statusCode: number | undefined,
+  reason: string | undefined,
+  fallbackMessage: string | undefined
+): string => {
+  const parts: string[] = [provider];
+  if (typeof statusCode === "number" && Number.isFinite(statusCode) && statusCode > 0) {
+    parts.push(String(statusCode));
+  }
+  if (reason) {
+    parts.push(reason);
+  }
+  if (fallbackMessage && fallbackMessage !== reason) {
+    parts.push(fallbackMessage);
+  }
+  return parts.join(": ");
+};
+
+const classifyApnsFailure = (statusCode: number, bodyText: string): ReminderPushProviderDispatchError => {
+  const body = readJsonRecord(bodyText);
+  const reason = getErrorReasonFromJson(body);
+  const message = getErrorMessageFromJson(body);
+
+  if (statusCode === 410 || (reason && APNS_DEVICE_UNREGISTERED_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "DEVICE_UNREGISTERED",
+      retryable: false,
+      message: toProviderErrorMessage("APNS", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode === 429 || (reason && APNS_RATE_LIMIT_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "RATE_LIMITED",
+      retryable: true,
+      message: toProviderErrorMessage("APNS", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode >= 500 || (reason && APNS_PROVIDER_UNAVAILABLE_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      message: toProviderErrorMessage("APNS", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode === 403 || (reason && APNS_AUTH_ERROR_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "AUTH_ERROR",
+      retryable: false,
+      message: toProviderErrorMessage("APNS", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode === 400) {
+    return createProviderDispatchError({
+      failureCode: "INVALID_REQUEST",
+      retryable: false,
+      message: toProviderErrorMessage("APNS", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  return createProviderDispatchError({
+    failureCode: "PROVIDER_ERROR",
+    retryable: false,
+    message: toProviderErrorMessage("APNS", statusCode, reason, message),
+    providerStatus: statusCode,
+    providerReason: reason
+  });
+};
+
+const classifyFcmAuthFailure = (statusCode: number, bodyText: string): ReminderPushProviderDispatchError => {
+  const body = readJsonRecord(bodyText);
+  const reason = getErrorReasonFromJson(body);
+  const message = getErrorMessageFromJson(body);
+
+  if (statusCode === 429 || (reason && GOOGLE_RATE_LIMIT_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "RATE_LIMITED",
+      retryable: true,
+      message: toProviderErrorMessage("FCM_AUTH", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode >= 500 || (reason && GOOGLE_PROVIDER_UNAVAILABLE_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      message: toProviderErrorMessage("FCM_AUTH", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if ([400, 401, 403].includes(statusCode) || (reason && GOOGLE_AUTH_ERROR_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "AUTH_ERROR",
+      retryable: false,
+      message: toProviderErrorMessage("FCM_AUTH", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  return createProviderDispatchError({
+    failureCode: "PROVIDER_ERROR",
+    retryable: false,
+    message: toProviderErrorMessage("FCM_AUTH", statusCode, reason, message),
+    providerStatus: statusCode,
+    providerReason: reason
+  });
+};
+
+const classifyFcmFailure = (statusCode: number, bodyText: string): ReminderPushProviderDispatchError => {
+  const body = readJsonRecord(bodyText);
+  const reason = getErrorReasonFromJson(body);
+  const message = getErrorMessageFromJson(body);
+
+  if (reason && GOOGLE_DEVICE_UNREGISTERED_REASONS.has(reason)) {
+    return createProviderDispatchError({
+      failureCode: "DEVICE_UNREGISTERED",
+      retryable: false,
+      message: toProviderErrorMessage("FCM", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode === 429 || (reason && GOOGLE_RATE_LIMIT_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "RATE_LIMITED",
+      retryable: true,
+      message: toProviderErrorMessage("FCM", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode >= 500 || (reason && GOOGLE_PROVIDER_UNAVAILABLE_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+      message: toProviderErrorMessage("FCM", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if ([401, 403].includes(statusCode) || (reason && GOOGLE_AUTH_ERROR_REASONS.has(reason))) {
+    return createProviderDispatchError({
+      failureCode: "AUTH_ERROR",
+      retryable: false,
+      message: toProviderErrorMessage("FCM", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  if (statusCode === 400) {
+    return createProviderDispatchError({
+      failureCode: "INVALID_REQUEST",
+      retryable: false,
+      message: toProviderErrorMessage("FCM", statusCode, reason, message),
+      providerStatus: statusCode,
+      providerReason: reason
+    });
+  }
+
+  return createProviderDispatchError({
+    failureCode: "PROVIDER_ERROR",
+    retryable: false,
+    message: toProviderErrorMessage("FCM", statusCode, reason, message),
+    providerStatus: statusCode,
+    providerReason: reason
+  });
+};
+
+const createProviderNetworkError = (
+  provider: "APNS" | "FCM" | "FCM_AUTH",
+  error: unknown
+): ReminderPushProviderDispatchError =>
+  createProviderDispatchError({
+    failureCode: "NETWORK_ERROR",
+    retryable: true,
+    message: `${provider}: ${getUnknownErrorMessage(error, "network request failed")}`
+  });
 
 export const createApnsProviderToken = (input: {
   teamId: string;
@@ -378,27 +652,38 @@ const createApnsSender = (
   return async (payload: ReminderPushDispatchPayload): Promise<ReminderPushDispatchReceipt> => {
     const pushToken = normalizeOptional(payload.device.pushToken);
     if (!pushToken) {
-      throw new Error("APNS_PUSH_TOKEN_MISSING");
+      throw createProviderDispatchError({
+        failureCode: "INVALID_REQUEST",
+        retryable: false,
+        message: "APNS: push token missing"
+      });
     }
 
     const origin = payload.device.environment === "production" ? APNS_PRODUCTION_ORIGIN : APNS_SANDBOX_ORIGIN;
-    const response = await sendApnsRequest({
-      origin,
-      path: `/3/device/${pushToken}`,
-      headers: {
-        authorization: `bearer ${getProviderToken()}`,
-        "apns-topic": settings.bundleId,
-        "apns-push-type": "alert",
-        "apns-priority": "10",
-        "content-type": "application/json"
-      },
-      body: buildApnsRequestBody(payload),
-      timeoutMs: dependencies.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-    });
+    let response: ApnsRequestResult;
+    try {
+      response = await sendApnsRequest({
+        origin,
+        path: `/3/device/${pushToken}`,
+        headers: {
+          authorization: `bearer ${getProviderToken()}`,
+          "apns-topic": settings.bundleId,
+          "apns-push-type": "alert",
+          "apns-priority": "10",
+          "content-type": "application/json"
+        },
+        body: buildApnsRequestBody(payload),
+        timeoutMs: dependencies.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+      });
+    } catch (error) {
+      if (isReminderPushProviderDispatchError(error)) {
+        throw error;
+      }
+      throw createProviderNetworkError("APNS", error);
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      const reason = getErrorMessageFromJson(readJsonRecord(response.bodyText));
-      throw new Error(reason ? `APNS_${response.statusCode}_${reason}` : `APNS_${response.statusCode}`);
+      throw classifyApnsFailure(response.statusCode, response.bodyText);
     }
 
     return {
@@ -441,21 +726,25 @@ const createFcmSender = (
       algorithm: "RS256"
     });
 
-    const tokenResponse = await fetchImpl(settings.tokenUri, {
-      method: "POST",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded"
-      },
-      body: buildFcmAccessTokenRequestBody(assertion)
-    });
+    let tokenResponse: Response;
+    try {
+      tokenResponse = await fetchImpl(settings.tokenUri, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded"
+        },
+        body: buildFcmAccessTokenRequestBody(assertion)
+      });
+    } catch (error) {
+      throw createProviderNetworkError("FCM_AUTH", error);
+    }
     const tokenBodyText = await tokenResponse.text();
     const tokenBody = readJsonRecord(tokenBodyText);
     const accessToken = typeof tokenBody?.access_token === "string" ? tokenBody.access_token : undefined;
     const expiresInSeconds = typeof tokenBody?.expires_in === "number" ? tokenBody.expires_in : 3600;
 
     if (!tokenResponse.ok || !accessToken) {
-      const message = getErrorMessageFromJson(tokenBody);
-      throw new Error(message ? `FCM_AUTH_${tokenResponse.status}_${message}` : `FCM_AUTH_${tokenResponse.status}`);
+      throw classifyFcmAuthFailure(tokenResponse.status, tokenBodyText);
     }
 
     cachedAccessToken = {
@@ -468,24 +757,32 @@ const createFcmSender = (
   return async (payload: ReminderPushDispatchPayload): Promise<ReminderPushDispatchReceipt> => {
     const pushToken = normalizeOptional(payload.device.pushToken);
     if (!pushToken) {
-      throw new Error("FCM_PUSH_TOKEN_MISSING");
+      throw createProviderDispatchError({
+        failureCode: "INVALID_REQUEST",
+        retryable: false,
+        message: "FCM: push token missing"
+      });
     }
 
     const accessToken = await getAccessToken();
-    const response = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${settings.projectId}/messages:send`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json; charset=utf-8"
-      },
-      body: buildFcmMessageRequestBody(payload)
-    });
+    let response: Response;
+    try {
+      response = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${settings.projectId}/messages:send`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json; charset=utf-8"
+        },
+        body: buildFcmMessageRequestBody(payload)
+      });
+    } catch (error) {
+      throw createProviderNetworkError("FCM", error);
+    }
     const responseBodyText = await response.text();
     const responseBody = readJsonRecord(responseBodyText);
 
     if (!response.ok) {
-      const message = getErrorMessageFromJson(responseBody);
-      throw new Error(message ? `FCM_${response.status}_${message}` : `FCM_${response.status}`);
+      throw classifyFcmFailure(response.status, responseBodyText);
     }
 
     return {

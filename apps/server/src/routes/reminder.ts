@@ -309,6 +309,7 @@ export const registerReminderRoutes = async (
             skip_reason: item.skipReason,
             failure_code: item.failureCode,
             failure_message: item.failureMessage,
+            retry_count: item.retryCount,
             updated_at: item.updatedAt
           }))
         });

@@ -1035,7 +1035,15 @@ export type ReminderDeviceRegistration = {
 
 export type ReminderDispatchStatus = "sent" | "skipped" | "duplicate" | "failed";
 
-export type ReminderDispatchFailureCode = "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+export type ReminderDispatchFailureCode =
+  | "SENDER_UNAVAILABLE"
+  | "NETWORK_ERROR"
+  | "AUTH_ERROR"
+  | "INVALID_REQUEST"
+  | "DEVICE_UNREGISTERED"
+  | "RATE_LIMITED"
+  | "PROVIDER_UNAVAILABLE"
+  | "PROVIDER_ERROR";
 
 export type ReminderDeliveryAttempt = {
   id: string;
@@ -1050,6 +1058,7 @@ export type ReminderDeliveryAttempt = {
   skipReason?: string;
   failureCode?: ReminderDispatchFailureCode;
   failureMessage?: string;
+  retryCount: number;
   createdAt: string;
   updatedAt: string;
 };

@@ -229,6 +229,8 @@
 7. `POST /v1/reminders/:reminder_id/dispatch-preview`
 8. `POST /v1/reminders/:reminder_id/dispatch`
 9. `POST /v1/reminders/:reminder_id/click`
+10. `POST /v1/reminders/:reminder_id/dispatch` 的 item 结果当前额外包含 `retry_count`
+11. `POST /v1/reminders/:reminder_id/dispatch` 的 `failure_code` 当前归一化为 `SENDER_UNAVAILABLE`、`NETWORK_ERROR`、`AUTH_ERROR`、`INVALID_REQUEST`、`DEVICE_UNREGISTERED`、`RATE_LIMITED`、`PROVIDER_UNAVAILABLE`、`PROVIDER_ERROR`
 
 ### 4.11 Internal And Health
 1. `GET /health`

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { randomUUID } from "node:crypto";
 import { buildServer } from "../src/app.js";
+import { ReminderPushProviderDispatchError } from "../src/domain/reminder-push-provider-senders.js";
 
 describe("S7 personalized reminders", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
@@ -10,7 +11,7 @@ describe("S7 personalized reminders", () => {
     deepLink: string;
   }> = [];
 
-  const build = async () => {
+  const build = async (overrides?: Parameters<typeof buildServer>[0]) => {
     sentMessages = [];
     const server = buildServer({
       reminderDeliveryApnsEnabled: true,
@@ -41,13 +42,15 @@ describe("S7 personalized reminders", () => {
             providerMessageId: `fcm-${device.installationId}`
           };
         }
-      }
+      },
+      ...overrides
     });
     await server.app.ready();
     return server;
   };
 
-  let context: Awaited<ReturnType<typeof build>>;
+  type TestContext = Awaited<ReturnType<typeof build>>;
+  let context: TestContext;
 
   beforeEach(async () => {
     context = await build();
@@ -57,9 +60,9 @@ describe("S7 personalized reminders", () => {
     await context.app.close();
   });
 
-  const registerAndLogin = async () => {
+  const registerAndLoginOn = async (serverContext: TestContext) => {
     const email = nextEmail();
-    const register = await context.app.inject({
+    const register = await serverContext.app.inject({
       method: "POST",
       url: "/v1/auth/register",
       payload: {
@@ -69,7 +72,7 @@ describe("S7 personalized reminders", () => {
     });
     expect(register.statusCode).toBe(201);
 
-    const login = await context.app.inject({
+    const login = await serverContext.app.inject({
       method: "POST",
       url: "/v1/auth/login",
       payload: {
@@ -85,12 +88,14 @@ describe("S7 personalized reminders", () => {
     };
   };
 
-  const seedActivePlan = (userId: string): { planId: string; taskId: string } => {
+  const registerAndLogin = async () => registerAndLoginOn(context);
+
+  const seedActivePlan = (userId: string, serverContext: TestContext = context): { planId: string; taskId: string } => {
     const planId = randomUUID();
     const taskId = randomUUID();
     const now = new Date().toISOString();
 
-    context.store.studyPlansById.set(planId, {
+    serverContext.store.studyPlansById.set(planId, {
       id: planId,
       userId,
       assessmentId: randomUUID(),
@@ -120,7 +125,7 @@ describe("S7 personalized reminders", () => {
       createdAt: now,
       updatedAt: now
     });
-    context.store.activePlanIdByUserId.set(userId, planId);
+    serverContext.store.activePlanIdByUserId.set(userId, planId);
 
     return {
       planId,
@@ -601,20 +606,24 @@ describe("S7 personalized reminders", () => {
       provider_message_id?: string;
       skip_reason?: string;
       failure_code?: string;
+      retry_count: number;
       attempt_id: string;
     }>;
     const sentAttempt = firstItems.find((item) => item.installation_id === "dispatch-ios-success");
     expect(sentAttempt).toMatchObject({
       status: "sent",
-      provider_message_id: "apns-dispatch-ios-success"
+      provider_message_id: "apns-dispatch-ios-success",
+      retry_count: 0
     });
     expect(firstItems.find((item) => item.installation_id === "dispatch-android-fail")).toMatchObject({
       status: "failed",
-      failure_code: "PROVIDER_ERROR"
+      failure_code: "PROVIDER_ERROR",
+      retry_count: 0
     });
     expect(firstItems.find((item) => item.installation_id === "dispatch-ios-denied")).toMatchObject({
       status: "skipped",
-      skip_reason: "DEVICE_NOT_DELIVERABLE"
+      skip_reason: "DEVICE_NOT_DELIVERABLE",
+      retry_count: 0
     });
 
     const secondDispatch = await context.app.inject({
@@ -646,6 +655,147 @@ describe("S7 personalized reminders", () => {
       status: "duplicate",
       duplicate_of_attempt_id: sentAttempt?.attempt_id
     });
+  });
+
+  test("retries retryable provider failures before succeeding", async () => {
+    let apnsCalls = 0;
+    const retryContext = await build({
+      reminderDeliveryApnsEnabled: true,
+      reminderDeliveryApnsBundleId: "com.selfhosted.ielts",
+      reminderDeliverySenders: {
+        apns: async ({ device }) => {
+          apnsCalls += 1;
+          if (apnsCalls < 2) {
+            throw new ReminderPushProviderDispatchError({
+              failureCode: "NETWORK_ERROR",
+              retryable: true,
+              message: "temporary network issue"
+            });
+          }
+
+          return {
+            providerMessageId: `apns-${device.installationId}`
+          };
+        }
+      }
+    });
+
+    try {
+      const user = await registerAndLoginOn(retryContext);
+      seedActivePlan(user.user_id, retryContext);
+
+      const recommendation = await retryContext.app.inject({
+        method: "GET",
+        url: "/v1/reminders/recommendation",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+      const reminderId = recommendation.json().reminder_id as string;
+
+      await retryContext.app.inject({
+        method: "PUT",
+        url: "/v1/reminders/devices/retry-ios-1",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        },
+        payload: {
+          platform: "ios",
+          permission_status: "granted",
+          push_provider: "apns",
+          push_token: "native-token-retry-abcdef1234567890",
+          environment: "production"
+        }
+      });
+
+      const dispatch = await retryContext.app.inject({
+        method: "POST",
+        url: `/v1/reminders/${reminderId}/dispatch`,
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+
+      expect(dispatch.statusCode).toBe(200);
+      expect(dispatch.json().dispatch_count).toBe(1);
+      expect(dispatch.json().failed_count).toBe(0);
+      expect(apnsCalls).toBe(2);
+      expect(dispatch.json().items[0]).toMatchObject({
+        installation_id: "retry-ios-1",
+        status: "sent",
+        retry_count: 1
+      });
+    } finally {
+      await retryContext.app.close();
+    }
+  });
+
+  test("exhausts retryable provider failures and records normalized failure code", async () => {
+    let fcmCalls = 0;
+    const retryContext = await build({
+      reminderDeliveryFcmEnabled: true,
+      reminderDeliveryFcmProjectId: "fcm-self-hosted",
+      reminderDeliverySenders: {
+        fcm: async () => {
+          fcmCalls += 1;
+          throw new ReminderPushProviderDispatchError({
+            failureCode: "RATE_LIMITED",
+            retryable: true,
+            message: "provider throttled request"
+          });
+        }
+      }
+    });
+
+    try {
+      const user = await registerAndLoginOn(retryContext);
+      seedActivePlan(user.user_id, retryContext);
+
+      const recommendation = await retryContext.app.inject({
+        method: "GET",
+        url: "/v1/reminders/recommendation",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+      const reminderId = recommendation.json().reminder_id as string;
+
+      await retryContext.app.inject({
+        method: "PUT",
+        url: "/v1/reminders/devices/retry-android-1",
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        },
+        payload: {
+          platform: "android",
+          permission_status: "granted",
+          push_provider: "fcm",
+          push_token: "android-token-retry-abcdef1234567890",
+          environment: "production"
+        }
+      });
+
+      const dispatch = await retryContext.app.inject({
+        method: "POST",
+        url: `/v1/reminders/${reminderId}/dispatch`,
+        headers: {
+          authorization: `Bearer ${user.access_token}`
+        }
+      });
+
+      expect(dispatch.statusCode).toBe(200);
+      expect(dispatch.json().dispatch_count).toBe(0);
+      expect(dispatch.json().failed_count).toBe(1);
+      expect(fcmCalls).toBe(3);
+      expect(dispatch.json().items[0]).toMatchObject({
+        installation_id: "retry-android-1",
+        status: "failed",
+        failure_code: "RATE_LIMITED",
+        retry_count: 2
+      });
+    } finally {
+      await retryContext.app.close();
+    }
   });
 
   test("rejects reminder dispatch preview for other users", async () => {

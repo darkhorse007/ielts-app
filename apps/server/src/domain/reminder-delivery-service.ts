@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { appendAudit } from "./audit.js";
+import { isReminderPushProviderDispatchError } from "./reminder-push-provider-senders.js";
 import { InMemoryStore } from "./store.js";
 import { nowIso } from "./time.js";
 import type {
+  ReminderDispatchFailureCode,
   ReminderDeliveryAttempt,
   ReminderDeviceRegistration,
   ReminderPushProvider,
@@ -100,8 +102,9 @@ export type ReminderDispatchExecuteItem = {
   providerMessageId?: string;
   duplicateOfAttemptId?: string;
   skipReason?: ReminderDispatchSkipReason;
-  failureCode?: "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+  failureCode?: ReminderDispatchFailureCode;
   failureMessage?: string;
+  retryCount: number;
   updatedAt: string;
 };
 
@@ -124,6 +127,14 @@ type ProviderRuntimeState = {
   projectId?: string;
   senderAvailable: boolean;
 };
+
+type NormalizedDispatchFailure = {
+  failureCode: ReminderDispatchFailureCode;
+  failureMessage: string;
+  retryable: boolean;
+};
+
+const MAX_PROVIDER_RETRY_COUNT = 2;
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
   if (!pushToken) {
@@ -155,6 +166,30 @@ const normalizeProviderRuntimeSettings = (
     tokenUri: settings?.fcm?.tokenUri?.trim() || undefined
   }
 });
+
+const normalizeDispatchFailure = (error: unknown): NormalizedDispatchFailure => {
+  if (isReminderPushProviderDispatchError(error)) {
+    return {
+      failureCode: error.failureCode,
+      failureMessage: error.message,
+      retryable: error.retryable
+    };
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return {
+      failureCode: "PROVIDER_ERROR",
+      failureMessage: error.message,
+      retryable: false
+    };
+  }
+
+  return {
+    failureCode: "PROVIDER_ERROR",
+    failureMessage: "provider dispatch failed",
+    retryable: false
+  };
+};
 
 export class ReminderDeliveryService {
   private readonly providerSettings: ReminderPushProviderRuntimeSettings;
@@ -381,7 +416,8 @@ export class ReminderDeliveryService {
         dedupeKey,
         pushProvider: device.pushProvider,
         status: "duplicate",
-        duplicateOfAttemptId: previousSentAttempt.id
+        duplicateOfAttemptId: previousSentAttempt.id,
+        retryCount: 0
       });
       return this.toExecuteItem(duplicateAttempt, device.platform);
     }
@@ -394,7 +430,8 @@ export class ReminderDeliveryService {
         dedupeKey,
         pushProvider: device.pushProvider,
         status: "skipped",
-        skipReason: preview.skipReason
+        skipReason: preview.skipReason,
+        retryCount: 0
       });
       return this.toExecuteItem(skippedAttempt, device.platform);
     }
@@ -409,16 +446,18 @@ export class ReminderDeliveryService {
         pushProvider: device.pushProvider,
         status: "failed",
         failureCode: "SENDER_UNAVAILABLE",
-        failureMessage: `sender unavailable for ${device.pushProvider ?? "unknown"}`
+        failureMessage: `sender unavailable for ${device.pushProvider ?? "unknown"}`,
+        retryCount: 0
       });
       return this.toExecuteItem(failedAttempt, device.platform);
     }
 
-    try {
-      const receipt = await sender({
-        reminder,
-        device
-      });
+    const execution = await this.executeWithRetry(sender, {
+      reminder,
+      device
+    });
+
+    if ("receipt" in execution) {
       const sentAttempt = this.recordAttempt({
         userId: reminder.userId,
         reminderId: reminder.id,
@@ -426,21 +465,59 @@ export class ReminderDeliveryService {
         dedupeKey,
         pushProvider: device.pushProvider,
         status: "sent",
-        providerMessageId: receipt.providerMessageId
+        providerMessageId: execution.receipt.providerMessageId,
+        retryCount: execution.retryCount
       });
       return this.toExecuteItem(sentAttempt, device.platform);
-    } catch (error) {
-      const failedAttempt = this.recordAttempt({
-        userId: reminder.userId,
-        reminderId: reminder.id,
-        installationId: device.installationId,
-        dedupeKey,
-        pushProvider: device.pushProvider,
-        status: "failed",
-        failureCode: "PROVIDER_ERROR",
-        failureMessage: error instanceof Error ? error.message : "provider dispatch failed"
-      });
-      return this.toExecuteItem(failedAttempt, device.platform);
+    }
+
+    const failedAttempt = this.recordAttempt({
+      userId: reminder.userId,
+      reminderId: reminder.id,
+      installationId: device.installationId,
+      dedupeKey,
+      pushProvider: device.pushProvider,
+      status: "failed",
+      failureCode: execution.failure.failureCode,
+      failureMessage: execution.failure.failureMessage,
+      retryCount: execution.retryCount
+    });
+    return this.toExecuteItem(failedAttempt, device.platform);
+  }
+
+  private async executeWithRetry(
+    sender: ReminderPushProviderSender,
+    payload: ReminderPushDispatchPayload
+  ): Promise<
+    | {
+        receipt: ReminderPushDispatchReceipt;
+        retryCount: number;
+      }
+    | {
+        failure: NormalizedDispatchFailure;
+        retryCount: number;
+      }
+  > {
+    let retryCount = 0;
+
+    while (true) {
+      try {
+        return {
+          receipt: await sender(payload),
+          retryCount
+        };
+      } catch (error) {
+        const failure = normalizeDispatchFailure(error);
+        if (failure.retryable && retryCount < MAX_PROVIDER_RETRY_COUNT) {
+          retryCount += 1;
+          continue;
+        }
+
+        return {
+          failure,
+          retryCount
+        };
+      }
     }
   }
 
@@ -464,8 +541,9 @@ export class ReminderDeliveryService {
     providerMessageId?: string;
     duplicateOfAttemptId?: string;
     skipReason?: ReminderDispatchSkipReason;
-    failureCode?: "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+    failureCode?: ReminderDispatchFailureCode;
     failureMessage?: string;
+    retryCount: number;
   }): ReminderDeliveryAttempt {
     const timestamp = nowIso();
     const attempt: ReminderDeliveryAttempt = {
@@ -481,6 +559,7 @@ export class ReminderDeliveryService {
       skipReason: input.skipReason,
       failureCode: input.failureCode,
       failureMessage: input.failureMessage,
+      retryCount: input.retryCount,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -503,6 +582,7 @@ export class ReminderDeliveryService {
       skipReason: attempt.skipReason as ReminderDispatchSkipReason | undefined,
       failureCode: attempt.failureCode,
       failureMessage: attempt.failureMessage,
+      retryCount: attempt.retryCount,
       updatedAt: attempt.updatedAt
     };
   }
