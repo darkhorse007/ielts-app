@@ -46,6 +46,7 @@ const installationIdStorageKey = buildScopedStorageKey("installation", "id", "v1
 
 let notificationsModulePromise: Promise<NotificationsModule | null> | null = null;
 let notificationHandlerConfigured = false;
+const debugNotificationRouteTargetListeners = new Set<(target: ReminderNotificationRouteTarget) => void>();
 
 const unavailablePermissions: NotificationPermissionSnapshot = {
   available: false,
@@ -462,4 +463,34 @@ export const subscribeToNotificationRouteTargetsAsync = async (
   return () => {
     subscription.remove();
   };
+};
+
+export const subscribeToDebugNotificationRouteTargets = (
+  onTarget: (target: ReminderNotificationRouteTarget) => void
+): (() => void) => {
+  debugNotificationRouteTargetListeners.add(onTarget);
+  return () => {
+    debugNotificationRouteTargetListeners.delete(onTarget);
+  };
+};
+
+export const emitDebugReminderNotificationOpen = (input: {
+  deepLink?: string | null;
+  reminderId?: string | null;
+}): ReminderNotificationRouteTarget | null => {
+  const route = normalizeDeepLink(input.deepLink);
+  if (!route) {
+    return null;
+  }
+
+  const target = {
+    route,
+    reminderId: normalizeReminderId(input.reminderId)
+  } satisfies ReminderNotificationRouteTarget;
+
+  debugNotificationRouteTargetListeners.forEach((listener) => {
+    listener(target);
+  });
+
+  return target;
 };

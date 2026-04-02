@@ -2,7 +2,9 @@ import { router } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   clearLastNotificationResponseAsync,
+  emitDebugReminderNotificationOpen,
   getLastNotificationRouteTargetAsync,
+  subscribeToDebugNotificationRouteTargets,
   subscribeToNotificationRouteTargetsAsync,
   type ReminderNotificationRouteTarget
 } from "../lib/notifications";
@@ -53,6 +55,9 @@ export const ReminderNotificationBridge = () => {
   useEffect(() => {
     let active = true;
     let unsubscribe: () => void = () => undefined;
+    const unsubscribeDebug = subscribeToDebugNotificationRouteTargets((target) => {
+      void openNotificationTarget(target);
+    });
 
     void (async () => {
       const initialTarget = await getLastNotificationRouteTargetAsync();
@@ -73,6 +78,7 @@ export const ReminderNotificationBridge = () => {
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeDebug();
     };
   }, []);
 
@@ -107,3 +113,5 @@ export const ReminderNotificationBridge = () => {
 
   return null;
 };
+
+export { emitDebugReminderNotificationOpen };

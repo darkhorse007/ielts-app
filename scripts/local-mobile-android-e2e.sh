@@ -372,7 +372,7 @@ bash scripts/ci/start-server-and-wait.sh \
   --timeout-seconds 60
 
 bash scripts/ci/start-server-and-wait.sh \
-  --command "CI=1 REACT_NATIVE_PACKAGER_HOSTNAME=$METRO_HOST EXPO_PUBLIC_API_BASE_URL=$API_BASE_URL EXPO_PUBLIC_WS_BASE_URL=$WS_BASE_URL EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS=true npm exec --workspace @ielts/mobile -- expo start -- --port $METRO_PORT" \
+  --command "CI=1 REACT_NATIVE_PACKAGER_HOSTNAME=$METRO_HOST EXPO_PUBLIC_API_BASE_URL=$API_BASE_URL EXPO_PUBLIC_WS_BASE_URL=$WS_BASE_URL EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS=true EXPO_PUBLIC_E2E_REMINDER_NOTIFICATION_HARNESS=true npm exec --workspace @ielts/mobile -- expo start -- --port $METRO_PORT" \
   --log-file "$METRO_LOG" \
   --pid-file "$METRO_PID_FILE" \
   --health-url "$METRO_HEALTH_URL" \
@@ -407,6 +407,7 @@ if [[ -n "$FLOW_FILE" ]]; then
 else
   FLOW_FILES=(
     "apps/mobile/e2e/maestro/android-mock-exam-smoke.yaml"
+    "apps/mobile/e2e/maestro/android-reminder-notification-smoke.yaml"
     "apps/mobile/e2e/maestro/android-account-smoke.yaml"
   )
   RUN_ID="$(date +%s)"

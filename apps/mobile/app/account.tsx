@@ -14,6 +14,7 @@ import {
   allowsNotifications,
   buildCurrentRemoteReminderDeviceRegistrationAsync,
   cancelReminderNotificationsAsync,
+  emitDebugReminderNotificationOpen,
   getNotificationPermissionsStatusAsync,
   getReminderInstallationIdAsync,
   getScheduledReminderSummaryAsync,
@@ -108,6 +109,8 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<
     }
   }
 };
+
+const reminderNotificationHarnessEnabled = process.env.EXPO_PUBLIC_E2E_REMINDER_NOTIFICATION_HARNESS === "true";
 
 export default function AccountScreen() {
   const { instanceConfig, session, logout, runWithAuthorizedClient, syncReminderDevice } = useAppSession();
@@ -522,6 +525,21 @@ export default function AccountScreen() {
     }
   };
 
+  const simulateReminderNotificationOpen = (): void => {
+    const target = emitDebugReminderNotificationOpen({
+      deepLink: recommendation?.deep_link ?? "/plan",
+      reminderId: recommendation?.reminder_id ?? null
+    });
+
+    if (!target) {
+      setError("当前没有可模拟的提醒目标");
+      return;
+    }
+
+    setStatusMessage(`已触发提醒桥接: ${target.route}`);
+    setError(null);
+  };
+
   const exportUserData = async (): Promise<void> => {
     setLoading(true);
     try {
@@ -905,6 +923,16 @@ export default function AccountScreen() {
             testID="account.reminderClearLocal"
           />
         </ButtonRow>
+        {reminderNotificationHarnessEnabled ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="模拟通知打开"
+              onPress={simulateReminderNotificationOpen}
+              disabled={reminderBusy || !recommendation?.reminder_id}
+              testID="account.reminderSimulateNotificationOpen"
+            />
+          </ButtonRow>
+        ) : null}
         <ButtonRow>
           <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} testID="account.plan" />
           <SecondaryButton

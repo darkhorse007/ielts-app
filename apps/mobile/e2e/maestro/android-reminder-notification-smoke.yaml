@@ -1,0 +1,114 @@
+appId: host.exp.exponent
+name: Android reminder notification smoke
+---
+- runFlow:
+    when:
+      visible: Continue
+    commands:
+      - tapOn: Continue
+- runFlow:
+    when:
+      visible: Close
+    commands:
+      - tapOn: Close
+- runFlow:
+    when:
+      visible: IELTS Mobile
+    commands:
+      - extendedWaitUntil:
+          visible: Close
+          timeout: 10000
+      - tapOn: Close
+- runFlow:
+    when:
+      visible: Close
+    commands:
+      - tapOn: Close
+- runFlow:
+    when:
+      visible: 绑定你的 API / WS 实例
+    commands:
+      - tapOn:
+          id: instance.save
+- extendedWaitUntil:
+    visible: 登录移动端工作台
+    timeout: 15000
+- tapOn: 去注册
+- assertVisible: 先把账号创建出来
+- tapOn:
+    id: register.email
+- inputText: ${REGISTER_EMAIL}
+- tapOn:
+    id: register.password
+- inputText: ${REGISTER_PASSWORD}
+- tapOn:
+    id: register.confirmPassword
+- inputText: ${REGISTER_PASSWORD}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: register.submit
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: register.submit
+- extendedWaitUntil:
+    visible: 登录移动端工作台
+    timeout: 15000
+- tapOn:
+    id: login.identifier
+- inputText: ${REGISTER_EMAIL}
+- tapOn:
+    id: login.password
+- inputText: ${REGISTER_PASSWORD}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login.submit
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: login.submit
+- extendedWaitUntil:
+    visible: 自托管移动端骨架已落地
+    timeout: 20000
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: home.account
+    direction: DOWN
+    timeout: 25000
+    speed: 60
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
+- tapOn:
+    id: home.account
+- extendedWaitUntil:
+    visible: 账户中心已进入移动端
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: account.reminderRefresh
+    direction: DOWN
+    timeout: 15000
+    speed: 60
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
+- tapOn:
+    id: account.reminderRefresh
+- scrollUntilVisible:
+    element:
+      text: "deep_link: /plan"
+    direction: DOWN
+    timeout: 15000
+    speed: 60
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
+- tapOn:
+    id: account.reminderSimulateNotificationOpen
+- extendedWaitUntil:
+    visible: 8 周计划已进入移动端
+    timeout: 15000
