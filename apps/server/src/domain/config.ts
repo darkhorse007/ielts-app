@@ -25,9 +25,17 @@ export type ReminderPushRuntimeConfig = {
   };
 };
 
+export type ReminderDispatchSchedulerRuntimeConfig = {
+  enabled: boolean;
+  intervalSeconds: number;
+  batchSize: number;
+};
+
 export const DEVELOPMENT_AUTH_SECRET = "development-auth-secret-for-tests-only-0001";
 export const MIN_AUTH_SECRET_LENGTH = 32;
 export const DEFAULT_REMINDER_PUSH_FCM_TOKEN_URI = "https://oauth2.googleapis.com/token";
+export const DEFAULT_REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS = 60;
+export const DEFAULT_REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE = 20;
 
 const normalizeSecret = (value: string): string => value.trim();
 const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:/;
@@ -57,6 +65,24 @@ export const resolveBooleanFlagFromEnv = (
     return false;
   }
   throw new Error(`${variableName}_INVALID`);
+};
+
+export const resolvePositiveIntegerFromEnv = (
+  variableName: string,
+  env: Record<string, string | undefined> = process.env,
+  defaultValue: number
+): number => {
+  const raw = normalizeOptional(env[variableName]);
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${variableName}_INVALID`);
+  }
+
+  return parsed;
 };
 
 const validateNonEmptySecret = (secret: string, source: string): string => {
@@ -273,6 +299,22 @@ export const resolveReminderPushRuntimeConfigFromEnv = (
     }
   };
 };
+
+export const resolveReminderDispatchSchedulerRuntimeConfigFromEnv = (
+  env: Record<string, string | undefined> = process.env
+): ReminderDispatchSchedulerRuntimeConfig => ({
+  enabled: resolveBooleanFlagFromEnv("REMINDER_DISPATCH_SCHEDULER_ENABLED", env, false),
+  intervalSeconds: resolvePositiveIntegerFromEnv(
+    "REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS",
+    env,
+    DEFAULT_REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS
+  ),
+  batchSize: resolvePositiveIntegerFromEnv(
+    "REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE",
+    env,
+    DEFAULT_REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE
+  )
+});
 
 export const defaultConfig: ServiceConfig = {
   accessTokenTtlSeconds: 900,

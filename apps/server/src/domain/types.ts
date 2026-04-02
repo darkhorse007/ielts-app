@@ -119,6 +119,7 @@ export type AuditEventType =
   | "reminder_device_removed"
   | "reminder_dispatch_previewed"
   | "reminder_dispatch_executed"
+  | "reminder_dispatch_swept"
   | "churn_risk_scored"
   | "churn_strategy_triggered"
   | "churn_effect_queried"

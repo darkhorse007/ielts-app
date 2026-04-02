@@ -772,6 +772,88 @@ describe("S7 personalized reminders", () => {
     }
   });
 
+  test("dispatches due reminders through internal sweep route", async () => {
+    await context.app.close();
+    context = await build({
+      enableInternalDebugRoutes: true
+    });
+
+    const user = await registerAndLogin();
+    seedActivePlan(user.user_id);
+
+    const recommendation = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/recommendation",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(recommendation.statusCode).toBe(200);
+    const reminderId = recommendation.json().reminder_id as string;
+    const storedReminder = context.store.reminderRecommendationsById.get(reminderId);
+    expect(storedReminder).toBeTruthy();
+    if (storedReminder) {
+      storedReminder.scheduledAt = "2026-01-01T00:00:00.000Z";
+    }
+
+    await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/sweep-ios-1",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-sweep-abcdef1234567890",
+        environment: "production"
+      }
+    });
+
+    const firstSweep = await context.app.inject({
+      method: "POST",
+      url: "/internal/reminders/dispatch-due?limit=5"
+    });
+    expect(firstSweep.statusCode).toBe(200);
+    expect(firstSweep.json()).toMatchObject({
+      due_count: 1,
+      dispatched_reminder_count: 1,
+      skipped_already_attempted_count: 0
+    });
+    expect(firstSweep.json().items[0]).toMatchObject({
+      reminder_id: reminderId,
+      status: "dispatched",
+      dispatch: {
+        dispatch_count: 1,
+        failed_count: 0
+      }
+    });
+    expect(sentMessages).toEqual([
+      {
+        provider: "apns",
+        installationId: "sweep-ios-1",
+        deepLink: recommendation.json().deep_link
+      }
+    ]);
+
+    const secondSweep = await context.app.inject({
+      method: "POST",
+      url: "/internal/reminders/dispatch-due?limit=5"
+    });
+    expect(secondSweep.statusCode).toBe(200);
+    expect(secondSweep.json()).toMatchObject({
+      due_count: 1,
+      dispatched_reminder_count: 0,
+      skipped_already_attempted_count: 1
+    });
+    expect(secondSweep.json().items[0]).toMatchObject({
+      reminder_id: reminderId,
+      status: "skipped",
+      skip_reason: "ALREADY_ATTEMPTED"
+    });
+  });
+
   test("retries retryable provider failures before succeeding", async () => {
     let apnsCalls = 0;
     const retryContext = await build({

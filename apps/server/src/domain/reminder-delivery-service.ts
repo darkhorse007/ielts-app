@@ -120,6 +120,25 @@ export type ReminderDispatchExecuteResult = {
   items: ReminderDispatchExecuteItem[];
 };
 
+export type ReminderDueDispatchSweepItem = {
+  reminderId: string;
+  userId: string;
+  scheduledAt: string;
+  status: "dispatched" | "skipped";
+  skipReason?: "ALREADY_ATTEMPTED";
+  result?: ReminderDispatchExecuteResult;
+};
+
+export type ReminderDueDispatchSweepResult = {
+  startedAt: string;
+  completedAt: string;
+  limit: number;
+  dueCount: number;
+  dispatchedReminderCount: number;
+  skippedAlreadyAttemptedCount: number;
+  items: ReminderDueDispatchSweepItem[];
+};
+
 type ProviderRuntimeState = {
   enabled: boolean;
   configured: boolean;
@@ -137,6 +156,7 @@ type NormalizedDispatchFailure = {
 };
 
 const MAX_PROVIDER_RETRY_COUNT = 2;
+const DEFAULT_DUE_DISPATCH_SWEEP_LIMIT = 20;
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
   if (!pushToken) {
@@ -296,6 +316,70 @@ export class ReminderDeliveryService {
     });
 
     return result;
+  }
+
+  async dispatchDueRecommendations(input?: {
+    limit?: number;
+    now?: string;
+  }): Promise<ReminderDueDispatchSweepResult> {
+    const startedAt = nowIso();
+    const now = input?.now ?? startedAt;
+    const limit = input?.limit && input.limit > 0 ? Math.floor(input.limit) : DEFAULT_DUE_DISPATCH_SWEEP_LIMIT;
+    const dueRecommendations = Array.from(this.store.reminderRecommendationsById.values())
+      .filter((item) => item.scheduledAt.localeCompare(now) <= 0)
+      .sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt))
+      .slice(0, limit);
+
+    const items: ReminderDueDispatchSweepItem[] = [];
+
+    for (const reminder of dueRecommendations) {
+      if (this.hasDispatchAttemptsForReminder(reminder.id)) {
+        items.push({
+          reminderId: reminder.id,
+          userId: reminder.userId,
+          scheduledAt: reminder.scheduledAt,
+          status: "skipped",
+          skipReason: "ALREADY_ATTEMPTED"
+        });
+        continue;
+      }
+
+      const result = await this.dispatch({
+        reminderId: reminder.id,
+        requestUserId: reminder.userId
+      });
+      items.push({
+        reminderId: reminder.id,
+        userId: reminder.userId,
+        scheduledAt: reminder.scheduledAt,
+        status: "dispatched",
+        result
+      });
+    }
+
+    const completedAt = nowIso();
+    const sweepResult: ReminderDueDispatchSweepResult = {
+      startedAt,
+      completedAt,
+      limit,
+      dueCount: dueRecommendations.length,
+      dispatchedReminderCount: items.filter((item) => item.status === "dispatched").length,
+      skippedAlreadyAttemptedCount: items.filter((item) => item.skipReason === "ALREADY_ATTEMPTED").length,
+      items
+    };
+
+    appendAudit(this.store, "reminder_dispatch_swept", {
+      metadata: {
+        limit: sweepResult.limit,
+        dueCount: sweepResult.dueCount,
+        dispatchedReminderCount: sweepResult.dispatchedReminderCount,
+        skippedAlreadyAttemptedCount: sweepResult.skippedAlreadyAttemptedCount,
+        startedAt: sweepResult.startedAt,
+        completedAt: sweepResult.completedAt
+      }
+    });
+
+    return sweepResult;
   }
 
   listLatestAttemptsByInstallationId(userId: string): Map<string, ReminderDeliveryAttempt> {
@@ -556,6 +640,10 @@ export class ReminderDeliveryService {
     return Array.from(this.store.reminderDeliveryAttemptsById.values()).find(
       (item) => item.dedupeKey === dedupeKey && item.status === "sent"
     );
+  }
+
+  private hasDispatchAttemptsForReminder(reminderId: string): boolean {
+    return Array.from(this.store.reminderDeliveryAttemptsById.values()).some((item) => item.reminderId === reminderId);
   }
 
   private recordAttempt(input: {

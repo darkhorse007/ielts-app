@@ -238,6 +238,7 @@
 1. `GET /health`
 2. `GET /internal/audit-events` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露
 3. `GET /internal/users/:user_id` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露
+4. `POST /internal/reminders/dispatch-due` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露，可用 `?limit=` 手动触发到期提醒 sweep
 
 ## 5. 当前错误边界
 1. 参数错误统一返回 `400`

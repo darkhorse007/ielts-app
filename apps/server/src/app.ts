@@ -337,6 +337,46 @@ export const buildServer = (options?: BuildServerOptions): {
         });
       }
     });
+
+    app.post<{ Querystring: { limit?: string } }>("/internal/reminders/dispatch-due", async (request, reply) => {
+      const rawLimit = request.query.limit?.trim();
+      const limit = rawLimit ? Number(rawLimit) : undefined;
+      if (rawLimit && (!Number.isInteger(limit) || (limit ?? 0) <= 0)) {
+        reply.code(400).send({
+          code: "VALIDATION_ERROR",
+          message: "limit must be a positive integer"
+        });
+        return;
+      }
+
+      const result = await reminderDeliveryService.dispatchDueRecommendations({
+        limit
+      });
+      reply.code(200).send({
+        started_at: result.startedAt,
+        completed_at: result.completedAt,
+        limit: result.limit,
+        due_count: result.dueCount,
+        dispatched_reminder_count: result.dispatchedReminderCount,
+        skipped_already_attempted_count: result.skippedAlreadyAttemptedCount,
+        items: result.items.map((item) => ({
+          reminder_id: item.reminderId,
+          user_id: item.userId,
+          scheduled_at: item.scheduledAt,
+          status: item.status,
+          skip_reason: item.skipReason,
+          dispatch: item.result
+            ? {
+                dispatch_count: item.result.dispatchCount,
+                duplicate_count: item.result.duplicateCount,
+                skipped_count: item.result.skippedCount,
+                failed_count: item.result.failedCount,
+                removed_device_count: item.result.removedDeviceCount
+              }
+            : undefined
+        }))
+      });
+    });
   }
 
   app.register(async (child) => {

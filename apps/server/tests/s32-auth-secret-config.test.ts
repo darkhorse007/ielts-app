@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  DEFAULT_REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE,
+  DEFAULT_REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS,
   DEFAULT_REMINDER_PUSH_FCM_TOKEN_URI,
   DEVELOPMENT_AUTH_SECRET,
   MIN_AUTH_SECRET_LENGTH,
@@ -8,6 +10,8 @@ import {
   resolveAuthSecretFromEnv,
   resolveBooleanFlagFromEnv,
   resolveInternalDebugRoutesEnabledFromEnv,
+  resolvePositiveIntegerFromEnv,
+  resolveReminderDispatchSchedulerRuntimeConfigFromEnv,
   resolveReminderPushRuntimeConfigFromEnv
 } from "../src/domain/config.js";
 
@@ -102,6 +106,20 @@ describe("S32 auth secret runtime config", () => {
     ).toThrow("REMINDER_PUSH_FCM_ENABLED_INVALID");
   });
 
+  test("parses generic positive integer runtime flags", () => {
+    expect(resolvePositiveIntegerFromEnv("REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE", {}, 20)).toBe(20);
+    expect(
+      resolvePositiveIntegerFromEnv("REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE", {
+        REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE: "5"
+      }, 20)
+    ).toBe(5);
+    expect(() =>
+      resolvePositiveIntegerFromEnv("REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS", {
+        REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS: "0"
+      }, 60)
+    ).toThrow("REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS_INVALID");
+  });
+
   test("resolves reminder push runtime config from inline env values", () => {
     const config = resolveReminderPushRuntimeConfigFromEnv({
       REMINDER_PUSH_APNS_ENABLED: "true",
@@ -182,5 +200,25 @@ describe("S32 auth secret runtime config", () => {
         REMINDER_PUSH_FCM_TOKEN_URI: "not-a-url"
       })
     ).toThrow("REMINDER_PUSH_FCM_TOKEN_URI_INVALID");
+  });
+
+  test("resolves reminder dispatch scheduler runtime config", () => {
+    expect(resolveReminderDispatchSchedulerRuntimeConfigFromEnv({})).toEqual({
+      enabled: false,
+      intervalSeconds: DEFAULT_REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS,
+      batchSize: DEFAULT_REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE
+    });
+
+    expect(
+      resolveReminderDispatchSchedulerRuntimeConfigFromEnv({
+        REMINDER_DISPATCH_SCHEDULER_ENABLED: "true",
+        REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS: "15",
+        REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE: "7"
+      })
+    ).toEqual({
+      enabled: true,
+      intervalSeconds: 15,
+      batchSize: 7
+    });
   });
 });

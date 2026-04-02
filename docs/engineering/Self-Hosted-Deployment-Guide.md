@@ -163,6 +163,7 @@ npm run smoke:postgres:e2e-local
 4. 可以创建一次训练会话和一次模考
 5. 可以进入 `/account` 导出个人数据
 6. 口语实时会话可以在浏览器端成功建立 WebSocket
+7. 如已启用移动提醒推送，可通过 `POST /internal/reminders/dispatch-due` 或等待 scheduler 周期触发，验证 due reminder 能产生 dispatch attempt
 
 ## 10. 当前不需要配置的能力
 以下环境变量和系统能力已经不属于 `self-hosted` 分支，不需要再配置：
@@ -170,3 +171,10 @@ npm run smoke:postgres:e2e-local
 1. 支付、订阅、会员相关变量
 2. provider health 与 AI runtime 冻结变量
 3. release storage、system RBAC、beta、stability、chaos drill 相关变量
+
+## 11. 可选提醒调度配置
+仅当你希望 server 自动执行到期学习提醒时，再配置以下变量：
+
+1. `REMINDER_DISPATCH_SCHEDULER_ENABLED=true`
+2. `REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS=60`
+3. `REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE=20`
