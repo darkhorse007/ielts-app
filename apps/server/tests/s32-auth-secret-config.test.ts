@@ -5,6 +5,7 @@ import {
   defaultConfig,
   resolveAllowedBrowserOriginsFromEnv,
   resolveAuthSecretFromEnv,
+  resolveBooleanFlagFromEnv,
   resolveInternalDebugRoutesEnabledFromEnv
 } from "../src/domain/config.js";
 
@@ -83,5 +84,19 @@ describe("S32 auth secret runtime config", () => {
         INTERNAL_DEBUG_ROUTES_ENABLED: "sometimes"
       })
     ).toThrow("INTERNAL_DEBUG_ROUTES_ENABLED_INVALID");
+  });
+
+  test("parses generic boolean runtime flags", () => {
+    expect(resolveBooleanFlagFromEnv("REMINDER_PUSH_APNS_ENABLED", {})).toBe(false);
+    expect(
+      resolveBooleanFlagFromEnv("REMINDER_PUSH_APNS_ENABLED", {
+        REMINDER_PUSH_APNS_ENABLED: "yes"
+      })
+    ).toBe(true);
+    expect(() =>
+      resolveBooleanFlagFromEnv("REMINDER_PUSH_FCM_ENABLED", {
+        REMINDER_PUSH_FCM_ENABLED: "maybe"
+      })
+    ).toThrow("REMINDER_PUSH_FCM_ENABLED_INVALID");
   });
 });

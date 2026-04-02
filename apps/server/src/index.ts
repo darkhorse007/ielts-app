@@ -2,6 +2,7 @@ import { buildServer } from "./app.js";
 import {
   resolveAllowedBrowserOriginsFromEnv,
   resolveAuthSecretFromEnv,
+  resolveBooleanFlagFromEnv,
   resolveInternalDebugRoutesEnabledFromEnv
 } from "./domain/config.js";
 const authAccountStorageBackend = process.env.AUTH_ACCOUNT_STORAGE_BACKEND === "postgres" ? "postgres" : "memory";
@@ -51,6 +52,10 @@ const analyticsStorageConnectionString =
   process.env.LEARNER_STATE_STORAGE_CONNECTION_STRING ??
   process.env.AUTH_ACCOUNT_STORAGE_CONNECTION_STRING;
 const analyticsStorageSchema = process.env.ANALYTICS_STORAGE_SCHEMA;
+const reminderDeliveryApnsEnabled = resolveBooleanFlagFromEnv("REMINDER_PUSH_APNS_ENABLED", process.env, false);
+const reminderDeliveryApnsBundleId = process.env.REMINDER_PUSH_APNS_BUNDLE_ID?.trim() || undefined;
+const reminderDeliveryFcmEnabled = resolveBooleanFlagFromEnv("REMINDER_PUSH_FCM_ENABLED", process.env, false);
+const reminderDeliveryFcmProjectId = process.env.REMINDER_PUSH_FCM_PROJECT_ID?.trim() || undefined;
 let authSecret = "";
 let allowedBrowserOrigins: string[] = [];
 let enableInternalDebugRoutes = false;
@@ -61,7 +66,7 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : "SERVER_CONFIG_INVALID";
   console.error(
-    `[server-config] ${message}. Check AUTH_SECRET, BROWSER_ALLOWED_ORIGINS, and INTERNAL_DEBUG_ROUTES_ENABLED before starting apps/server.`
+    `[server-config] ${message}. Check AUTH_SECRET, BROWSER_ALLOWED_ORIGINS, INTERNAL_DEBUG_ROUTES_ENABLED, and REMINDER_PUSH_* before starting apps/server.`
   );
   process.exit(1);
 }
@@ -89,6 +94,10 @@ const { app } = buildServer({
   analyticsStorageBackend,
   analyticsStorageConnectionString,
   analyticsStorageSchema,
+  reminderDeliveryApnsEnabled,
+  reminderDeliveryApnsBundleId,
+  reminderDeliveryFcmEnabled,
+  reminderDeliveryFcmProjectId,
   allowedBrowserOrigins,
   enableInternalDebugRoutes
 });

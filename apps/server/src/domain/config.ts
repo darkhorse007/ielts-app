@@ -19,6 +19,26 @@ const normalizeOptional = (value: string | undefined): string | undefined => {
   return normalized ? normalized : undefined;
 };
 
+export const resolveBooleanFlagFromEnv = (
+  variableName: string,
+  env: Record<string, string | undefined> = process.env,
+  defaultValue = false
+): boolean => {
+  const raw = normalizeOptional(env[variableName]);
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const normalized = raw.toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`${variableName}_INVALID`);
+};
+
 const validateNonEmptySecret = (secret: string, source: string): string => {
   const normalized = normalizeSecret(secret);
   if (!normalized) {
@@ -115,19 +135,7 @@ export const resolveAllowedBrowserOriginsFromEnv = (
 export const resolveInternalDebugRoutesEnabledFromEnv = (
   env: Record<string, string | undefined> = process.env
 ): boolean => {
-  const raw = normalizeOptional(env.INTERNAL_DEBUG_ROUTES_ENABLED);
-  if (!raw) {
-    return false;
-  }
-
-  const normalized = raw.toLowerCase();
-  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "n", "off"].includes(normalized)) {
-    return false;
-  }
-  throw new Error("INTERNAL_DEBUG_ROUTES_ENABLED_INVALID");
+  return resolveBooleanFlagFromEnv("INTERNAL_DEBUG_ROUTES_ENABLED", env, false);
 };
 
 export const defaultConfig: ServiceConfig = {

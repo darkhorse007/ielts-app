@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../domain/auth-service.js";
+import type { ReminderDeliveryService } from "../domain/reminder-delivery-service.js";
 import type { ReminderService } from "../domain/reminder-service.js";
 import type { ReminderDeviceRegistration } from "../domain/types.js";
 import { authenticate, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -78,6 +79,7 @@ export const registerReminderRoutes = async (
   services: {
     authService: AuthService;
     reminderService: ReminderService;
+    reminderDeliveryService: ReminderDeliveryService;
   }
 ): Promise<void> => {
   app.get("/v1/reminders/preferences", { preHandler: authenticate(services.authService) }, async (request, reply) => {
@@ -196,6 +198,80 @@ export const registerReminderRoutes = async (
         installation_id: parsedParams.data.installation_id,
         removed
       });
+    }
+  );
+
+  app.post(
+    "/v1/reminders/:reminder_id/dispatch-preview",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const parsed = reminderParamsSchema.safeParse(request.params);
+      if (!parsed.success) {
+        reply.code(400).send(toError("VALIDATION_ERROR", "reminder_id is invalid"));
+        return;
+      }
+
+      const authRequest = request as AuthenticatedRequest;
+      try {
+        const preview = services.reminderDeliveryService.previewDispatch({
+          reminderId: parsed.data.reminder_id,
+          requestUserId: authRequest.auth.userId
+        });
+        reply.code(200).send({
+          reminder_id: preview.reminderId,
+          user_id: preview.userId,
+          subscribed: preview.subscribed,
+          scheduled_at: preview.scheduledAt,
+          deep_link: preview.deepLink,
+          plan_id: preview.planId,
+          task_id: preview.taskId,
+          dispatchable_count: preview.dispatchableCount,
+          skipped_count: preview.skippedCount,
+          provider_summary: {
+            apns: {
+              enabled: preview.providerSummary.apns.enabled,
+              configured: preview.providerSummary.apns.configured,
+              ready: preview.providerSummary.apns.ready,
+              missing_fields: preview.providerSummary.apns.missingFields,
+              target_count: preview.providerSummary.apns.targetCount,
+              dispatchable_count: preview.providerSummary.apns.dispatchableCount,
+              skipped_count: preview.providerSummary.apns.skippedCount,
+              bundle_id: preview.providerSummary.apns.bundleId
+            },
+            fcm: {
+              enabled: preview.providerSummary.fcm.enabled,
+              configured: preview.providerSummary.fcm.configured,
+              ready: preview.providerSummary.fcm.ready,
+              missing_fields: preview.providerSummary.fcm.missingFields,
+              target_count: preview.providerSummary.fcm.targetCount,
+              dispatchable_count: preview.providerSummary.fcm.dispatchableCount,
+              skipped_count: preview.providerSummary.fcm.skippedCount,
+              project_id: preview.providerSummary.fcm.projectId
+            }
+          },
+          items: preview.items.map((item) => ({
+            installation_id: item.installationId,
+            platform: item.platform,
+            permission_status: item.permissionStatus,
+            push_provider: item.pushProvider,
+            push_token_preview: item.pushTokenPreview,
+            environment: item.environment,
+            delivery_ready: item.deliveryReady,
+            dispatchable: item.dispatchable,
+            provider_ready: item.providerReady,
+            skip_reason: item.skipReason,
+            device_label: item.deviceLabel,
+            app_build: item.appBuild,
+            updated_at: item.updatedAt
+          }))
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "REMINDER_NOT_FOUND") {
+          reply.code(404).send(toError("REMINDER_NOT_FOUND", "reminder not found"));
+          return;
+        }
+        throw error;
+      }
     }
   );
 

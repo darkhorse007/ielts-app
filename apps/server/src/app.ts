@@ -48,6 +48,7 @@ import {
   type AnalyticsRepository
 } from "./domain/analytics-repository.js";
 import { ReminderService } from "./domain/reminder-service.js";
+import { ReminderDeliveryService } from "./domain/reminder-delivery-service.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -88,6 +89,10 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   analyticsStorageConnectionString?: string;
   analyticsStorageSchema?: string;
   analyticsRepository?: AnalyticsRepository;
+  reminderDeliveryApnsEnabled?: boolean;
+  reminderDeliveryApnsBundleId?: string;
+  reminderDeliveryFcmEnabled?: boolean;
+  reminderDeliveryFcmProjectId?: string;
   allowedBrowserOrigins?: string[];
   enableInternalDebugRoutes?: boolean;
 };
@@ -119,6 +124,7 @@ export const buildServer = (options?: BuildServerOptions): {
   mockExamService: MockExamService;
   analyticsService: AnalyticsService;
   reminderService: ReminderService;
+  reminderDeliveryService: ReminderDeliveryService;
   analyticsRepository: AnalyticsRepository;
   authAccountRepository: AuthAccountRepository;
   learnerStateRepository: LearnerStateRepository;
@@ -227,6 +233,16 @@ export const buildServer = (options?: BuildServerOptions): {
   const mockExamService = new MockExamService(store);
   const analyticsService = new AnalyticsService(store, analyticsRepository);
   const reminderService = new ReminderService(store);
+  const reminderDeliveryService = new ReminderDeliveryService(store, reminderService, {
+    apns: {
+      enabled: options?.reminderDeliveryApnsEnabled ?? false,
+      bundleId: options?.reminderDeliveryApnsBundleId
+    },
+    fcm: {
+      enabled: options?.reminderDeliveryFcmEnabled ?? false,
+      projectId: options?.reminderDeliveryFcmProjectId
+    }
+  });
 
   const app = Fastify({
     logger: false
@@ -340,7 +356,8 @@ export const buildServer = (options?: BuildServerOptions): {
     });
     await registerReminderRoutes(child, {
       authService,
-      reminderService
+      reminderService,
+      reminderDeliveryService
     });
     await registerOnboardingRoutes(child, {
       authService,
@@ -382,6 +399,7 @@ export const buildServer = (options?: BuildServerOptions): {
     mockExamService,
     analyticsService,
     reminderService,
+    reminderDeliveryService,
     analyticsRepository,
     authAccountRepository,
     learnerStateRepository,

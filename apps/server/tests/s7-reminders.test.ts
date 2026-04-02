@@ -6,7 +6,11 @@ describe("S7 personalized reminders", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
 
   const build = async () => {
-    const server = buildServer();
+    const server = buildServer({
+      reminderDeliveryApnsEnabled: true,
+      reminderDeliveryApnsBundleId: "com.selfhosted.ielts",
+      reminderDeliveryFcmEnabled: true
+    });
     await server.app.ready();
     return server;
   };
@@ -379,5 +383,135 @@ describe("S7 personalized reminders", () => {
     });
     expect(outsiderDevices.statusCode).toBe(200);
     expect(outsiderDevices.json().total_count).toBe(0);
+  });
+
+  test("previews reminder dispatch targets and provider readiness", async () => {
+    const user = await registerAndLogin();
+    seedActivePlan(user.user_id);
+
+    const recommendation = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/recommendation",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(recommendation.statusCode).toBe(200);
+    const reminderId = recommendation.json().reminder_id as string;
+
+    const iosDevice = await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-ios-1",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-abcdef1234567890",
+        environment: "production"
+      }
+    });
+    expect(iosDevice.statusCode).toBe(200);
+
+    const androidDevice = await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-android-1",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "android",
+        permission_status: "granted",
+        push_provider: "fcm",
+        push_token: "android-token-abcdef1234567890",
+        environment: "production"
+      }
+    });
+    expect(androidDevice.statusCode).toBe(200);
+
+    const deniedDevice = await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-ios-2",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "denied",
+        environment: "preview"
+      }
+    });
+    expect(deniedDevice.statusCode).toBe(200);
+
+    const preview = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderId}/dispatch-preview`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().reminder_id).toBe(reminderId);
+    expect(preview.json().dispatchable_count).toBe(1);
+    expect(preview.json().skipped_count).toBe(2);
+    expect(preview.json().provider_summary.apns.ready).toBe(true);
+    expect(preview.json().provider_summary.apns.bundle_id).toBe("com.selfhosted.ielts");
+    expect(preview.json().provider_summary.apns.dispatchable_count).toBe(1);
+    expect(preview.json().provider_summary.fcm.enabled).toBe(true);
+    expect(preview.json().provider_summary.fcm.ready).toBe(false);
+    expect(preview.json().provider_summary.fcm.missing_fields).toEqual(["project_id"]);
+    expect(preview.json().provider_summary.fcm.skipped_count).toBe(1);
+
+    const previewItems = preview.json().items as Array<{
+      installation_id: string;
+      dispatchable: boolean;
+      provider_ready: boolean;
+      skip_reason?: string;
+      push_token_preview?: string;
+    }>;
+    expect(previewItems).toHaveLength(3);
+    expect(previewItems.find((item) => item.installation_id === "dispatch-ios-1")).toMatchObject({
+      dispatchable: true,
+      provider_ready: true,
+      push_token_preview: "native...7890"
+    });
+    expect(previewItems.find((item) => item.installation_id === "dispatch-android-1")).toMatchObject({
+      dispatchable: false,
+      provider_ready: false,
+      skip_reason: "PROVIDER_NOT_CONFIGURED"
+    });
+    expect(previewItems.find((item) => item.installation_id === "dispatch-ios-2")).toMatchObject({
+      dispatchable: false,
+      provider_ready: false,
+      skip_reason: "DEVICE_NOT_DELIVERABLE"
+    });
+  });
+
+  test("rejects reminder dispatch preview for other users", async () => {
+    const owner = await registerAndLogin();
+    const outsider = await registerAndLogin();
+    seedActivePlan(owner.user_id);
+
+    const recommendation = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/recommendation",
+      headers: {
+        authorization: `Bearer ${owner.access_token}`
+      }
+    });
+    expect(recommendation.statusCode).toBe(200);
+    const reminderId = recommendation.json().reminder_id as string;
+
+    const preview = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderId}/dispatch-preview`,
+      headers: {
+        authorization: `Bearer ${outsider.access_token}`
+      }
+    });
+    expect(preview.statusCode).toBe(404);
+    expect(preview.json().code).toBe("REMINDER_NOT_FOUND");
   });
 });

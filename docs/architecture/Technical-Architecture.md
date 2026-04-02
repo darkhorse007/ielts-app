@@ -222,7 +222,7 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 ### 7.6 分析与提醒
 1. 客户端通过 `/v1/analytics/events/batch` 上报事件
 2. 服务端基于事件生成 summary 和提醒推荐
-3. `/v1/reminders/*` 提供偏好、推荐和点击追踪
+3. `/v1/reminders/*` 提供偏好、推荐、点击追踪、设备登记，以及 dispatch preview
 
 ### 7.7 移动端状态恢复
 1. 应用启动时读取安全存储中的实例配置与会话信息

@@ -223,7 +223,11 @@
 1. `GET /v1/reminders/preferences`
 2. `PUT /v1/reminders/preferences`
 3. `GET /v1/reminders/recommendation`
-4. `POST /v1/reminders/:reminder_id/click`
+4. `GET /v1/reminders/devices`
+5. `PUT /v1/reminders/devices/:installation_id`
+6. `DELETE /v1/reminders/devices/:installation_id`
+7. `POST /v1/reminders/:reminder_id/dispatch-preview`
+8. `POST /v1/reminders/:reminder_id/click`
 
 ### 4.11 Internal And Health
 1. `GET /health`
