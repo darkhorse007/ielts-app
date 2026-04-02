@@ -118,6 +118,7 @@ export type AuditEventType =
   | "reminder_device_registered"
   | "reminder_device_removed"
   | "reminder_dispatch_previewed"
+  | "reminder_dispatch_executed"
   | "churn_risk_scored"
   | "churn_strategy_triggered"
   | "churn_effect_queried"
@@ -1028,6 +1029,27 @@ export type ReminderDeviceRegistration = {
   deviceLabel?: string;
   appBuild?: string;
   environment: ReminderBuildEnvironment;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReminderDispatchStatus = "sent" | "skipped" | "duplicate" | "failed";
+
+export type ReminderDispatchFailureCode = "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+
+export type ReminderDeliveryAttempt = {
+  id: string;
+  userId: string;
+  reminderId: string;
+  installationId: string;
+  dedupeKey: string;
+  status: ReminderDispatchStatus;
+  pushProvider?: ReminderPushProvider;
+  providerMessageId?: string;
+  duplicateOfAttemptId?: string;
+  skipReason?: string;
+  failureCode?: ReminderDispatchFailureCode;
+  failureMessage?: string;
   createdAt: string;
   updatedAt: string;
 };

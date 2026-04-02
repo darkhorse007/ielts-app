@@ -4,12 +4,44 @@ import { buildServer } from "../src/app.js";
 
 describe("S7 personalized reminders", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
+  let sentMessages: Array<{
+    provider: "apns" | "fcm";
+    installationId: string;
+    deepLink: string;
+  }> = [];
 
   const build = async () => {
+    sentMessages = [];
     const server = buildServer({
       reminderDeliveryApnsEnabled: true,
       reminderDeliveryApnsBundleId: "com.selfhosted.ielts",
-      reminderDeliveryFcmEnabled: true
+      reminderDeliveryFcmEnabled: true,
+      reminderDeliveryFcmProjectId: "fcm-self-hosted",
+      reminderDeliverySenders: {
+        apns: async ({ reminder, device }) => {
+          sentMessages.push({
+            provider: "apns",
+            installationId: device.installationId,
+            deepLink: reminder.deepLink
+          });
+          return {
+            providerMessageId: `apns-${device.installationId}`
+          };
+        },
+        fcm: async ({ reminder, device }) => {
+          if (device.installationId === "dispatch-android-fail") {
+            throw new Error("fcm provider unavailable");
+          }
+          sentMessages.push({
+            provider: "fcm",
+            installationId: device.installationId,
+            deepLink: reminder.deepLink
+          });
+          return {
+            providerMessageId: `fcm-${device.installationId}`
+          };
+        }
+      }
     });
     await server.app.ready();
     return server;
@@ -454,15 +486,15 @@ describe("S7 personalized reminders", () => {
     });
     expect(preview.statusCode).toBe(200);
     expect(preview.json().reminder_id).toBe(reminderId);
-    expect(preview.json().dispatchable_count).toBe(1);
-    expect(preview.json().skipped_count).toBe(2);
+    expect(preview.json().dispatchable_count).toBe(2);
+    expect(preview.json().skipped_count).toBe(1);
     expect(preview.json().provider_summary.apns.ready).toBe(true);
     expect(preview.json().provider_summary.apns.bundle_id).toBe("com.selfhosted.ielts");
     expect(preview.json().provider_summary.apns.dispatchable_count).toBe(1);
     expect(preview.json().provider_summary.fcm.enabled).toBe(true);
-    expect(preview.json().provider_summary.fcm.ready).toBe(false);
-    expect(preview.json().provider_summary.fcm.missing_fields).toEqual(["project_id"]);
-    expect(preview.json().provider_summary.fcm.skipped_count).toBe(1);
+    expect(preview.json().provider_summary.fcm.ready).toBe(true);
+    expect(preview.json().provider_summary.fcm.missing_fields).toEqual([]);
+    expect(preview.json().provider_summary.fcm.dispatchable_count).toBe(1);
 
     const previewItems = preview.json().items as Array<{
       installation_id: string;
@@ -478,14 +510,141 @@ describe("S7 personalized reminders", () => {
       push_token_preview: "native...7890"
     });
     expect(previewItems.find((item) => item.installation_id === "dispatch-android-1")).toMatchObject({
-      dispatchable: false,
-      provider_ready: false,
-      skip_reason: "PROVIDER_NOT_CONFIGURED"
+      dispatchable: true,
+      provider_ready: true
     });
     expect(previewItems.find((item) => item.installation_id === "dispatch-ios-2")).toMatchObject({
       dispatchable: false,
       provider_ready: false,
       skip_reason: "DEVICE_NOT_DELIVERABLE"
+    });
+  });
+
+  test("dispatches reminders records attempts and dedupes successful deliveries", async () => {
+    const user = await registerAndLogin();
+    seedActivePlan(user.user_id);
+
+    const recommendation = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/recommendation",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(recommendation.statusCode).toBe(200);
+    const reminderId = recommendation.json().reminder_id as string;
+
+    await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-ios-success",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "granted",
+        push_provider: "apns",
+        push_token: "native-token-abcdef1234567890",
+        environment: "production"
+      }
+    });
+    await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-android-fail",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "android",
+        permission_status: "granted",
+        push_provider: "fcm",
+        push_token: "android-token-abcdef1234567890",
+        environment: "production"
+      }
+    });
+    await context.app.inject({
+      method: "PUT",
+      url: "/v1/reminders/devices/dispatch-ios-denied",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        platform: "ios",
+        permission_status: "denied",
+        environment: "preview"
+      }
+    });
+
+    const firstDispatch = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderId}/dispatch`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(firstDispatch.statusCode).toBe(200);
+    expect(firstDispatch.json().dispatch_count).toBe(1);
+    expect(firstDispatch.json().failed_count).toBe(1);
+    expect(firstDispatch.json().skipped_count).toBe(1);
+    expect(firstDispatch.json().duplicate_count).toBe(0);
+    expect(sentMessages).toEqual([
+      {
+        provider: "apns",
+        installationId: "dispatch-ios-success",
+        deepLink: recommendation.json().deep_link
+      }
+    ]);
+
+    const firstItems = firstDispatch.json().items as Array<{
+      installation_id: string;
+      status: string;
+      provider_message_id?: string;
+      skip_reason?: string;
+      failure_code?: string;
+      attempt_id: string;
+    }>;
+    const sentAttempt = firstItems.find((item) => item.installation_id === "dispatch-ios-success");
+    expect(sentAttempt).toMatchObject({
+      status: "sent",
+      provider_message_id: "apns-dispatch-ios-success"
+    });
+    expect(firstItems.find((item) => item.installation_id === "dispatch-android-fail")).toMatchObject({
+      status: "failed",
+      failure_code: "PROVIDER_ERROR"
+    });
+    expect(firstItems.find((item) => item.installation_id === "dispatch-ios-denied")).toMatchObject({
+      status: "skipped",
+      skip_reason: "DEVICE_NOT_DELIVERABLE"
+    });
+
+    const secondDispatch = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderId}/dispatch`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(secondDispatch.statusCode).toBe(200);
+    expect(secondDispatch.json().dispatch_count).toBe(0);
+    expect(secondDispatch.json().duplicate_count).toBe(1);
+    expect(secondDispatch.json().failed_count).toBe(1);
+    expect(secondDispatch.json().skipped_count).toBe(1);
+    expect(sentMessages).toEqual([
+      {
+        provider: "apns",
+        installationId: "dispatch-ios-success",
+        deepLink: recommendation.json().deep_link
+      }
+    ]);
+
+    const secondItems = secondDispatch.json().items as Array<{
+      installation_id: string;
+      status: string;
+      duplicate_of_attempt_id?: string;
+    }>;
+    expect(secondItems.find((item) => item.installation_id === "dispatch-ios-success")).toMatchObject({
+      status: "duplicate",
+      duplicate_of_attempt_id: sentAttempt?.attempt_id
     });
   });
 
@@ -513,5 +672,31 @@ describe("S7 personalized reminders", () => {
     });
     expect(preview.statusCode).toBe(404);
     expect(preview.json().code).toBe("REMINDER_NOT_FOUND");
+  });
+
+  test("rejects reminder dispatch for other users", async () => {
+    const owner = await registerAndLogin();
+    const outsider = await registerAndLogin();
+    seedActivePlan(owner.user_id);
+
+    const recommendation = await context.app.inject({
+      method: "GET",
+      url: "/v1/reminders/recommendation",
+      headers: {
+        authorization: `Bearer ${owner.access_token}`
+      }
+    });
+    expect(recommendation.statusCode).toBe(200);
+    const reminderId = recommendation.json().reminder_id as string;
+
+    const dispatch = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderId}/dispatch`,
+      headers: {
+        authorization: `Bearer ${outsider.access_token}`
+      }
+    });
+    expect(dispatch.statusCode).toBe(404);
+    expect(dispatch.json().code).toBe("REMINDER_NOT_FOUND");
   });
 });

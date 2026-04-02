@@ -48,7 +48,7 @@ import {
   type AnalyticsRepository
 } from "./domain/analytics-repository.js";
 import { ReminderService } from "./domain/reminder-service.js";
-import { ReminderDeliveryService } from "./domain/reminder-delivery-service.js";
+import { ReminderDeliveryService, type ReminderPushProviderSenders } from "./domain/reminder-delivery-service.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -93,6 +93,7 @@ type BuildServerOptions = Partial<ServiceConfig> & {
   reminderDeliveryApnsBundleId?: string;
   reminderDeliveryFcmEnabled?: boolean;
   reminderDeliveryFcmProjectId?: string;
+  reminderDeliverySenders?: ReminderPushProviderSenders;
   allowedBrowserOrigins?: string[];
   enableInternalDebugRoutes?: boolean;
 };
@@ -242,7 +243,7 @@ export const buildServer = (options?: BuildServerOptions): {
       enabled: options?.reminderDeliveryFcmEnabled ?? false,
       projectId: options?.reminderDeliveryFcmProjectId
     }
-  });
+  }, options?.reminderDeliverySenders);
 
   const app = Fastify({
     logger: false

@@ -275,6 +275,53 @@ export const registerReminderRoutes = async (
     }
   );
 
+  app.post(
+    "/v1/reminders/:reminder_id/dispatch",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const parsed = reminderParamsSchema.safeParse(request.params);
+      if (!parsed.success) {
+        reply.code(400).send(toError("VALIDATION_ERROR", "reminder_id is invalid"));
+        return;
+      }
+
+      const authRequest = request as AuthenticatedRequest;
+      try {
+        const result = await services.reminderDeliveryService.dispatch({
+          reminderId: parsed.data.reminder_id,
+          requestUserId: authRequest.auth.userId
+        });
+        reply.code(200).send({
+          reminder_id: result.reminderId,
+          user_id: result.userId,
+          dispatch_count: result.dispatchCount,
+          duplicate_count: result.duplicateCount,
+          skipped_count: result.skippedCount,
+          failed_count: result.failedCount,
+          items: result.items.map((item) => ({
+            attempt_id: item.attemptId,
+            installation_id: item.installationId,
+            platform: item.platform,
+            push_provider: item.pushProvider,
+            status: item.status,
+            provider_message_id: item.providerMessageId,
+            duplicate_of_attempt_id: item.duplicateOfAttemptId,
+            skip_reason: item.skipReason,
+            failure_code: item.failureCode,
+            failure_message: item.failureMessage,
+            updated_at: item.updatedAt
+          }))
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "REMINDER_NOT_FOUND") {
+          reply.code(404).send(toError("REMINDER_NOT_FOUND", "reminder not found"));
+          return;
+        }
+        throw error;
+      }
+    }
+  );
+
   app.post("/v1/reminders/:reminder_id/click", { preHandler: authenticate(services.authService) }, async (request, reply) => {
     const parsed = reminderParamsSchema.safeParse(request.params);
     if (!parsed.success) {

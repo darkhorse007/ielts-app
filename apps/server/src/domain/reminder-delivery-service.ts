@@ -1,6 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { appendAudit } from "./audit.js";
 import { InMemoryStore } from "./store.js";
-import type { ReminderDeviceRegistration, ReminderPushProvider } from "./types.js";
+import { nowIso } from "./time.js";
+import type {
+  ReminderDeliveryAttempt,
+  ReminderDeviceRegistration,
+  ReminderPushProvider,
+  ReminderRecommendation
+} from "./types.js";
 import type { ReminderService } from "./reminder-service.js";
 
 export type ReminderPushProviderRuntimeSettings = {
@@ -63,6 +70,45 @@ export type ReminderDispatchPreview = {
   items: ReminderDispatchPreviewItem[];
 };
 
+export type ReminderPushDispatchPayload = {
+  reminder: ReminderRecommendation;
+  device: ReminderDeviceRegistration;
+};
+
+export type ReminderPushDispatchReceipt = {
+  providerMessageId?: string;
+};
+
+export type ReminderPushProviderSender = (
+  payload: ReminderPushDispatchPayload
+) => Promise<ReminderPushDispatchReceipt>;
+
+export type ReminderPushProviderSenders = Partial<Record<ReminderPushProvider, ReminderPushProviderSender>>;
+
+export type ReminderDispatchExecuteItem = {
+  attemptId: string;
+  installationId: string;
+  platform: "ios" | "android";
+  pushProvider?: "apns" | "fcm";
+  status: "sent" | "skipped" | "duplicate" | "failed";
+  providerMessageId?: string;
+  duplicateOfAttemptId?: string;
+  skipReason?: ReminderDispatchSkipReason;
+  failureCode?: "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+  failureMessage?: string;
+  updatedAt: string;
+};
+
+export type ReminderDispatchExecuteResult = {
+  reminderId: string;
+  userId: string;
+  dispatchCount: number;
+  duplicateCount: number;
+  skippedCount: number;
+  failedCount: number;
+  items: ReminderDispatchExecuteItem[];
+};
+
 type ProviderRuntimeState = {
   enabled: boolean;
   configured: boolean;
@@ -99,13 +145,16 @@ const normalizeProviderRuntimeSettings = (
 
 export class ReminderDeliveryService {
   private readonly providerSettings: ReminderPushProviderRuntimeSettings;
+  private readonly senders: ReminderPushProviderSenders;
 
   constructor(
     private readonly store: InMemoryStore,
     private readonly reminderService: ReminderService,
-    providerSettings?: Partial<ReminderPushProviderRuntimeSettings>
+    providerSettings?: Partial<ReminderPushProviderRuntimeSettings>,
+    senders?: ReminderPushProviderSenders
   ) {
     this.providerSettings = normalizeProviderRuntimeSettings(providerSettings);
+    this.senders = senders ?? {};
   }
 
   previewDispatch(input: {
@@ -154,6 +203,47 @@ export class ReminderDeliveryService {
     });
 
     return preview;
+  }
+
+  async dispatch(input: {
+    reminderId: string;
+    requestUserId: string;
+  }): Promise<ReminderDispatchExecuteResult> {
+    const reminder = this.store.reminderRecommendationsById.get(input.reminderId);
+    if (!reminder || reminder.userId !== input.requestUserId) {
+      throw new Error("REMINDER_NOT_FOUND");
+    }
+
+    const preference = this.reminderService.getPreference(reminder.userId);
+    const providerState = this.getProviderStates();
+    const items = await Promise.all(
+      this.reminderService
+        .listDevices(reminder.userId)
+        .map((device) => this.dispatchToDevice(reminder, device, preference.subscribed, providerState))
+    );
+
+    const result: ReminderDispatchExecuteResult = {
+      reminderId: reminder.id,
+      userId: reminder.userId,
+      dispatchCount: items.filter((item) => item.status === "sent").length,
+      duplicateCount: items.filter((item) => item.status === "duplicate").length,
+      skippedCount: items.filter((item) => item.status === "skipped").length,
+      failedCount: items.filter((item) => item.status === "failed").length,
+      items
+    };
+
+    appendAudit(this.store, "reminder_dispatch_executed", {
+      userId: reminder.userId,
+      metadata: {
+        reminderId: reminder.id,
+        dispatchCount: result.dispatchCount,
+        duplicateCount: result.duplicateCount,
+        skippedCount: result.skippedCount,
+        failedCount: result.failedCount
+      }
+    });
+
+    return result;
   }
 
   private getProviderStates(): Record<ReminderPushProvider, ProviderRuntimeState> {
@@ -240,6 +330,150 @@ export class ReminderDeliveryService {
       skippedCount: targetItems.length - dispatchableItems.length,
       bundleId: runtime.bundleId,
       projectId: runtime.projectId
+    };
+  }
+
+  private async dispatchToDevice(
+    reminder: ReminderRecommendation,
+    device: ReminderDeviceRegistration,
+    subscribed: boolean,
+    providerState: Record<ReminderPushProvider, ProviderRuntimeState>
+  ): Promise<ReminderDispatchExecuteItem> {
+    const preview = this.toPreviewItem(device, subscribed, providerState);
+    const dedupeKey = this.getDispatchDedupeKey(reminder.id, device.installationId);
+    const previousSentAttempt = this.findSentAttemptByDedupeKey(dedupeKey);
+
+    if (preview.dispatchable && previousSentAttempt) {
+      const duplicateAttempt = this.recordAttempt({
+        userId: reminder.userId,
+        reminderId: reminder.id,
+        installationId: device.installationId,
+        dedupeKey,
+        pushProvider: device.pushProvider,
+        status: "duplicate",
+        duplicateOfAttemptId: previousSentAttempt.id
+      });
+      return this.toExecuteItem(duplicateAttempt, device.platform);
+    }
+
+    if (!preview.dispatchable) {
+      const skippedAttempt = this.recordAttempt({
+        userId: reminder.userId,
+        reminderId: reminder.id,
+        installationId: device.installationId,
+        dedupeKey,
+        pushProvider: device.pushProvider,
+        status: "skipped",
+        skipReason: preview.skipReason
+      });
+      return this.toExecuteItem(skippedAttempt, device.platform);
+    }
+
+    const sender = device.pushProvider ? this.senders[device.pushProvider] : undefined;
+    if (!sender) {
+      const failedAttempt = this.recordAttempt({
+        userId: reminder.userId,
+        reminderId: reminder.id,
+        installationId: device.installationId,
+        dedupeKey,
+        pushProvider: device.pushProvider,
+        status: "failed",
+        failureCode: "SENDER_UNAVAILABLE",
+        failureMessage: `sender unavailable for ${device.pushProvider ?? "unknown"}`
+      });
+      return this.toExecuteItem(failedAttempt, device.platform);
+    }
+
+    try {
+      const receipt = await sender({
+        reminder,
+        device
+      });
+      const sentAttempt = this.recordAttempt({
+        userId: reminder.userId,
+        reminderId: reminder.id,
+        installationId: device.installationId,
+        dedupeKey,
+        pushProvider: device.pushProvider,
+        status: "sent",
+        providerMessageId: receipt.providerMessageId
+      });
+      return this.toExecuteItem(sentAttempt, device.platform);
+    } catch (error) {
+      const failedAttempt = this.recordAttempt({
+        userId: reminder.userId,
+        reminderId: reminder.id,
+        installationId: device.installationId,
+        dedupeKey,
+        pushProvider: device.pushProvider,
+        status: "failed",
+        failureCode: "PROVIDER_ERROR",
+        failureMessage: error instanceof Error ? error.message : "provider dispatch failed"
+      });
+      return this.toExecuteItem(failedAttempt, device.platform);
+    }
+  }
+
+  private getDispatchDedupeKey(reminderId: string, installationId: string): string {
+    return `${reminderId}:${installationId}`;
+  }
+
+  private findSentAttemptByDedupeKey(dedupeKey: string): ReminderDeliveryAttempt | undefined {
+    return Array.from(this.store.reminderDeliveryAttemptsById.values()).find(
+      (item) => item.dedupeKey === dedupeKey && item.status === "sent"
+    );
+  }
+
+  private recordAttempt(input: {
+    userId: string;
+    reminderId: string;
+    installationId: string;
+    dedupeKey: string;
+    pushProvider?: ReminderPushProvider;
+    status: "sent" | "skipped" | "duplicate" | "failed";
+    providerMessageId?: string;
+    duplicateOfAttemptId?: string;
+    skipReason?: ReminderDispatchSkipReason;
+    failureCode?: "SENDER_UNAVAILABLE" | "PROVIDER_ERROR";
+    failureMessage?: string;
+  }): ReminderDeliveryAttempt {
+    const timestamp = nowIso();
+    const attempt: ReminderDeliveryAttempt = {
+      id: randomUUID(),
+      userId: input.userId,
+      reminderId: input.reminderId,
+      installationId: input.installationId,
+      dedupeKey: input.dedupeKey,
+      pushProvider: input.pushProvider,
+      status: input.status,
+      providerMessageId: input.providerMessageId,
+      duplicateOfAttemptId: input.duplicateOfAttemptId,
+      skipReason: input.skipReason,
+      failureCode: input.failureCode,
+      failureMessage: input.failureMessage,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.store.reminderDeliveryAttemptsById.set(attempt.id, attempt);
+    return attempt;
+  }
+
+  private toExecuteItem(
+    attempt: ReminderDeliveryAttempt,
+    platform: "ios" | "android"
+  ): ReminderDispatchExecuteItem {
+    return {
+      attemptId: attempt.id,
+      installationId: attempt.installationId,
+      platform,
+      pushProvider: attempt.pushProvider,
+      status: attempt.status,
+      providerMessageId: attempt.providerMessageId,
+      duplicateOfAttemptId: attempt.duplicateOfAttemptId,
+      skipReason: attempt.skipReason as ReminderDispatchSkipReason | undefined,
+      failureCode: attempt.failureCode,
+      failureMessage: attempt.failureMessage,
+      updatedAt: attempt.updatedAt
     };
   }
 }

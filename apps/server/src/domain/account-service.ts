@@ -227,6 +227,15 @@ export class AccountService {
       removedReminderDevices += 1;
     }
 
+    let removedReminderDeliveryAttempts = 0;
+    for (const [attemptId, attempt] of this.store.reminderDeliveryAttemptsById.entries()) {
+      if (attempt.userId !== userId) {
+        continue;
+      }
+      this.store.reminderDeliveryAttemptsById.delete(attemptId);
+      removedReminderDeliveryAttempts += 1;
+    }
+
     appendAudit(this.store, "user_deleted", {
       userId,
       metadata: {
@@ -245,7 +254,8 @@ export class AccountService {
         removedMockExamReports: mockReportIdsToRemove.length,
         removedReminderPreferences,
         removedReminderRecommendations,
-        removedReminderDevices
+        removedReminderDevices,
+        removedReminderDeliveryAttempts
       }
     });
 
@@ -339,6 +349,9 @@ export class AccountService {
     const reminderDevices = Array.from(this.store.reminderDevicesByUserAndInstallation.values()).filter(
       (item) => item.userId === userId
     );
+    const reminderDeliveryAttempts = Array.from(this.store.reminderDeliveryAttemptsById.values()).filter(
+      (item) => item.userId === userId
+    );
 
     const analyticsEvents = this.store.analyticsEvents.filter((item) => item.userId === userId);
 
@@ -389,7 +402,8 @@ export class AccountService {
       reminders: {
         preference: reminderPreference ? clone(reminderPreference) : undefined,
         recommendations: clone(reminderRecommendations),
-        devices: clone(reminderDevices)
+        devices: clone(reminderDevices),
+        delivery_attempts: clone(reminderDeliveryAttempts)
       },
       analytics: {
         total_events: analyticsEvents.length,
@@ -411,7 +425,8 @@ export class AccountService {
         analyticsEventCount: analyticsEvents.length,
         studyPlanCount: studyPlans.length,
         reminderRecommendationCount: reminderRecommendations.length,
-        reminderDeviceCount: reminderDevices.length
+        reminderDeviceCount: reminderDevices.length,
+        reminderDeliveryAttemptCount: reminderDeliveryAttempts.length
       }
     });
 

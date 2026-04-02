@@ -5,7 +5,15 @@ describe("S34 user data export", () => {
   const nextEmail = () => `export-user-${crypto.randomUUID()}@example.com`;
 
   const build = async () => {
-    const server = buildServer();
+    const server = buildServer({
+      reminderDeliveryApnsEnabled: true,
+      reminderDeliveryApnsBundleId: "com.selfhosted.ielts",
+      reminderDeliverySenders: {
+        apns: async ({ device }) => ({
+          providerMessageId: `apns-${device.installationId}`
+        })
+      }
+    });
     await server.app.ready();
     return server;
   };
@@ -110,6 +118,15 @@ describe("S34 user data export", () => {
     });
     expect(reminderDevice.statusCode).toBe(200);
 
+    const reminderDispatch = await context.app.inject({
+      method: "POST",
+      url: `/v1/reminders/${reminderRecommendation.json().reminder_id as string}/dispatch`,
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(reminderDispatch.statusCode).toBe(200);
+
     const exported = await context.app.inject({
       method: "GET",
       url: "/v1/users/me/export",
@@ -141,6 +158,12 @@ describe("S34 user data export", () => {
           permissionStatus: string;
           pushProvider?: string;
         }>;
+        delivery_attempts: Array<{
+          reminderId: string;
+          installationId: string;
+          status: string;
+          pushProvider?: string;
+        }>;
       };
       analytics: {
         total_events: number;
@@ -157,6 +180,11 @@ describe("S34 user data export", () => {
     expect(body.reminders.devices[0]?.installationId).toBe("export-installation-1");
     expect(body.reminders.devices[0]?.permissionStatus).toBe("granted");
     expect(body.reminders.devices[0]?.pushProvider).toBe("apns");
+    expect(body.reminders.delivery_attempts).toHaveLength(1);
+    expect(body.reminders.delivery_attempts[0]?.reminderId).toBe(reminderRecommendation.json().reminder_id);
+    expect(body.reminders.delivery_attempts[0]?.installationId).toBe("export-installation-1");
+    expect(body.reminders.delivery_attempts[0]?.status).toBe("sent");
+    expect(body.reminders.delivery_attempts[0]?.pushProvider).toBe("apns");
     expect(body.analytics.total_events).toBe(1);
     expect(body.exclusions).toEqual(
       expect.arrayContaining(["password_hash", "refresh_token_hash", "internal_audit_events", "backup_copies"])
