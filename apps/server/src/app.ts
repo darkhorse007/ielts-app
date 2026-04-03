@@ -139,6 +139,7 @@ const internalMinorGuardianSupportRequestListSchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  sla_state: z.enum(["within_sla", "due_soon", "breached"]).optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional()
 }).refine((value) => !(value.handled_by && value.unassigned), {
@@ -173,6 +174,100 @@ const buildMinorGuardianSupportRequestStatusSummary = (
     }
   );
 
+type MinorGuardianSupportRequestSlaState = "within_sla" | "due_soon" | "breached" | "closed";
+
+const MINOR_GUARDIAN_SUPPORT_SLA_TARGET_MINUTES: Record<"pending_review" | "contacted", number> = {
+  pending_review: 120,
+  contacted: 1_440
+};
+
+const deriveMinorGuardianSupportRequestSla = (request: {
+  status: "pending_review" | "contacted" | "closed";
+  updatedAt: string;
+}, nowMs = Date.now()): {
+  lastActivityAt: string;
+  queueWaitMinutes: number;
+  slaTargetMinutes?: number;
+  slaState: MinorGuardianSupportRequestSlaState;
+  slaBreached: boolean;
+} => {
+  const lastActivityAt = request.updatedAt;
+  const lastActivityAtMs = Date.parse(lastActivityAt);
+  const queueWaitMinutes = Number.isFinite(lastActivityAtMs)
+    ? Math.max(0, Math.floor((nowMs - lastActivityAtMs) / 60_000))
+    : 0;
+
+  if (request.status === "closed") {
+    return {
+      lastActivityAt,
+      queueWaitMinutes,
+      slaState: "closed",
+      slaBreached: false
+    };
+  }
+
+  const slaTargetMinutes = MINOR_GUARDIAN_SUPPORT_SLA_TARGET_MINUTES[request.status];
+  const slaState: MinorGuardianSupportRequestSlaState =
+    queueWaitMinutes >= slaTargetMinutes
+      ? "breached"
+      : queueWaitMinutes >= Math.floor(slaTargetMinutes * 0.75)
+        ? "due_soon"
+        : "within_sla";
+
+  return {
+    lastActivityAt,
+    queueWaitMinutes,
+    slaTargetMinutes,
+    slaState,
+    slaBreached: slaState === "breached"
+  };
+};
+
+const matchesMinorGuardianSupportRequestSlaState = (
+  item: {
+    request: {
+      status: "pending_review" | "contacted" | "closed";
+      updatedAt: string;
+    };
+  },
+  slaState?: "within_sla" | "due_soon" | "breached",
+  nowMs = Date.now()
+): boolean => {
+  if (!slaState) {
+    return true;
+  }
+
+  return deriveMinorGuardianSupportRequestSla(item.request, nowMs).slaState === slaState;
+};
+
+const buildMinorGuardianSupportRequestSlaSummary = (
+  items: Array<{
+    request: {
+      status: "pending_review" | "contacted" | "closed";
+      updatedAt: string;
+    };
+  }>,
+  nowMs = Date.now()
+): {
+  within_sla: number;
+  due_soon: number;
+  breached: number;
+} =>
+  items.reduce(
+    (summary, item) => {
+      const sla = deriveMinorGuardianSupportRequestSla(item.request, nowMs);
+      if (sla.slaState === "within_sla" || sla.slaState === "due_soon" || sla.slaState === "breached") {
+        summary[sla.slaState] += 1;
+      }
+      return summary;
+    },
+    {
+      within_sla: 0,
+      due_soon: 0,
+      breached: 0
+    }
+  );
+
 const escapeCsvCell = (value: unknown): string => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
 
 const serializeInternalMinorGuardianSupportRequestsCsv = (
@@ -196,7 +291,8 @@ const serializeInternalMinorGuardianSupportRequestsCsv = (
       handledBy?: string;
       operatorNote?: string;
     };
-  }>
+  }>,
+  nowMs = Date.now()
 ): string => {
   const header = [
     "request_id",
@@ -215,11 +311,17 @@ const serializeInternalMinorGuardianSupportRequestsCsv = (
     "updated_at",
     "resolved_at",
     "handled_by",
-    "operator_note"
+    "operator_note",
+    "last_activity_at",
+    "queue_wait_minutes",
+    "sla_target_minutes",
+    "sla_state",
+    "sla_breached"
   ];
 
-  const rows = items.map((item) =>
-    [
+  const rows = items.map((item) => {
+    const sla = deriveMinorGuardianSupportRequestSla(item.request, nowMs);
+    return [
       item.request.id,
       item.userId,
       item.email,
@@ -236,11 +338,16 @@ const serializeInternalMinorGuardianSupportRequestsCsv = (
       item.request.updatedAt,
       item.request.resolvedAt,
       item.request.handledBy,
-      item.request.operatorNote
+      item.request.operatorNote,
+      sla.lastActivityAt,
+      sla.queueWaitMinutes,
+      sla.slaTargetMinutes,
+      sla.slaState,
+      sla.slaBreached
     ]
       .map((value) => escapeCsvCell(value))
-      .join(",")
-  );
+      .join(",");
+  });
 
   return [header.join(","), ...rows].join("\n");
 };
@@ -368,25 +475,33 @@ const serializeInternalMinorGuardianSupportRequest = (item: {
     handledBy?: string;
     operatorNote?: string;
   };
-}) => ({
-  request_id: item.request.id,
-  user_id: item.userId,
-  user_email: item.email,
-  user_phone: item.phone,
-  user_display_name: item.displayName,
-  user_status: item.userStatus,
-  minor_guardian_age_band: item.minorGuardianAgeBand,
-  topic: item.request.topic,
-  contact_channel: item.request.contactChannel,
-  contact_value: item.request.contactValue,
-  message: item.request.message,
-  status: item.request.status,
-  created_at: item.request.createdAt,
-  updated_at: item.request.updatedAt,
-  resolved_at: item.request.resolvedAt,
-  handled_by: item.request.handledBy,
-  operator_note: item.request.operatorNote
-});
+}, nowMs = Date.now()) => {
+  const sla = deriveMinorGuardianSupportRequestSla(item.request, nowMs);
+  return {
+    request_id: item.request.id,
+    user_id: item.userId,
+    user_email: item.email,
+    user_phone: item.phone,
+    user_display_name: item.displayName,
+    user_status: item.userStatus,
+    minor_guardian_age_band: item.minorGuardianAgeBand,
+    topic: item.request.topic,
+    contact_channel: item.request.contactChannel,
+    contact_value: item.request.contactValue,
+    message: item.request.message,
+    status: item.request.status,
+    created_at: item.request.createdAt,
+    updated_at: item.request.updatedAt,
+    resolved_at: item.request.resolvedAt,
+    handled_by: item.request.handledBy,
+    operator_note: item.request.operatorNote,
+    last_activity_at: sla.lastActivityAt,
+    queue_wait_minutes: sla.queueWaitMinutes,
+    sla_target_minutes: sla.slaTargetMinutes,
+    sla_state: sla.slaState,
+    sla_breached: sla.slaBreached
+  };
+};
 
 const setCorsHeaders = (
   reply: { header: (name: string, value: string) => void },
@@ -636,19 +751,25 @@ export const buildServer = (options?: BuildServerOptions): {
 
       const page = parsed.data.page ?? 1;
       const pageSize = parsed.data.page_size ?? 10;
+      const evaluatedAtMs = Date.now();
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
         query: parsed.data.q,
         handledBy: parsed.data.handled_by,
         unassigned: parsed.data.unassigned
       });
-      const filteredItems = parsed.data.status
+      const filteredByStatus = parsed.data.status
         ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
         : allMatchingItems;
+      const filteredItems = parsed.data.sla_state
+        ? filteredByStatus.filter((item) =>
+            matchesMinorGuardianSupportRequestSlaState(item, parsed.data.sla_state, evaluatedAtMs)
+          )
+        : filteredByStatus;
       const totalCount = filteredItems.length;
       const pageStartIndex = (page - 1) * pageSize;
       const paginatedItems = filteredItems
         .slice(pageStartIndex, pageStartIndex + pageSize)
-        .map((item) => serializeInternalMinorGuardianSupportRequest(item));
+        .map((item) => serializeInternalMinorGuardianSupportRequest(item, evaluatedAtMs));
 
       reply.code(200).send({
         total_count: totalCount,
@@ -657,6 +778,7 @@ export const buildServer = (options?: BuildServerOptions): {
         has_next_page: pageStartIndex + pageSize < totalCount,
         ordered_by: "updated_at_desc",
         status_summary: buildMinorGuardianSupportRequestStatusSummary(allMatchingItems),
+        sla_summary: buildMinorGuardianSupportRequestSlaSummary(allMatchingItems, evaluatedAtMs),
         items: paginatedItems
       });
     });
@@ -672,14 +794,20 @@ export const buildServer = (options?: BuildServerOptions): {
       }
 
       const authRequest = request as AuthenticatedRequest;
+      const evaluatedAtMs = Date.now();
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
         query: parsed.data.q,
         handledBy: parsed.data.handled_by,
         unassigned: parsed.data.unassigned
       });
-      const filteredItems = parsed.data.status
+      const filteredByStatus = parsed.data.status
         ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
         : allMatchingItems;
+      const filteredItems = parsed.data.sla_state
+        ? filteredByStatus.filter((item) =>
+            matchesMinorGuardianSupportRequestSlaState(item, parsed.data.sla_state, evaluatedAtMs)
+          )
+        : filteredByStatus;
       const timestamp = nowIso().replace(/[:.]/g, "-");
       const filename = `minor-guardian-support-requests-${timestamp}.csv`;
 
@@ -692,6 +820,7 @@ export const buildServer = (options?: BuildServerOptions): {
           query: parsed.data.q ?? "",
           handledBy: parsed.data.handled_by ?? "",
           unassigned: parsed.data.unassigned ?? false,
+          slaState: parsed.data.sla_state ?? "all",
           exportedCount: filteredItems.length
         }
       });
@@ -700,7 +829,7 @@ export const buildServer = (options?: BuildServerOptions): {
         .code(200)
         .type("text/csv; charset=utf-8")
         .header("content-disposition", `attachment; filename="${filename}"`)
-        .send(serializeInternalMinorGuardianSupportRequestsCsv(filteredItems));
+        .send(serializeInternalMinorGuardianSupportRequestsCsv(filteredItems, evaluatedAtMs));
     });
 
     app.patch<{ Params: { request_id: string } }>(

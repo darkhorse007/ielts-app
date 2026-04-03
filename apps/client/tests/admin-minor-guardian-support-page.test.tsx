@@ -30,7 +30,12 @@ const buildRequest = (
   updated_at: overrides.updated_at ?? "2026-04-03T10:00:00.000Z",
   resolved_at: overrides.resolved_at,
   handled_by: overrides.handled_by,
-  operator_note: overrides.operator_note
+  operator_note: overrides.operator_note,
+  last_activity_at: overrides.last_activity_at ?? overrides.updated_at ?? "2026-04-03T10:00:00.000Z",
+  queue_wait_minutes: overrides.queue_wait_minutes ?? 30,
+  sla_target_minutes: overrides.sla_target_minutes ?? ((overrides.status ?? "pending_review") === "contacted" ? 1440 : (overrides.status ?? "pending_review") === "closed" ? undefined : 120),
+  sla_state: overrides.sla_state ?? ((overrides.status ?? "pending_review") === "closed" ? "closed" : "within_sla"),
+  sla_breached: overrides.sla_breached ?? false
 });
 
 const buildListResponse = (input: {
@@ -50,6 +55,11 @@ const buildListResponse = (input: {
     pending_review: input.items.filter((item) => item.status === "pending_review").length,
     contacted: input.items.filter((item) => item.status === "contacted").length,
     closed: input.items.filter((item) => item.status === "closed").length
+  },
+  sla_summary: {
+    within_sla: input.items.filter((item) => item.sla_state === "within_sla").length,
+    due_soon: input.items.filter((item) => item.sla_state === "due_soon").length,
+    breached: input.items.filter((item) => item.sla_state === "breached").length
   },
   items: input.items
 });
@@ -369,6 +379,95 @@ describe("admin minor guardian support page", () => {
       });
       expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-specific/)).toBeInTheDocument();
+    });
+  });
+
+  test("shows sla summary and filters breached requests", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      slaState?: "within_sla" | "due_soon" | "breached";
+    }) => {
+      if (params?.slaState === "breached") {
+        return buildListResponse({
+          status_summary: {
+            pending_review: 2,
+            contacted: 1,
+            closed: 0
+          },
+          items: [
+            buildRequest({
+              request_id: "guardian-request-breached",
+              queue_wait_minutes: 180,
+              sla_state: "breached",
+              sla_breached: true
+            })
+          ]
+        });
+      }
+
+      return buildListResponse({
+        status_summary: {
+          pending_review: 2,
+          contacted: 1,
+          closed: 0
+        },
+        items: [
+          buildRequest({
+            request_id: "guardian-request-due",
+            queue_wait_minutes: 100,
+            sla_state: "due_soon"
+          }),
+          buildRequest({
+            request_id: "guardian-request-breached",
+            queue_wait_minutes: 180,
+            sla_state: "breached",
+            sla_breached: true
+          }),
+          buildRequest({
+            request_id: "guardian-request-contacted",
+            status: "contacted",
+            queue_wait_minutes: 20,
+            sla_target_minutes: 1440,
+            sla_state: "within_sla"
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("SLA 摘要: 正常 1 / 临近超时 1 / 已超时 1")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-due/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("SLA 过滤"), {
+      target: {
+        value: "breached"
+      }
+    });
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        slaState: "breached",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-breached/)).toBeInTheDocument();
+      expect(screen.getByText("sla_breached: yes")).toBeInTheDocument();
     });
   });
 

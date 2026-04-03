@@ -22,6 +22,8 @@ describe("account minor guardian routes", () => {
     await context.app.close();
   });
 
+  const minutesAgo = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
+
   const registerAndLogin = async (email = nextEmail()) => {
     const register = await context.app.inject({
       method: "POST",
@@ -199,6 +201,17 @@ describe("account minor guardian routes", () => {
     });
     expect(secondSupportRequest.statusCode).toBe(201);
 
+    const firstUserRecord = context.store.usersById.get(firstUser.userId);
+    expect(firstUserRecord?.minorGuardianSupportRequests).toBeDefined();
+    if (firstUserRecord?.minorGuardianSupportRequests?.[0]) {
+      firstUserRecord.minorGuardianSupportRequests[0].updatedAt = minutesAgo(95);
+    }
+    const secondUserRecord = context.store.usersById.get(secondUser.userId);
+    expect(secondUserRecord?.minorGuardianSupportRequests).toBeDefined();
+    if (secondUserRecord?.minorGuardianSupportRequests?.[0]) {
+      secondUserRecord.minorGuardianSupportRequests[0].updatedAt = minutesAgo(130);
+    }
+
     const internalListForbidden = await context.app.inject({
       method: "GET",
       url: "/internal/minor-guardian/support-requests",
@@ -223,6 +236,11 @@ describe("account minor guardian routes", () => {
       contacted: 0,
       closed: 0
     });
+    expect(internalList.json().sla_summary).toMatchObject({
+      within_sla: 0,
+      due_soon: 1,
+      breached: 1
+    });
     const listedFirstRequest = (internalList.json().items as Array<Record<string, unknown>>).find(
       (item) => item.request_id === firstRequestId
     );
@@ -231,7 +249,8 @@ describe("account minor guardian routes", () => {
       user_id: firstUser.userId,
       user_status: "active",
       minor_guardian_age_band: "under_18",
-      status: "pending_review"
+      status: "pending_review",
+      sla_state: "due_soon"
     });
     expect(listedFirstRequest).not.toHaveProperty("handled_by");
 
@@ -270,9 +289,29 @@ describe("account minor guardian routes", () => {
       contacted: 1,
       closed: 0
     });
+    expect(contactedList.json().sla_summary).toMatchObject({
+      within_sla: 1,
+      due_soon: 0,
+      breached: 1
+    });
     expect(contactedList.json().items[0]).toMatchObject({
       request_id: firstRequestId,
-      status: "contacted"
+      status: "contacted",
+      sla_state: "within_sla"
+    });
+
+    const breachedList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?sla_state=breached",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(breachedList.statusCode).toBe(200);
+    expect(breachedList.json().total_count).toBe(1);
+    expect(breachedList.json().items[0]).toMatchObject({
+      topic: "account_review",
+      sla_state: "breached"
     });
 
     const handledByList = await context.app.inject({

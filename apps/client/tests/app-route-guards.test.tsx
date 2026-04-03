@@ -146,6 +146,11 @@ describe("app route guards", () => {
               contacted: 0,
               closed: 0
             },
+            sla_summary: {
+              within_sla: 0,
+              due_soon: 0,
+              breached: 0
+            },
             items: []
           });
         }

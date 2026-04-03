@@ -3,6 +3,8 @@ import { ApiRequestError, type ApiClient } from "../lib/api-client";
 import type {
   InternalMinorGuardianSupportRequestListResponse,
   InternalMinorGuardianSupportRequestResponse,
+  MinorGuardianSupportRequestSlaSummary,
+  MinorGuardianSupportRequestSlaState,
   MinorGuardianSupportRequestStatusSummary,
   MinorGuardianSupportRequestStatus
 } from "../lib/api-types";
@@ -26,12 +28,18 @@ type LoadRequestOptions = {
 
 type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
 type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
+type SlaFilter = "all" | "due_soon" | "breached";
 
 const DEFAULT_PAGE_SIZE = 10;
 const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
   pending_review: 0,
   contacted: 0,
   closed: 0
+};
+const EMPTY_SLA_SUMMARY: MinorGuardianSupportRequestSlaSummary = {
+  within_sla: 0,
+  due_soon: 0,
+  breached: 0
 };
 
 const STATUS_LABELS: Record<MinorGuardianSupportRequestStatus, string> = {
@@ -64,11 +72,22 @@ const ASSIGNMENT_OPTIONS: Array<{ value: AssignmentFilter; label: string }> = [
   { value: "unassigned", label: "未分配" },
   { value: "handled_by", label: "指定处理人" }
 ];
+const SLA_FILTER_OPTIONS: Array<{ value: SlaFilter; label: string }> = [
+  { value: "all", label: "全部 SLA" },
+  { value: "due_soon", label: "临近超时" },
+  { value: "breached", label: "已超时" }
+];
 
 const STATUS_OPTIONS: MinorGuardianSupportRequestStatus[] = ["pending_review", "contacted", "closed"];
 
 const ORDER_LABELS: Record<InternalMinorGuardianSupportRequestListResponse["ordered_by"], string> = {
   updated_at_desc: "最近更新优先"
+};
+const SLA_LABELS: Record<MinorGuardianSupportRequestSlaState, string> = {
+  within_sla: "SLA 正常",
+  due_soon: "临近超时",
+  breached: "已超时",
+  closed: "已关闭"
 };
 
 const buildContactTemplate = (request: InternalMinorGuardianSupportRequestResponse): string => {
@@ -165,6 +184,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const currentOperatorId = tokenStorage.getUserId() ?? "";
   const [statusFilter, setStatusFilter] = useState<SupportRequestFilter>("pending_review");
   const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter>("all");
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
   const [handledByFilterInput, setHandledByFilterInput] = useState("");
   const [handledByFilterQuery, setHandledByFilterQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -178,6 +198,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     "updated_at_desc"
   );
   const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
+  const [slaSummary, setSlaSummary] = useState<MinorGuardianSupportRequestSlaSummary>(EMPTY_SLA_SUMMARY);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [handledBy, setHandledBy] = useState("");
   const [operatorNote, setOperatorNote] = useState("");
@@ -201,6 +222,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       ? handledByFilterQuery
       : undefined;
   const activeUnassignedFilter = assignmentFilter === "unassigned";
+  const activeSlaFilter = slaFilter === "all" ? undefined : slaFilter;
 
   const loadRequests = async (options?: LoadRequestOptions): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
@@ -211,6 +233,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setTotalCount(0);
       setHasNextPage(false);
       setStatusSummary(EMPTY_STATUS_SUMMARY);
+      setSlaSummary(EMPTY_SLA_SUMMARY);
       setStatusMessage("工单加载失败");
       return;
     }
@@ -224,6 +247,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         query?: string;
         handledBy?: string;
         unassigned?: boolean;
+        slaState?: "due_soon" | "breached";
         page: number;
         pageSize: number;
       } = {
@@ -243,6 +267,9 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       if (activeUnassignedFilter) {
         params.unassigned = true;
       }
+      if (activeSlaFilter) {
+        params.slaState = activeSlaFilter;
+      }
 
       const response = await apiClient.listInternalMinorGuardianSupportRequests(params);
       if (response.items.length === 0 && response.total_count > 0 && response.page > 1) {
@@ -253,6 +280,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         setHasNextPage(response.has_next_page);
         setOrderedBy(response.ordered_by);
         setStatusSummary(response.status_summary);
+        setSlaSummary(response.sla_summary);
         setStatusMessage("当前页已空，正在回退上一页");
         setError(null);
         setCurrentPage(response.page - 1);
@@ -266,6 +294,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setHasNextPage(response.has_next_page);
       setOrderedBy(response.ordered_by);
       setStatusSummary(response.status_summary);
+      setSlaSummary(response.sla_summary);
       setCurrentPage(response.page);
       setStatusMessage(`已加载 ${response.total_count} 条工单，第 ${response.page}/${pageCountForResponse(response)} 页`);
       setError(null);
@@ -284,6 +313,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setPageSize(DEFAULT_PAGE_SIZE);
       setOrderedBy("updated_at_desc");
       setStatusSummary(EMPTY_STATUS_SUMMARY);
+      setSlaSummary(EMPTY_SLA_SUMMARY);
       setStatusMessage("工单加载失败");
     }
   };
@@ -292,7 +322,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     void loadRequests({
       targetPage: currentPage
     });
-  }, [statusFilter, searchQuery, activeHandledByFilter, activeUnassignedFilter, currentPage]);
+  }, [statusFilter, searchQuery, activeHandledByFilter, activeUnassignedFilter, activeSlaFilter, currentPage]);
 
   useEffect(() => {
     if (!selectedRequest) {
@@ -384,7 +414,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         status: statusFilter !== "all" ? statusFilter : undefined,
         query: searchQuery.length > 0 ? searchQuery : undefined,
         handledBy: activeHandledByFilter && activeHandledByFilter.trim().length > 0 ? activeHandledByFilter : undefined,
-        unassigned: activeUnassignedFilter ? true : undefined
+        unassigned: activeUnassignedFilter ? true : undefined,
+        slaState: activeSlaFilter
       });
       setLastExportFilename(exported.filename);
       setLastExportContent(exported.content);
@@ -398,6 +429,11 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const changeStatusFilter = (value: SupportRequestFilter): void => {
     setCurrentPage(1);
     setStatusFilter(value);
+  };
+
+  const changeSlaFilter = (value: SlaFilter): void => {
+    setCurrentPage(1);
+    setSlaFilter(value);
   };
 
   const changeAssignmentFilter = (value: AssignmentFilter): void => {
@@ -459,6 +495,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <p>导出: {exportMessage}</p>
       <p>当前搜索: {searchQuery || "-"}</p>
       <p>当前归属: {assignmentFilter === "mine" ? `我的工单(${toDisplayText(currentOperatorId)})` : assignmentFilter === "unassigned" ? "未分配" : assignmentFilter === "handled_by" ? `处理人=${handledByFilterQuery || "-"}` : "全部工单"}</p>
+      <p>当前 SLA: {slaFilter === "all" ? "全部 SLA" : SLA_LABELS[slaFilter]}</p>
 
       <label htmlFor="guardian-support-filter">工单状态筛选</label>
       <select
@@ -483,6 +520,19 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       >
         刷新工单
       </button>
+
+      <label htmlFor="guardian-support-sla-filter">SLA 过滤</label>
+      <select
+        id="guardian-support-sla-filter"
+        value={slaFilter}
+        onChange={(event) => changeSlaFilter(event.target.value as SlaFilter)}
+      >
+        {SLA_FILTER_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
 
       <label htmlFor="guardian-support-assignment-filter">工单归属</label>
       <select
@@ -534,6 +584,9 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         队列摘要: 待审核 {statusSummary.pending_review} / 已联系 {statusSummary.contacted} / 已关闭{" "}
         {statusSummary.closed}
       </p>
+      <p>
+        SLA 摘要: 正常 {slaSummary.within_sla} / 临近超时 {slaSummary.due_soon} / 已超时 {slaSummary.breached}
+      </p>
       <button type="button" onClick={loadPreviousPage} disabled={currentPage <= 1}>
         上一页
       </button>
@@ -549,7 +602,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
           <li key={request.request_id}>
             <button type="button" onClick={() => setSelectedRequestId(request.request_id)}>
               {request.request_id === selectedRequestId ? "[当前]" : "[查看]"} {TOPIC_LABELS[request.topic]} /{" "}
-              {STATUS_LABELS[request.status]} / {toDisplayText(request.user_email ?? request.user_phone)}
+              {STATUS_LABELS[request.status]} / {SLA_LABELS[request.sla_state]} / 等待 {request.queue_wait_minutes} 分钟 /{" "}
+              {toDisplayText(request.user_email ?? request.user_phone)}
             </button>
           </li>
         ))}
@@ -573,6 +627,11 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
           <p>status: {STATUS_LABELS[selectedRequest.status]}</p>
           <p>created_at: {selectedRequest.created_at}</p>
           <p>updated_at: {selectedRequest.updated_at}</p>
+          <p>last_activity_at: {selectedRequest.last_activity_at}</p>
+          <p>queue_wait_minutes: {selectedRequest.queue_wait_minutes}</p>
+          <p>sla_target_minutes: {toDisplayText(String(selectedRequest.sla_target_minutes ?? "-"))}</p>
+          <p>sla_state: {SLA_LABELS[selectedRequest.sla_state]}</p>
+          <p>sla_breached: {selectedRequest.sla_breached ? "yes" : "no"}</p>
           <p>resolved_at: {toDisplayText(selectedRequest.resolved_at)}</p>
           <p>handled_by: {toDisplayText(selectedRequest.handled_by)}</p>
           <p>operator_note: {toDisplayText(selectedRequest.operator_note)}</p>

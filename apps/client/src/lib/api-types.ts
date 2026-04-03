@@ -147,6 +147,7 @@ export type MinorGuardianSupportRequestTopic = "account_review" | "data_deletion
 export type MinorGuardianSupportContactChannel = "email" | "phone";
 
 export type MinorGuardianSupportRequestStatus = "pending_review" | "contacted" | "closed";
+export type MinorGuardianSupportRequestSlaState = "within_sla" | "due_soon" | "breached" | "closed";
 
 export type MinorGuardianSupportRequestResponse = {
   request_id: string;
@@ -183,12 +184,23 @@ export type InternalMinorGuardianSupportRequestResponse = {
   resolved_at?: string;
   handled_by?: string;
   operator_note?: string;
+  last_activity_at: string;
+  queue_wait_minutes: number;
+  sla_target_minutes?: number;
+  sla_state: MinorGuardianSupportRequestSlaState;
+  sla_breached: boolean;
 };
 
 export type MinorGuardianSupportRequestStatusSummary = {
   pending_review: number;
   contacted: number;
   closed: number;
+};
+
+export type MinorGuardianSupportRequestSlaSummary = {
+  within_sla: number;
+  due_soon: number;
+  breached: number;
 };
 
 export type InternalMinorGuardianSupportRequestListResponse = {
@@ -198,6 +210,7 @@ export type InternalMinorGuardianSupportRequestListResponse = {
   has_next_page: boolean;
   ordered_by: "updated_at_desc";
   status_summary: MinorGuardianSupportRequestStatusSummary;
+  sla_summary: MinorGuardianSupportRequestSlaSummary;
   items: InternalMinorGuardianSupportRequestResponse[];
 };
 

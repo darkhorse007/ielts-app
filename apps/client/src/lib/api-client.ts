@@ -488,6 +488,7 @@ export class ApiClient {
     query?: string;
     handledBy?: string;
     unassigned?: boolean;
+    slaState?: "within_sla" | "due_soon" | "breached";
     page?: number;
     pageSize?: number;
   }): Promise<InternalMinorGuardianSupportRequestListResponse> {
@@ -503,6 +504,9 @@ export class ApiClient {
     }
     if (params?.unassigned) {
       query.set("unassigned", "true");
+    }
+    if (params?.slaState) {
+      query.set("sla_state", params.slaState);
     }
     if (typeof params?.page === "number") {
       query.set("page", String(params.page));
@@ -529,6 +533,7 @@ export class ApiClient {
     query?: string;
     handledBy?: string;
     unassigned?: boolean;
+    slaState?: "within_sla" | "due_soon" | "breached";
   }): Promise<{
     filename: string;
     content: string;
@@ -545,6 +550,9 @@ export class ApiClient {
     }
     if (params?.unassigned) {
       query.set("unassigned", "true");
+    }
+    if (params?.slaState) {
+      query.set("sla_state", params.slaState);
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
