@@ -231,7 +231,7 @@ Web 前端以 React Router 管理页面访问，未登录用户只能进入：
 9. `/v1/reminders/devices` 当前会返回每台设备最近一次 `last_delivery_attempt`，供 mobile account 页面直接展示最新投递状态与失败原因
 10. 若 provider 返回 `DEVICE_UNREGISTERED`，dispatch 会自动移除 stale device，并在本次 dispatch 结果中返回 `device_removed / removed_device_count`
 11. server 可通过 `REMINDER_DISPATCH_SCHEDULER_ENABLED`、`REMINDER_DISPATCH_SCHEDULER_INTERVAL_SECONDS`、`REMINDER_DISPATCH_SCHEDULER_BATCH_SIZE` 启用周期性 due reminder sweep，也可通过 `/internal/reminders/dispatch-due` 手动触发
-12. `/health` 在保持 `status: "ok"` 健康检查契约不变的前提下，可额外暴露 `reminder_dispatch_scheduler` snapshot；`/internal/reminders/scheduler-status` 则提供更直接的内部排障视图
+12. `/health` 在保持 `status: "ok"` 健康检查契约不变的前提下，可额外暴露 `reminder_dispatch_scheduler` snapshot；`/internal/reminders/scheduler-status` 与 `/internal/reminders/push-status` 则提供更直接的内部排障视图
 13. mobile 端会在通知权限变化、device token 变化或应用回到前台后，自动重同步当前安装实例到 `/v1/reminders/devices/:installation_id`
 14. mobile 端收到并点击学习提醒后，会先恢复 deep link，再 best-effort 调用 `/v1/reminders/:reminder_id/click` 回写点击事件
 

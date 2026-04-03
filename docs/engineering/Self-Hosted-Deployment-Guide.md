@@ -165,6 +165,7 @@ npm run smoke:postgres:e2e-local
 6. 口语实时会话可以在浏览器端成功建立 WebSocket
 7. 如已启用移动提醒推送，可通过 `POST /internal/reminders/dispatch-due` 或等待 scheduler 周期触发，验证 due reminder 能产生 dispatch attempt
 8. 如已启用 reminder scheduler，可通过 `/health` 查看 `reminder_dispatch_scheduler` 摘要；如同时开启 `INTERNAL_DEBUG_ROUTES_ENABLED=true`，还可访问 `GET /internal/reminders/scheduler-status`
+9. 如已启用移动提醒推送且开启 `INTERNAL_DEBUG_ROUTES_ENABLED=true`，可访问 `GET /internal/reminders/push-status`，确认 APNs / FCM 是否 `ready`、缺失了哪些字段，以及当前已注册设备的 provider / environment 聚合
 
 ## 10. 当前不需要配置的能力
 以下环境变量和系统能力已经不属于 `self-hosted` 分支，不需要再配置：
@@ -184,3 +185,4 @@ npm run smoke:postgres:e2e-local
 
 1. `GET /health`
 2. `GET /internal/reminders/scheduler-status`，仅当 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时开放
+3. `GET /internal/reminders/push-status`，仅当 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时开放，可用于排查 push provider 配置与设备接入情况

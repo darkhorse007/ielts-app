@@ -48,7 +48,11 @@ import {
   type AnalyticsRepository
 } from "./domain/analytics-repository.js";
 import { ReminderService } from "./domain/reminder-service.js";
-import { ReminderDeliveryService, type ReminderPushProviderSenders } from "./domain/reminder-delivery-service.js";
+import {
+  ReminderDeliveryService,
+  type ReminderPushProviderSenders,
+  type ReminderPushRuntimeDiagnostics
+} from "./domain/reminder-delivery-service.js";
 import { createReminderPushProviderSenders } from "./domain/reminder-push-provider-senders.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
@@ -158,6 +162,74 @@ const serializeReminderDispatchSchedulerStatus = (
         last_skipped_already_attempted_count: status.lastSkippedAlreadyAttemptedCount
       }
     : undefined;
+
+const serializeReminderPushRuntimeDiagnostics = (
+  diagnostics: ReminderPushRuntimeDiagnostics
+): {
+  apns: {
+    enabled: boolean;
+    configured: boolean;
+    ready: boolean;
+    sender_available: boolean;
+    missing_fields: string[];
+    registered_device_count: number;
+    deliverable_device_count: number;
+    platform_counts: {
+      ios: number;
+      android: number;
+    };
+    environment_counts: {
+      development: number;
+      preview: number;
+      production: number;
+    };
+    bundle_id?: string;
+  };
+  fcm: {
+    enabled: boolean;
+    configured: boolean;
+    ready: boolean;
+    sender_available: boolean;
+    missing_fields: string[];
+    registered_device_count: number;
+    deliverable_device_count: number;
+    platform_counts: {
+      ios: number;
+      android: number;
+    };
+    environment_counts: {
+      development: number;
+      preview: number;
+      production: number;
+    };
+    project_id?: string;
+  };
+} => ({
+  apns: {
+    enabled: diagnostics.apns.enabled,
+    configured: diagnostics.apns.configured,
+    ready: diagnostics.apns.ready,
+    sender_available: diagnostics.apns.senderAvailable,
+    missing_fields: diagnostics.apns.missingFields,
+    registered_device_count: diagnostics.apns.registeredDeviceCount,
+    deliverable_device_count: diagnostics.apns.deliverableDeviceCount,
+    platform_counts: diagnostics.apns.platformCounts,
+    environment_counts: diagnostics.apns.environmentCounts,
+    bundle_id: diagnostics.apns.bundleId
+  },
+  fcm: {
+    enabled: diagnostics.fcm.enabled,
+    configured: diagnostics.fcm.configured,
+    ready: diagnostics.fcm.ready,
+    sender_available: diagnostics.fcm.senderAvailable,
+    missing_fields: diagnostics.fcm.missingFields,
+    registered_device_count: diagnostics.fcm.registeredDeviceCount,
+    deliverable_device_count: diagnostics.fcm.deliverableDeviceCount,
+    platform_counts: diagnostics.fcm.platformCounts,
+    environment_counts: diagnostics.fcm.environmentCounts,
+    project_id: diagnostics.fcm.projectId
+  }
+});
 
 const setCorsHeaders = (
   reply: { header: (name: string, value: string) => void },
@@ -433,6 +505,10 @@ export const buildServer = (options?: BuildServerOptions): {
 
     app.get("/internal/reminders/scheduler-status", async () => ({
       reminder_dispatch_scheduler: serializeReminderDispatchSchedulerStatus(reminderDispatchSchedulerStatus)
+    }));
+
+    app.get("/internal/reminders/push-status", async () => ({
+      reminder_push_providers: serializeReminderPushRuntimeDiagnostics(reminderDeliveryService.getRuntimeDiagnostics())
     }));
   }
 

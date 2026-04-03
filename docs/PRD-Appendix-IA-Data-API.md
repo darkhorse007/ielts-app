@@ -240,6 +240,7 @@
 3. `GET /internal/users/:user_id` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露
 4. `POST /internal/reminders/dispatch-due` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露，可用 `?limit=` 手动触发到期提醒 sweep
 5. `GET /internal/reminders/scheduler-status` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露，返回当前 reminder scheduler snapshot
+6. `GET /internal/reminders/push-status` 仅在 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时暴露，返回 reminder push provider readiness、缺失字段和已注册设备聚合
 
 ## 5. 当前错误边界
 1. 参数错误统一返回 `400`

@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { buildServer } from "../src/app.js";
 
@@ -128,6 +129,15 @@ describe("self-hosted core mode", () => {
     expect(response.statusCode).toBe(404);
   });
 
+  test("keeps internal reminder push status route disabled by default", async () => {
+    const response = await context.app.inject({
+      method: "GET",
+      url: "/internal/reminders/push-status"
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
   test("exposes internal scheduler status route when internal debug routes are enabled", async () => {
     await context.app.close();
     context = await build({
@@ -158,6 +168,130 @@ describe("self-hosted core mode", () => {
         last_trigger: "startup",
         last_started_at: "2026-04-02T09:59:59.000Z",
         last_error: "temporary provider timeout"
+      }
+    });
+  });
+
+  test("exposes internal reminder push status route when internal debug routes are enabled", async () => {
+    const { privateKey: apnsPrivateKey } = generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+      privateKeyEncoding: {
+        type: "pkcs8",
+        format: "pem"
+      },
+      publicKeyEncoding: {
+        type: "spki",
+        format: "pem"
+      }
+    });
+    const { privateKey: fcmPrivateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: {
+        type: "pkcs8",
+        format: "pem"
+      },
+      publicKeyEncoding: {
+        type: "spki",
+        format: "pem"
+      }
+    });
+
+    await context.app.close();
+    context = await build({
+      enableInternalDebugRoutes: true,
+      reminderDeliveryApnsEnabled: true,
+      reminderDeliveryApnsBundleId: "com.selfhosted.ielts",
+      reminderDeliveryApnsTeamId: "TEAM123",
+      reminderDeliveryApnsKeyId: "KEY123",
+      reminderDeliveryApnsPrivateKey: apnsPrivateKey,
+      reminderDeliveryFcmEnabled: true,
+      reminderDeliveryFcmProjectId: "project-123",
+      reminderDeliveryFcmClientEmail: "push@example.iam.gserviceaccount.com",
+      reminderDeliveryFcmPrivateKey: fcmPrivateKey
+    });
+
+    context.reminderService.upsertDevice({
+      userId: "user-apns-1",
+      installationId: "ios-production-1",
+      platform: "ios",
+      permissionStatus: "granted",
+      pushProvider: "apns",
+      pushToken: "native-token-abcdef1234567890",
+      environment: "production"
+    });
+    context.reminderService.upsertDevice({
+      userId: "user-apns-2",
+      installationId: "ios-preview-1",
+      platform: "ios",
+      permissionStatus: "denied",
+      pushProvider: "apns",
+      pushToken: "native-token-preview1234567890",
+      environment: "preview"
+    });
+    context.reminderService.upsertDevice({
+      userId: "user-fcm-1",
+      installationId: "android-production-1",
+      platform: "android",
+      permissionStatus: "provisional",
+      pushProvider: "fcm",
+      pushToken: "android-token-abcdef1234567890",
+      environment: "production"
+    });
+    context.reminderService.upsertDevice({
+      userId: "user-fcm-2",
+      installationId: "android-development-1",
+      platform: "android",
+      permissionStatus: "granted",
+      pushProvider: "fcm",
+      environment: "development"
+    });
+
+    const response = await context.app.inject({
+      method: "GET",
+      url: "/internal/reminders/push-status"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      reminder_push_providers: {
+        apns: {
+          enabled: true,
+          configured: true,
+          ready: true,
+          sender_available: true,
+          missing_fields: [],
+          registered_device_count: 2,
+          deliverable_device_count: 1,
+          platform_counts: {
+            ios: 2,
+            android: 0
+          },
+          environment_counts: {
+            development: 0,
+            preview: 1,
+            production: 1
+          },
+          bundle_id: "com.selfhosted.ielts"
+        },
+        fcm: {
+          enabled: true,
+          configured: true,
+          ready: true,
+          sender_available: true,
+          missing_fields: [],
+          registered_device_count: 2,
+          deliverable_device_count: 1,
+          platform_counts: {
+            ios: 0,
+            android: 2
+          },
+          environment_counts: {
+            development: 1,
+            preview: 0,
+            production: 1
+          },
+          project_id: "project-123"
+        }
       }
     });
   });

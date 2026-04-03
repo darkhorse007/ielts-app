@@ -64,6 +64,29 @@ export type ReminderDispatchProviderSummary = {
   projectId?: string;
 };
 
+export type ReminderPushProviderRuntimeDiagnostics = {
+  enabled: boolean;
+  configured: boolean;
+  ready: boolean;
+  senderAvailable: boolean;
+  missingFields: string[];
+  registeredDeviceCount: number;
+  deliverableDeviceCount: number;
+  platformCounts: {
+    ios: number;
+    android: number;
+  };
+  environmentCounts: {
+    development: number;
+    preview: number;
+    production: number;
+  };
+  bundleId?: string;
+  projectId?: string;
+};
+
+export type ReminderPushRuntimeDiagnostics = Record<ReminderPushProvider, ReminderPushProviderRuntimeDiagnostics>;
+
 export type ReminderDispatchPreview = {
   reminderId: string;
   userId: string;
@@ -273,6 +296,16 @@ export class ReminderDeliveryService {
     });
 
     return preview;
+  }
+
+  getRuntimeDiagnostics(): ReminderPushRuntimeDiagnostics {
+    const providerState = this.getProviderStates();
+    const devices = Array.from(this.store.reminderDevicesByUserAndInstallation.values());
+
+    return {
+      apns: this.toProviderRuntimeDiagnostics("apns", providerState.apns, devices),
+      fcm: this.toProviderRuntimeDiagnostics("fcm", providerState.fcm, devices)
+    };
   }
 
   async dispatch(input: {
@@ -495,6 +528,43 @@ export class ReminderDeliveryService {
       targetCount: targetItems.length,
       dispatchableCount: dispatchableItems.length,
       skippedCount: targetItems.length - dispatchableItems.length,
+      bundleId: runtime.bundleId,
+      projectId: runtime.projectId
+    };
+  }
+
+  private toProviderRuntimeDiagnostics(
+    provider: ReminderPushProvider,
+    runtime: ProviderRuntimeState,
+    devices: ReminderDeviceRegistration[]
+  ): ReminderPushProviderRuntimeDiagnostics {
+    const providerDevices = devices.filter((device) => device.pushProvider === provider);
+    const deliverableDeviceCount = providerDevices.filter((device) => this.reminderService.isDeviceDeliverable(device)).length;
+    const platformCounts = {
+      ios: 0,
+      android: 0
+    };
+    const environmentCounts = {
+      development: 0,
+      preview: 0,
+      production: 0
+    };
+
+    for (const device of providerDevices) {
+      platformCounts[device.platform] += 1;
+      environmentCounts[device.environment] += 1;
+    }
+
+    return {
+      enabled: runtime.enabled,
+      configured: runtime.configured,
+      ready: runtime.ready,
+      senderAvailable: runtime.senderAvailable,
+      missingFields: runtime.missingFields,
+      registeredDeviceCount: providerDevices.length,
+      deliverableDeviceCount,
+      platformCounts,
+      environmentCounts,
       bundleId: runtime.bundleId,
       projectId: runtime.projectId
     };
