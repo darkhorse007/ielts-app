@@ -49,6 +49,8 @@ const canTransitionMinorGuardianSupportRequestStatus = (
 
 const normalizeSupportRequestSearchText = (value?: string): string => value?.trim().toLowerCase() ?? "";
 
+const normalizeSupportRequestHandledBy = (value?: string): string => value?.trim().toLowerCase() ?? "";
+
 const matchesMinorGuardianSupportRequestQuery = (
   input: {
     userId: string;
@@ -83,6 +85,18 @@ const matchesMinorGuardianSupportRequestQuery = (
     .toLowerCase();
 
   return haystack.includes(normalizedQuery);
+};
+
+const matchesMinorGuardianSupportRequestHandledBy = (
+  request: MinorGuardianSupportRequest,
+  handledBy?: string
+): boolean => {
+  const normalizedHandledBy = normalizeSupportRequestHandledBy(handledBy);
+  if (normalizedHandledBy.length === 0) {
+    return true;
+  }
+
+  return normalizeSupportRequestHandledBy(request.handledBy) === normalizedHandledBy;
 };
 
 export class AccountService {
@@ -513,6 +527,8 @@ export class AccountService {
   listAllMinorGuardianSupportRequests(input?: {
     status?: MinorGuardianSupportRequestStatus;
     query?: string;
+    handledBy?: string;
+    unassigned?: boolean;
   }): Array<{
     userId: string;
     email?: string;
@@ -525,6 +541,8 @@ export class AccountService {
     const items = Array.from(this.store.usersById.values()).flatMap((user) =>
       (user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests())
         .filter((request) => !input?.status || request.status === input.status)
+        .filter((request) => (input?.unassigned ? !request.handledBy : true))
+        .filter((request) => matchesMinorGuardianSupportRequestHandledBy(request, input?.handledBy))
         .filter((request) =>
           matchesMinorGuardianSupportRequestQuery(
             {

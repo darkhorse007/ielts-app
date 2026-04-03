@@ -486,6 +486,8 @@ export class ApiClient {
     accessToken: string;
     status?: "pending_review" | "contacted" | "closed";
     query?: string;
+    handledBy?: string;
+    unassigned?: boolean;
     page?: number;
     pageSize?: number;
   }): Promise<InternalMinorGuardianSupportRequestListResponse> {
@@ -495,6 +497,12 @@ export class ApiClient {
     }
     if (params?.query && params.query.trim().length > 0) {
       query.set("q", params.query.trim());
+    }
+    if (params?.handledBy && params.handledBy.trim().length > 0) {
+      query.set("handled_by", params.handledBy.trim());
+    }
+    if (params?.unassigned) {
+      query.set("unassigned", "true");
     }
     if (typeof params?.page === "number") {
       query.set("page", String(params.page));
@@ -519,6 +527,8 @@ export class ApiClient {
     accessToken: string;
     status?: "pending_review" | "contacted" | "closed";
     query?: string;
+    handledBy?: string;
+    unassigned?: boolean;
   }): Promise<{
     filename: string;
     content: string;
@@ -529,6 +539,12 @@ export class ApiClient {
     }
     if (params?.query && params.query.trim().length > 0) {
       query.set("q", params.query.trim());
+    }
+    if (params?.handledBy && params.handledBy.trim().length > 0) {
+      query.set("handled_by", params.handledBy.trim());
+    }
+    if (params?.unassigned) {
+      query.set("unassigned", "true");
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
 

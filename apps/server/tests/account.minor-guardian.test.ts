@@ -275,6 +275,44 @@ describe("account minor guardian routes", () => {
       status: "contacted"
     });
 
+    const handledByList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?handled_by=ops-reviewer-1",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(handledByList.statusCode).toBe(200);
+    expect(handledByList.json().total_count).toBe(1);
+    expect(handledByList.json().status_summary).toMatchObject({
+      pending_review: 0,
+      contacted: 1,
+      closed: 0
+    });
+    expect(handledByList.json().items[0]).toMatchObject({
+      request_id: firstRequestId,
+      handled_by: "ops-reviewer-1"
+    });
+
+    const unassignedList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?unassigned=true",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(unassignedList.statusCode).toBe(200);
+    expect(unassignedList.json().total_count).toBe(1);
+    expect(unassignedList.json().status_summary).toMatchObject({
+      pending_review: 1,
+      contacted: 0,
+      closed: 0
+    });
+    expect(unassignedList.json().items[0]).toMatchObject({
+      topic: "account_review",
+      contact_value: "guardian2@example.com"
+    });
+
     const paginatedFirstPage = await context.app.inject({
       method: "GET",
       url: "/internal/minor-guardian/support-requests?page=1&page_size=1",
@@ -367,6 +405,16 @@ describe("account minor guardian routes", () => {
     });
     expect(invalidPage.statusCode).toBe(400);
     expect(invalidPage.json().code).toBe("VALIDATION_ERROR");
+
+    const invalidAssignment = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?handled_by=ops-reviewer-1&unassigned=true",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(invalidAssignment.statusCode).toBe(400);
+    expect(invalidAssignment.json().code).toBe("VALIDATION_ERROR");
 
     const invalidRollback = await context.app.inject({
       method: "PATCH",

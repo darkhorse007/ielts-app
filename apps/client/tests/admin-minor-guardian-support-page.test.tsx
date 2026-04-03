@@ -123,7 +123,7 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText(/user_email: guardian@example.com/)).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(screen.getByLabelText("处理人")).toHaveValue("");
+      expect(screen.getByLabelText("处理人")).toHaveValue("ops-user-1");
     });
 
     fireEvent.change(screen.getByLabelText("处理人"), {
@@ -243,6 +243,133 @@ describe("admin minor guardian support page", () => {
 
     expect(screen.getByLabelText("更新状态")).toHaveValue("closed");
     expect(screen.getByLabelText("处理备注")).toHaveValue("已向监护人说明数据导出与删除流程，工单关闭。");
+  });
+
+  test("filters queue by mine, unassigned and specific handler", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      handledBy?: string;
+      unassigned?: boolean;
+    }) => {
+      if (params?.handledBy === "ops-user-1") {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-mine",
+              handled_by: "ops-user-1",
+              status: "contacted"
+            })
+          ]
+        });
+      }
+      if (params?.unassigned) {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-unassigned"
+            })
+          ]
+        });
+      }
+      if (params?.handledBy === "ops-reviewer-9") {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-specific",
+              handled_by: "ops-reviewer-9"
+            })
+          ]
+        });
+      }
+      return buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1"
+          }),
+          buildRequest({
+            request_id: "guardian-request-2",
+            handled_by: "ops-user-1",
+            status: "contacted"
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        page: 1,
+        pageSize: 10
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText("工单归属"), {
+      target: {
+        value: "mine"
+      }
+    });
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        handledBy: "ops-user-1",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText(/当前归属: 我的工单\(ops-user-1\)/)).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-mine/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("工单归属"), {
+      target: {
+        value: "unassigned"
+      }
+    });
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        unassigned: true,
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("当前归属: 未分配")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-unassigned/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("指定处理人"), {
+      target: {
+        value: "ops-reviewer-9"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "按处理人筛选" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        handledBy: "ops-reviewer-9",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-specific/)).toBeInTheDocument();
+    });
   });
 
   test("supports pagination controls for guardian requests", async () => {

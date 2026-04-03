@@ -134,8 +134,15 @@ const DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS = "Authorization, Content-Type, Idemp
 const internalMinorGuardianSupportRequestListSchema = z.object({
   status: z.enum(["pending_review", "contacted", "closed"]).optional(),
   q: z.string().trim().max(120).optional(),
+  handled_by: z.string().trim().min(1).max(120).optional(),
+  unassigned: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional()
+}).refine((value) => !(value.handled_by && value.unassigned), {
+  message: "handled_by and unassigned cannot be combined"
 });
 const internalMinorGuardianSupportRequestUpdateSchema = z.object({
   status: z.enum(["pending_review", "contacted", "closed"]),
@@ -630,7 +637,9 @@ export const buildServer = (options?: BuildServerOptions): {
       const page = parsed.data.page ?? 1;
       const pageSize = parsed.data.page_size ?? 10;
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
-        query: parsed.data.q
+        query: parsed.data.q,
+        handledBy: parsed.data.handled_by,
+        unassigned: parsed.data.unassigned
       });
       const filteredItems = parsed.data.status
         ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
@@ -664,7 +673,9 @@ export const buildServer = (options?: BuildServerOptions): {
 
       const authRequest = request as AuthenticatedRequest;
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
-        query: parsed.data.q
+        query: parsed.data.q,
+        handledBy: parsed.data.handled_by,
+        unassigned: parsed.data.unassigned
       });
       const filteredItems = parsed.data.status
         ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
@@ -679,6 +690,8 @@ export const buildServer = (options?: BuildServerOptions): {
           reportType: "minor_guardian_support_requests",
           status: parsed.data.status ?? "all",
           query: parsed.data.q ?? "",
+          handledBy: parsed.data.handled_by ?? "",
+          unassigned: parsed.data.unassigned ?? false,
           exportedCount: filteredItems.length
         }
       });

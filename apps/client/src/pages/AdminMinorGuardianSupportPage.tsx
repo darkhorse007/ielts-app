@@ -25,6 +25,7 @@ type LoadRequestOptions = {
 };
 
 type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
+type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
 
 const DEFAULT_PAGE_SIZE = 10;
 const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
@@ -56,6 +57,12 @@ const FILTER_OPTIONS: Array<{ value: SupportRequestFilter; label: string }> = [
   { value: "contacted", label: "已联系" },
   { value: "closed", label: "已关闭" },
   { value: "all", label: "全部" }
+];
+const ASSIGNMENT_OPTIONS: Array<{ value: AssignmentFilter; label: string }> = [
+  { value: "all", label: "全部工单" },
+  { value: "mine", label: "我的工单" },
+  { value: "unassigned", label: "未分配" },
+  { value: "handled_by", label: "指定处理人" }
 ];
 
 const STATUS_OPTIONS: MinorGuardianSupportRequestStatus[] = ["pending_review", "contacted", "closed"];
@@ -155,7 +162,11 @@ const resolveSelectedRequestId = (
 };
 
 export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: AdminMinorGuardianSupportPageProps) => {
+  const currentOperatorId = tokenStorage.getUserId() ?? "";
   const [statusFilter, setStatusFilter] = useState<SupportRequestFilter>("pending_review");
+  const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter>("all");
+  const [handledByFilterInput, setHandledByFilterInput] = useState("");
+  const [handledByFilterQuery, setHandledByFilterQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -184,6 +195,13 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     [requests, selectedRequestId]
   );
 
+  const activeHandledByFilter = assignmentFilter === "mine"
+    ? currentOperatorId
+    : assignmentFilter === "handled_by"
+      ? handledByFilterQuery
+      : undefined;
+  const activeUnassignedFilter = assignmentFilter === "unassigned";
+
   const loadRequests = async (options?: LoadRequestOptions): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
     if (!accessToken) {
@@ -204,6 +222,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         accessToken: string;
         status?: MinorGuardianSupportRequestStatus;
         query?: string;
+        handledBy?: string;
+        unassigned?: boolean;
         page: number;
         pageSize: number;
       } = {
@@ -216,6 +236,12 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       }
       if (searchQuery.length > 0) {
         params.query = searchQuery;
+      }
+      if (activeHandledByFilter && activeHandledByFilter.trim().length > 0) {
+        params.handledBy = activeHandledByFilter;
+      }
+      if (activeUnassignedFilter) {
+        params.unassigned = true;
       }
 
       const response = await apiClient.listInternalMinorGuardianSupportRequests(params);
@@ -266,20 +292,20 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     void loadRequests({
       targetPage: currentPage
     });
-  }, [statusFilter, searchQuery, currentPage]);
+  }, [statusFilter, searchQuery, activeHandledByFilter, activeUnassignedFilter, currentPage]);
 
   useEffect(() => {
     if (!selectedRequest) {
-      setHandledBy("");
+      setHandledBy(currentOperatorId);
       setOperatorNote("");
       setNextStatus("contacted");
       return;
     }
 
-    setHandledBy(selectedRequest.handled_by ?? "");
+    setHandledBy(selectedRequest.handled_by ?? currentOperatorId);
     setOperatorNote(selectedRequest.operator_note ?? "");
     setNextStatus(getDefaultNextStatus(selectedRequest.status));
-  }, [selectedRequest]);
+  }, [selectedRequest, currentOperatorId]);
 
   const submitUpdate = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
@@ -332,6 +358,19 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setSearchQuery("");
   };
 
+  const applyHandledByFilter = (): void => {
+    setCurrentPage(1);
+    setAssignmentFilter("handled_by");
+    setHandledByFilterQuery(handledByFilterInput.trim());
+  };
+
+  const clearHandledByFilter = (): void => {
+    setHandledByFilterInput("");
+    setHandledByFilterQuery("");
+    setCurrentPage(1);
+    setAssignmentFilter("all");
+  };
+
   const exportCurrentFilter = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
     if (!accessToken) {
@@ -343,7 +382,9 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       const exported = await apiClient.exportInternalMinorGuardianSupportRequests({
         accessToken,
         status: statusFilter !== "all" ? statusFilter : undefined,
-        query: searchQuery.length > 0 ? searchQuery : undefined
+        query: searchQuery.length > 0 ? searchQuery : undefined,
+        handledBy: activeHandledByFilter && activeHandledByFilter.trim().length > 0 ? activeHandledByFilter : undefined,
+        unassigned: activeUnassignedFilter ? true : undefined
       });
       setLastExportFilename(exported.filename);
       setLastExportContent(exported.content);
@@ -357,6 +398,18 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const changeStatusFilter = (value: SupportRequestFilter): void => {
     setCurrentPage(1);
     setStatusFilter(value);
+  };
+
+  const changeAssignmentFilter = (value: AssignmentFilter): void => {
+    setCurrentPage(1);
+    setAssignmentFilter(value);
+    if (value === "handled_by") {
+      setHandledByFilterQuery(handledByFilterInput.trim());
+      return;
+    }
+    if (value !== "mine") {
+      setHandledByFilterQuery("");
+    }
   };
 
   const loadPreviousPage = (): void => {
@@ -405,6 +458,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <p>消息: {message}</p>
       <p>导出: {exportMessage}</p>
       <p>当前搜索: {searchQuery || "-"}</p>
+      <p>当前归属: {assignmentFilter === "mine" ? `我的工单(${toDisplayText(currentOperatorId)})` : assignmentFilter === "unassigned" ? "未分配" : assignmentFilter === "handled_by" ? `处理人=${handledByFilterQuery || "-"}` : "全部工单"}</p>
 
       <label htmlFor="guardian-support-filter">工单状态筛选</label>
       <select
@@ -428,6 +482,32 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         }
       >
         刷新工单
+      </button>
+
+      <label htmlFor="guardian-support-assignment-filter">工单归属</label>
+      <select
+        id="guardian-support-assignment-filter"
+        value={assignmentFilter}
+        onChange={(event) => changeAssignmentFilter(event.target.value as AssignmentFilter)}
+      >
+        {ASSIGNMENT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <label htmlFor="guardian-support-handled-by-filter">指定处理人</label>
+      <input
+        id="guardian-support-handled-by-filter"
+        value={handledByFilterInput}
+        onChange={(event) => setHandledByFilterInput(event.target.value)}
+        placeholder="例如 ops-user-1"
+      />
+      <button type="button" onClick={applyHandledByFilter}>
+        按处理人筛选
+      </button>
+      <button type="button" onClick={clearHandledByFilter}>
+        清空归属筛选
       </button>
 
       <label htmlFor="guardian-support-search">搜索监护人工单</label>
@@ -511,8 +591,11 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
             id="guardian-support-handled-by"
             value={handledBy}
             onChange={(event) => setHandledBy(event.target.value)}
-            placeholder="例如 ops-reviewer-1"
+            placeholder="默认回填当前登录用户 ID"
           />
+          <button type="button" onClick={() => setHandledBy(currentOperatorId)}>
+            使用我的账号 ID
+          </button>
 
           <label htmlFor="guardian-support-next-status">更新状态</label>
           <select
