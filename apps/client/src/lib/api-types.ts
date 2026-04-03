@@ -140,6 +140,36 @@ export type UpdateMinorGuardianPayload = {
   source?: MinorGuardianSource;
 };
 
+export type MinorGuardianSupportRequestTopic = "account_review" | "data_deletion" | "usage_concern" | "other";
+
+export type MinorGuardianSupportContactChannel = "email" | "phone";
+
+export type MinorGuardianSupportRequestStatus = "pending_review" | "contacted" | "closed";
+
+export type MinorGuardianSupportRequestResponse = {
+  request_id: string;
+  topic: MinorGuardianSupportRequestTopic;
+  contact_channel: MinorGuardianSupportContactChannel;
+  contact_value: string;
+  message: string;
+  status: MinorGuardianSupportRequestStatus;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+};
+
+export type MinorGuardianSupportRequestListResponse = {
+  total_count: number;
+  items: MinorGuardianSupportRequestResponse[];
+};
+
+export type SubmitMinorGuardianSupportRequestPayload = {
+  topic: MinorGuardianSupportRequestTopic;
+  contact_channel: MinorGuardianSupportContactChannel;
+  contact_value: string;
+  message: string;
+};
+
 export type UserProfileResponse = {
   id: string;
   email?: string;

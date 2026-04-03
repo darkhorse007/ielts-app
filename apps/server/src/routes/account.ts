@@ -19,6 +19,13 @@ const minorGuardianSchema = z.object({
   source: z.enum(["register", "account"]).default("account")
 });
 
+const minorGuardianSupportRequestSchema = z.object({
+  topic: z.enum(["account_review", "data_deletion", "usage_concern", "other"]),
+  contact_channel: z.enum(["email", "phone"]),
+  contact_value: z.string().trim().min(3).max(120),
+  message: z.string().trim().min(8).max(600)
+});
+
 const toError = (code: string, message: string): { code: string; message: string } => ({
   code,
   message
@@ -36,6 +43,28 @@ const serializeMinorGuardian = (record: {
   updated_at: record.updatedAt,
   guardian_notice_accepted_at: record.guardianNoticeAcceptedAt,
   guardian_notice_accepted_user_id: record.guardianNoticeAcceptedUserId
+});
+
+const serializeMinorGuardianSupportRequest = (request: {
+  id: string;
+  topic: "account_review" | "data_deletion" | "usage_concern" | "other";
+  contactChannel: "email" | "phone";
+  contactValue: string;
+  message: string;
+  status: "pending_review" | "contacted" | "closed";
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}) => ({
+  request_id: request.id,
+  topic: request.topic,
+  contact_channel: request.contactChannel,
+  contact_value: request.contactValue,
+  message: request.message,
+  status: request.status,
+  created_at: request.createdAt,
+  updated_at: request.updatedAt,
+  resolved_at: request.resolvedAt
 });
 
 const accountDebugLog = (...parts: unknown[]): void => {
@@ -131,6 +160,74 @@ export const registerAccountRoutes = async (
       throw error;
     }
   });
+
+  app.get(
+    "/v1/users/me/minor-guardian/support-requests",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const authRequest = request as AuthenticatedRequest;
+      try {
+        const items = services.accountService
+          .listMinorGuardianSupportRequests(authRequest.auth.userId)
+          .map((item) => serializeMinorGuardianSupportRequest(item));
+        reply.code(200).send({
+          total_count: items.length,
+          items
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "USER_ALREADY_DELETED") {
+          reply.code(409).send(toError("USER_ALREADY_DELETED", "User already deleted"));
+          return;
+        }
+        if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+          reply.code(404).send(toError("USER_NOT_FOUND", "User not found"));
+          return;
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post(
+    "/v1/users/me/minor-guardian/support-requests",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const parsed = minorGuardianSupportRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400).send(toError("VALIDATION_ERROR", "minor guardian support request payload is invalid"));
+        return;
+      }
+
+      const authRequest = request as AuthenticatedRequest;
+      try {
+        const supportRequest = services.accountService.submitMinorGuardianSupportRequest(authRequest.auth.userId, {
+          topic: parsed.data.topic,
+          contactChannel: parsed.data.contact_channel,
+          contactValue: parsed.data.contact_value,
+          message: parsed.data.message
+        });
+        try {
+          await services.authAccountRepository?.flush();
+        } catch {
+          reply.code(503).send(toError("AUTH_ACCOUNT_STORAGE_UNAVAILABLE", "Auth/account storage is unavailable"));
+          return;
+        }
+        reply.code(201).send({
+          request: serializeMinorGuardianSupportRequest(supportRequest)
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "USER_ALREADY_DELETED") {
+          reply.code(409).send(toError("USER_ALREADY_DELETED", "User already deleted"));
+          return;
+        }
+        if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+          reply.code(404).send(toError("USER_NOT_FOUND", "User not found"));
+          return;
+        }
+        throw error;
+      }
+    }
+  );
 
   app.post(
     "/v1/users/me/minor-guardian/acknowledge",

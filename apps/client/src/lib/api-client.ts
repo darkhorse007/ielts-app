@@ -14,6 +14,8 @@ import type {
   MockExamResponse,
   MockExamSubmitResponse,
   MinorGuardianResponse,
+  MinorGuardianSupportRequestListResponse,
+  MinorGuardianSupportRequestResponse,
   OnboardingPayload,
   OnboardingResponse,
   OnboardingStatusResponse,
@@ -42,6 +44,7 @@ import type {
   StudyPlanAdjustmentHistoryResponse,
   StudyPlanResponse,
   TokenResponse,
+  SubmitMinorGuardianSupportRequestPayload,
   UpdateMinorGuardianPayload,
   UserDataExportResponse,
   UserProfileResponse,
@@ -448,6 +451,32 @@ export class ApiClient {
       }
     );
     return response.minor_guardian;
+  }
+
+  async listMinorGuardianSupportRequests(accessToken: string): Promise<MinorGuardianSupportRequestListResponse> {
+    return this.request<MinorGuardianSupportRequestListResponse>("/v1/users/me/minor-guardian/support-requests", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+  }
+
+  async submitMinorGuardianSupportRequest(
+    accessToken: string,
+    payload: SubmitMinorGuardianSupportRequestPayload
+  ): Promise<MinorGuardianSupportRequestResponse> {
+    const response = await this.request<{ request: MinorGuardianSupportRequestResponse }>(
+      "/v1/users/me/minor-guardian/support-requests",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+    return response.request;
   }
 
   async exportUserData(accessToken: string): Promise<UserDataExportResponse> {

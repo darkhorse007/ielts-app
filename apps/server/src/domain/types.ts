@@ -16,6 +16,24 @@ export type MinorGuardianRecord = {
   guardianNoticeAcceptedUserId?: string;
 };
 
+export type MinorGuardianSupportTopic = "account_review" | "data_deletion" | "usage_concern" | "other";
+
+export type MinorGuardianSupportContactChannel = "email" | "phone";
+
+export type MinorGuardianSupportRequestStatus = "pending_review" | "contacted" | "closed";
+
+export type MinorGuardianSupportRequest = {
+  id: string;
+  topic: MinorGuardianSupportTopic;
+  contactChannel: MinorGuardianSupportContactChannel;
+  contactValue: string;
+  message: string;
+  status: MinorGuardianSupportRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+};
+
 export type User = {
   id: string;
   email?: string;
@@ -25,6 +43,7 @@ export type User = {
   passwordHash: string;
   status: UserStatus;
   minorGuardian?: MinorGuardianRecord;
+  minorGuardianSupportRequests?: MinorGuardianSupportRequest[];
   frozenAt?: string;
   unfrozenAt?: string;
   deletionRequestedAt?: string;
@@ -75,6 +94,7 @@ export type AuditEventType =
   | "user_data_exported"
   | "minor_guardian_updated"
   | "minor_guardian_notice_acknowledged"
+  | "minor_guardian_support_requested"
   | "deletion_requested"
   | "user_deleted"
   | "practice_session_created"

@@ -77,6 +77,41 @@ describe("account minor guardian routes", () => {
       source: "account"
     });
 
+    const supportRequest = await context.app.inject({
+      method: "POST",
+      url: "/v1/users/me/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      },
+      payload: {
+        topic: "data_deletion",
+        contact_channel: "email",
+        contact_value: "guardian@example.com",
+        message: "请协助了解监护人如何发起删除与导出。"
+      }
+    });
+    expect(supportRequest.statusCode).toBe(201);
+    expect(supportRequest.json().request).toMatchObject({
+      topic: "data_deletion",
+      contact_channel: "email",
+      contact_value: "guardian@example.com",
+      status: "pending_review"
+    });
+
+    const supportRequestList = await context.app.inject({
+      method: "GET",
+      url: "/v1/users/me/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+    expect(supportRequestList.statusCode).toBe(200);
+    expect(supportRequestList.json().total_count).toBe(1);
+    expect(supportRequestList.json().items[0]).toMatchObject({
+      topic: "data_deletion",
+      contact_channel: "email"
+    });
+
     const acknowledged = await context.app.inject({
       method: "POST",
       url: "/v1/users/me/minor-guardian/acknowledge",

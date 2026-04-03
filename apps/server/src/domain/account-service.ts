@@ -5,11 +5,20 @@ import { nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
 import type { AuthService } from "./auth-service.js";
 import type { ProgressService } from "./progress-service.js";
-import type { MinorGuardianAgeBand, MinorGuardianRecord, MinorGuardianSource } from "./types.js";
+import type {
+  MinorGuardianAgeBand,
+  MinorGuardianRecord,
+  MinorGuardianSource,
+  MinorGuardianSupportContactChannel,
+  MinorGuardianSupportRequest,
+  MinorGuardianSupportTopic
+} from "./types.js";
 
 const defaultMinorGuardianRecord = (): MinorGuardianRecord => ({
   ageBand: "unknown"
 });
+
+const defaultMinorGuardianSupportRequests = (): MinorGuardianSupportRequest[] => [];
 
 export class AccountService {
   constructor(
@@ -90,6 +99,8 @@ export class AccountService {
     user.phone = undefined;
     user.displayName = undefined;
     user.minorGuardian = defaultMinorGuardianRecord();
+    const removedMinorGuardianSupportRequests = user.minorGuardianSupportRequests?.length ?? 0;
+    user.minorGuardianSupportRequests = defaultMinorGuardianSupportRequests();
     user.passwordHash = hashPassword(randomUUID());
     user.status = "deleted";
     user.deletedAt = timestamp;
@@ -261,7 +272,8 @@ export class AccountService {
         removedReminderPreferences,
         removedReminderRecommendations,
         removedReminderDevices,
-        removedReminderDeliveryAttempts
+        removedReminderDeliveryAttempts,
+        removedMinorGuardianSupportRequests
       }
     });
 
@@ -372,6 +384,66 @@ export class AccountService {
     return nextMinorGuardian;
   }
 
+  submitMinorGuardianSupportRequest(userId: string, input: {
+    topic: MinorGuardianSupportTopic;
+    contactChannel: MinorGuardianSupportContactChannel;
+    contactValue: string;
+    message: string;
+  }): MinorGuardianSupportRequest {
+    const user = this.store.usersById.get(userId);
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+    if (user.status === "deleted") {
+      throw new Error("USER_ALREADY_DELETED");
+    }
+
+    const timestamp = nowIso();
+    const request: MinorGuardianSupportRequest = {
+      id: randomUUID(),
+      topic: input.topic,
+      contactChannel: input.contactChannel,
+      contactValue: input.contactValue,
+      message: input.message,
+      status: "pending_review",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    const requests = [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests()), request].sort((left, right) =>
+      right.createdAt.localeCompare(left.createdAt)
+    );
+    user.minorGuardianSupportRequests = requests;
+    user.updatedAt = timestamp;
+    this.store.usersById.set(user.id, user);
+
+    appendAudit(this.store, "minor_guardian_support_requested", {
+      userId,
+      metadata: {
+        requestId: request.id,
+        topic: request.topic,
+        contactChannel: request.contactChannel,
+        createdAt: request.createdAt
+      }
+    });
+
+    return request;
+  }
+
+  listMinorGuardianSupportRequests(userId: string): MinorGuardianSupportRequest[] {
+    const user = this.store.usersById.get(userId);
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+    if (user.status === "deleted") {
+      throw new Error("USER_ALREADY_DELETED");
+    }
+
+    return [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests())].sort((left, right) =>
+      right.createdAt.localeCompare(left.createdAt)
+    );
+  }
+
   exportUserData(userId: string): {
     exportId: string;
     generatedAt: string;
@@ -433,6 +505,7 @@ export class AccountService {
     const reminderDeliveryAttempts = Array.from(this.store.reminderDeliveryAttemptsById.values()).filter(
       (item) => item.userId === userId
     );
+    const minorGuardianSupportRequests = this.listMinorGuardianSupportRequests(userId);
 
     const analyticsEvents = this.store.analyticsEvents.filter((item) => item.userId === userId);
 
@@ -492,6 +565,9 @@ export class AccountService {
         recommendations: clone(reminderRecommendations),
         devices: clone(reminderDevices),
         delivery_attempts: clone(reminderDeliveryAttempts)
+      },
+      account_support: {
+        minor_guardian_requests: clone(minorGuardianSupportRequests)
       },
       analytics: {
         total_events: analyticsEvents.length,

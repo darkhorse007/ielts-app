@@ -116,6 +116,21 @@ describe("S29 auth/account postgres persistence", () => {
         }
       });
       expect(minorGuardian.statusCode).toBe(200);
+
+      const supportRequest = await server.app.inject({
+        method: "POST",
+        url: "/v1/users/me/minor-guardian/support-requests",
+        headers: {
+          authorization: `Bearer ${session.accessToken}`
+        },
+        payload: {
+          topic: "account_review",
+          contact_channel: "email",
+          contact_value: "guardian@example.com",
+          message: "需要了解监护人如何处理账号与导出。"
+        }
+      });
+      expect(supportRequest.statusCode).toBe(201);
     } finally {
       await server.app.close();
     }
@@ -158,6 +173,20 @@ describe("S29 auth/account postgres persistence", () => {
       expect(profile.json().minor_guardian).toMatchObject({
         age_band: "under_18",
         source: "account"
+      });
+
+      const supportRequestList = await server.app.inject({
+        method: "GET",
+        url: "/v1/users/me/minor-guardian/support-requests",
+        headers: {
+          authorization: `Bearer ${refreshed.json().access_token as string}`
+        }
+      });
+      expect(supportRequestList.statusCode).toBe(200);
+      expect(supportRequestList.json().total_count).toBe(1);
+      expect(supportRequestList.json().items[0]).toMatchObject({
+        topic: "account_review",
+        contact_channel: "email"
       });
     } finally {
       await server.app.close();

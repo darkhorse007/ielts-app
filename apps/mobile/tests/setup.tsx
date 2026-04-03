@@ -5,12 +5,18 @@ import { vi } from "vitest";
 (globalThis as typeof globalThis & { __DEV__: boolean }).__DEV__ = true;
 
 const normalizeDomProps = (props: Record<string, unknown> | null | undefined): Record<string, unknown> | null | undefined => {
-  if (!props || typeof props.testID !== "string") {
+  if (!props) {
     return props;
   }
 
-  const nextProps: Record<string, unknown> = { ...props, "data-testid": props.testID };
-  delete nextProps.testID;
+  const nextProps: Record<string, unknown> = { ...props };
+  if (typeof props.testID === "string") {
+    nextProps["data-testid"] = props.testID;
+    delete nextProps.testID;
+  }
+  if (typeof props.editable === "boolean") {
+    delete nextProps.editable;
+  }
   return nextProps;
 };
 

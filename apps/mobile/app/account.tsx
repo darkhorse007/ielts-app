@@ -4,6 +4,9 @@ import { Share, Text, View } from "react-native";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type {
   DeleteAccountResponse,
+  MinorGuardianSupportContactChannel,
+  MinorGuardianSupportRequestResponse,
+  MinorGuardianSupportRequestTopic,
   ReminderDeviceRegistrationListResponse,
   ReminderPreferenceResponse,
   ReminderRecommendationResponse,
@@ -28,7 +31,7 @@ import {
   type MinorGuardianAgeBand
 } from "../src/state/minor-guardian";
 import { useAppSession } from "../src/state/app-session";
-import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill } from "../src/ui/primitives";
+import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
 const formatValue = (value?: string | number | null): string =>
@@ -99,6 +102,33 @@ const toRemovalRows = (summary: DeleteAccountResponse): Array<{ label: string; v
   { label: "removed_mock_exam_reports", value: summary.removed_mock_exam_reports }
 ];
 
+const formatMinorGuardianSupportTopicLabel = (topic: MinorGuardianSupportRequestTopic): string => {
+  switch (topic) {
+    case "account_review":
+      return "账号情况";
+    case "data_deletion":
+      return "删除数据";
+    case "usage_concern":
+      return "使用疑虑";
+    default:
+      return "其他";
+  }
+};
+
+const formatMinorGuardianSupportChannelLabel = (channel: MinorGuardianSupportContactChannel): string =>
+  channel === "phone" ? "手机号" : "邮箱";
+
+const formatMinorGuardianSupportStatusLabel = (status: MinorGuardianSupportRequestResponse["status"]): string => {
+  switch (status) {
+    case "contacted":
+      return "已联系";
+    case "closed":
+      return "已关闭";
+    default:
+      return "待处理";
+  }
+};
+
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T | null> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -130,6 +160,14 @@ export default function AccountScreen() {
   const [statusMessage, setStatusMessage] = useState("未加载");
   const [exportFilename, setExportFilename] = useState("-");
   const [exportPreview, setExportPreview] = useState("-");
+  const [minorGuardianSupportRequests, setMinorGuardianSupportRequests] = useState<MinorGuardianSupportRequestResponse[]>([]);
+  const [minorGuardianSupportTopic, setMinorGuardianSupportTopic] =
+    useState<MinorGuardianSupportRequestTopic>("account_review");
+  const [minorGuardianSupportContactChannel, setMinorGuardianSupportContactChannel] =
+    useState<MinorGuardianSupportContactChannel>("email");
+  const [minorGuardianSupportContactValue, setMinorGuardianSupportContactValue] = useState("");
+  const [minorGuardianSupportMessage, setMinorGuardianSupportMessage] = useState("");
+  const [hydratingMinorGuardianSupport, setHydratingMinorGuardianSupport] = useState(false);
   const [deletedSummary, setDeletedSummary] = useState<DeleteAccountResponse | null>(null);
   const [hydratingProfile, setHydratingProfile] = useState(false);
   const [hydratingReminder, setHydratingReminder] = useState(false);
@@ -268,8 +306,24 @@ export default function AccountScreen() {
     void (async () => {
       await syncNotificationState();
       await syncRemoteReminderDeviceState();
+      await loadMinorGuardianSupportRequests();
     })();
   }, []);
+
+  useEffect(() => {
+    if (minorGuardianSupportContactValue) {
+      return;
+    }
+
+    if (minorGuardianSupportContactChannel === "email" && profile?.email) {
+      setMinorGuardianSupportContactValue(profile.email);
+      return;
+    }
+
+    if (minorGuardianSupportContactChannel === "phone" && profile?.phone) {
+      setMinorGuardianSupportContactValue(profile.phone);
+    }
+  }, [minorGuardianSupportContactChannel, minorGuardianSupportContactValue, profile?.email, profile?.phone]);
 
   const loadAccount = async (): Promise<void> => {
     if (hydratingAccountRef.current) {
@@ -291,6 +345,21 @@ export default function AccountScreen() {
       setHydratingProfile(false);
       hydratingAccountRef.current = false;
       setHasHydratedAccount(true);
+    }
+  };
+
+  const loadMinorGuardianSupportRequests = async (): Promise<void> => {
+    setHydratingMinorGuardianSupport(true);
+    try {
+      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.listMinorGuardianSupportRequests(accessToken)
+      );
+      setMinorGuardianSupportRequests(response.items);
+      setError(null);
+    } catch (supportError) {
+      setError(toRequestErrorMessage(supportError, "加载监护人联络申请失败"));
+    } finally {
+      setHydratingMinorGuardianSupport(false);
     }
   };
 
@@ -327,6 +396,7 @@ export default function AccountScreen() {
   const accountBusy = loading || hydratingProfile;
   const reminderBusy = loading || hydratingProfile || hydratingReminder || syncingNotifications;
   const minorGuardianBusy = loading || !minorGuardianReady;
+  const minorGuardianSupportBusy = loading || hydratingMinorGuardianSupport;
   const accountReady = Boolean(profile) && hasHydratedAccount && !hydratingProfile;
   const guardianNoticeStatus =
     minorGuardianState.ageBand === "under_18"
@@ -334,6 +404,7 @@ export default function AccountScreen() {
         ? "已确认"
         : "待确认"
       : "-";
+  const latestMinorGuardianSupportRequest = minorGuardianSupportRequests[0] ?? null;
 
   const updateMinorGuardianState = async (ageBand: MinorGuardianAgeBand): Promise<void> => {
     setLoading(true);
@@ -351,6 +422,45 @@ export default function AccountScreen() {
       setError(
         minorGuardianError instanceof Error ? minorGuardianError.message : "更新未成年人监护状态失败"
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitMinorGuardianSupportRequest = async (): Promise<void> => {
+    const contactValue = minorGuardianSupportContactValue.trim();
+    const message = minorGuardianSupportMessage.trim();
+
+    if (!contactValue) {
+      setError("请填写监护人联系邮箱或手机号");
+      return;
+    }
+
+    if (!message || message.length < 8) {
+      setError("请填写至少 8 个字的联络说明");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.submitMinorGuardianSupportRequest(accessToken, {
+          topic: minorGuardianSupportTopic,
+          contact_channel: minorGuardianSupportContactChannel,
+          contact_value: contactValue,
+          message
+        })
+      );
+      setMinorGuardianSupportRequests((current) =>
+        [created, ...current.filter((item) => item.request_id !== created.request_id)].sort((left, right) =>
+          right.created_at.localeCompare(left.created_at)
+        )
+      );
+      setMinorGuardianSupportMessage("");
+      setStatusMessage("已提交监护人联络申请");
+      setError(null);
+    } catch (supportError) {
+      setError(toRequestErrorMessage(supportError, "提交监护人联络申请失败"));
     } finally {
       setLoading(false);
     }
@@ -849,6 +959,126 @@ export default function AccountScreen() {
             onPress={() => void updateMinorGuardianState("unknown")}
             disabled={minorGuardianBusy}
             testID="account.minorGuardianReset"
+          />
+        </ButtonRow>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>监护人联络申请</Text>
+        <ButtonRow>
+          <StatusPill
+            label={latestMinorGuardianSupportRequest ? formatMinorGuardianSupportStatusLabel(latestMinorGuardianSupportRequest.status) : "尚未提交"}
+            tone={latestMinorGuardianSupportRequest ? "accent" : "neutral"}
+          />
+          <StatusPill
+            label={latestMinorGuardianSupportRequest ? formatMinorGuardianSupportTopicLabel(latestMinorGuardianSupportRequest.topic) : "待选择主题"}
+            tone="neutral"
+          />
+        </ButtonRow>
+        <View style={{ gap: 6, marginTop: 10 }}>
+          <Text style={{ color: colors.textPrimary, fontSize: 14 }}>
+            support_request_count: {minorGuardianSupportRequests.length}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            support_request_latest_topic: {latestMinorGuardianSupportRequest ? formatMinorGuardianSupportTopicLabel(latestMinorGuardianSupportRequest.topic) : "-"}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            support_request_latest_status: {latestMinorGuardianSupportRequest ? formatMinorGuardianSupportStatusLabel(latestMinorGuardianSupportRequest.status) : "-"}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            support_request_latest_contact_channel: {latestMinorGuardianSupportRequest ? formatMinorGuardianSupportChannelLabel(latestMinorGuardianSupportRequest.contact_channel) : "-"}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            support_request_latest_created_at: {formatIsoDateTime(latestMinorGuardianSupportRequest?.created_at)}
+          </Text>
+        </View>
+        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+          如监护人希望了解账号、删除数据或反馈未成年人使用疑虑，可在此登记联系信息，当前状态会保存在账户记录中。
+        </Text>
+        <ButtonRow>
+          <SecondaryButton
+            label={minorGuardianSupportTopic === "account_review" ? "已选: 账号情况" : "账号情况"}
+            onPress={() => setMinorGuardianSupportTopic("account_review")}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportTopicAccountReview"
+          />
+          <SecondaryButton
+            label={minorGuardianSupportTopic === "data_deletion" ? "已选: 删除数据" : "删除数据"}
+            onPress={() => setMinorGuardianSupportTopic("data_deletion")}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportTopicDataDeletion"
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <SecondaryButton
+            label={minorGuardianSupportTopic === "usage_concern" ? "已选: 使用疑虑" : "使用疑虑"}
+            onPress={() => setMinorGuardianSupportTopic("usage_concern")}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportTopicUsageConcern"
+          />
+          <SecondaryButton
+            label={minorGuardianSupportTopic === "other" ? "已选: 其他" : "其他"}
+            onPress={() => setMinorGuardianSupportTopic("other")}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportTopicOther"
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <SecondaryButton
+            label={minorGuardianSupportContactChannel === "email" ? "已选: 邮箱" : "邮箱"}
+            onPress={() => {
+              setMinorGuardianSupportContactChannel("email");
+              if (!minorGuardianSupportContactValue && profile?.email) {
+                setMinorGuardianSupportContactValue(profile.email);
+              }
+            }}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportChannelEmail"
+          />
+          <SecondaryButton
+            label={minorGuardianSupportContactChannel === "phone" ? "已选: 手机号" : "手机号"}
+            onPress={() => {
+              setMinorGuardianSupportContactChannel("phone");
+              if (!minorGuardianSupportContactValue && profile?.phone) {
+                setMinorGuardianSupportContactValue(profile.phone);
+              }
+            }}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportChannelPhone"
+          />
+        </ButtonRow>
+        <TextField
+          label="监护人联系方式"
+          value={minorGuardianSupportContactValue}
+          onChangeText={setMinorGuardianSupportContactValue}
+          placeholder={minorGuardianSupportContactChannel === "email" ? "guardian@example.com" : "13800000000"}
+          autoCapitalize="none"
+          keyboardType={minorGuardianSupportContactChannel === "email" ? "email-address" : "phone-pad"}
+          editable={minorGuardianSupportBusy ? false : undefined}
+          testID="account.guardianSupportContactValue"
+        />
+        <TextField
+          label="联络说明"
+          value={minorGuardianSupportMessage}
+          onChangeText={setMinorGuardianSupportMessage}
+          placeholder="例如：希望了解如何导出学习数据并申请删除。"
+          multiline
+          numberOfLines={4}
+          editable={minorGuardianSupportBusy ? false : undefined}
+          testID="account.guardianSupportMessage"
+        />
+        <ButtonRow>
+          <PrimaryButton
+            label="提交联络申请"
+            onPress={() => void submitMinorGuardianSupportRequest()}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportSubmit"
+          />
+          <SecondaryButton
+            label="刷新申请状态"
+            onPress={() => void loadMinorGuardianSupportRequests()}
+            disabled={minorGuardianSupportBusy}
+            testID="account.guardianSupportRefresh"
           />
         </ButtonRow>
       </InfoCard>

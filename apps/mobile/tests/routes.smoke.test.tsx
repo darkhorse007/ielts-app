@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type {
   MinorGuardianResponse,
+  MinorGuardianSupportRequestResponse,
   ReminderDeviceRegistrationResponse,
   StoredSession,
   UserProfileResponse
@@ -89,6 +90,7 @@ const createSessionContext = (overrides?: {
   reminderDevices?: ReminderDeviceRegistrationResponse[];
 }): ReturnType<typeof useAppSession> => {
   const sessionValue = overrides?.session ?? defaultSession;
+  const minorGuardianSupportRequests: MinorGuardianSupportRequestResponse[] = [];
   const reminderDevicesByInstallationId = new Map<string, ReminderDeviceRegistrationResponse>(
     (overrides?.reminderDevices ?? []).map((item) => [item.installation_id, { ...item }])
   );
@@ -185,6 +187,35 @@ const createSessionContext = (overrides?: {
       ...profileState.minor_guardian
     };
   });
+  const listMinorGuardianSupportRequests = vi.fn(async () => ({
+    total_count: minorGuardianSupportRequests.length,
+    items: [...minorGuardianSupportRequests].sort((left, right) => right.created_at.localeCompare(left.created_at))
+  }));
+  const submitMinorGuardianSupportRequest = vi.fn(
+    async (
+      _accessToken: string,
+      payload: {
+        topic: "account_review" | "data_deletion" | "usage_concern" | "other";
+        contact_channel: "email" | "phone";
+        contact_value: string;
+        message: string;
+      }
+    ) => {
+      const timestamp = new Date().toISOString();
+      const request: MinorGuardianSupportRequestResponse = {
+        request_id: `guardian-support-${minorGuardianSupportRequests.length + 1}`,
+        topic: payload.topic,
+        contact_channel: payload.contact_channel,
+        contact_value: payload.contact_value,
+        message: payload.message,
+        status: "pending_review",
+        created_at: timestamp,
+        updated_at: timestamp
+      };
+      minorGuardianSupportRequests.unshift(request);
+      return request;
+    }
+  );
   const apiClient = {
     getProfile: vi.fn().mockImplementation(async () => ({
       ...profileState,
@@ -236,6 +267,8 @@ const createSessionContext = (overrides?: {
     deleteReminderDevice,
     updateMinorGuardian,
     acknowledgeMinorGuardianNotice,
+    listMinorGuardianSupportRequests,
+    submitMinorGuardianSupportRequest,
     createMockExam: vi.fn().mockResolvedValue({
       exam_id: "mock-1",
       status: "in_progress",
@@ -672,6 +705,33 @@ describe("mobile route smoke", () => {
       ageBand: "adult",
       source: "account"
     });
+  });
+
+  test("account screen can submit minor guardian support request", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    renderAccountScreen();
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("support_request_count: 0"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("account.guardianSupportTopicDataDeletion"));
+    fireEvent.click(screen.getByTestId("account.guardianSupportChannelEmail"));
+    fireEvent.change(screen.getByTestId("account.guardianSupportContactValue"), {
+      target: { value: "guardian@example.com" }
+    });
+    fireEvent.change(screen.getByTestId("account.guardianSupportMessage"), {
+      target: { value: "请协助说明监护人如何导出并删除学习数据。" }
+    });
+    fireEvent.click(screen.getByTestId("account.guardianSupportSubmit"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("support_request_count: 1"))).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("support_request_latest_topic: 删除数据"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("support_request_latest_status: 待处理"))).toBeTruthy();
+    expect(screen.getByText("已提交监护人联络申请")).toBeTruthy();
   });
 
   test("speaking screen renders permission gate and live controls", async () => {

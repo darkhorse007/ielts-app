@@ -149,6 +149,21 @@ describe("S34 user data export", () => {
     });
     expect(acknowledgeMinorGuardian.statusCode).toBe(200);
 
+    const supportRequest = await context.app.inject({
+      method: "POST",
+      url: "/v1/users/me/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        topic: "account_review",
+        contact_channel: "email",
+        contact_value: "guardian@example.com",
+        message: "需要监护人获取账号与删除流程说明。"
+      }
+    });
+    expect(supportRequest.statusCode).toBe(201);
+
     const exported = await context.app.inject({
       method: "GET",
       url: "/v1/users/me/export",
@@ -191,6 +206,13 @@ describe("S34 user data export", () => {
           pushProvider?: string;
         }>;
       };
+      account_support: {
+        minor_guardian_requests: Array<{
+          topic: string;
+          contactChannel: string;
+          contactValue: string;
+        }>;
+      };
       analytics: {
         total_events: number;
       };
@@ -213,6 +235,10 @@ describe("S34 user data export", () => {
     expect(body.reminders.delivery_attempts[0]?.installationId).toBe("export-installation-1");
     expect(body.reminders.delivery_attempts[0]?.status).toBe("sent");
     expect(body.reminders.delivery_attempts[0]?.pushProvider).toBe("apns");
+    expect(body.account_support.minor_guardian_requests).toHaveLength(1);
+    expect(body.account_support.minor_guardian_requests[0]?.topic).toBe("account_review");
+    expect(body.account_support.minor_guardian_requests[0]?.contactChannel).toBe("email");
+    expect(body.account_support.minor_guardian_requests[0]?.contactValue).toBe("guardian@example.com");
     expect(body.analytics.total_events).toBe(1);
     expect(body.exclusions).toEqual(
       expect.arrayContaining(["password_hash", "refresh_token_hash", "internal_audit_events", "backup_copies"])
