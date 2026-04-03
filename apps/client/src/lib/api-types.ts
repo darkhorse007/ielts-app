@@ -123,11 +123,29 @@ export type ProgressConflictHistoryResponse = {
   }>;
 };
 
+export type MinorGuardianAgeBand = "unknown" | "under_18" | "adult";
+
+export type MinorGuardianSource = "register" | "account";
+
+export type MinorGuardianResponse = {
+  age_band: MinorGuardianAgeBand;
+  source?: MinorGuardianSource;
+  updated_at?: string;
+  guardian_notice_accepted_at?: string;
+  guardian_notice_accepted_user_id?: string;
+};
+
+export type UpdateMinorGuardianPayload = {
+  age_band: MinorGuardianAgeBand;
+  source?: MinorGuardianSource;
+};
+
 export type UserProfileResponse = {
   id: string;
   email?: string;
   phone?: string;
   status: "active" | "frozen" | "pending_deletion" | "deleted";
+  minor_guardian?: MinorGuardianResponse;
   deletion_requested_at?: string;
   deleted_at?: string;
   created_at: string;

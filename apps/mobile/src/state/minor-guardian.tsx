@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { Pressable, Text, View } from "react-native";
+import type { MinorGuardianResponse, MinorGuardianSource } from "../lib/api-types";
 import { useAppSession } from "./app-session";
 import { buildScopedStorageKey, loadStoredJson, saveStoredJson } from "../lib/storage";
 import { colors, radii, spacing } from "../ui/theme";
@@ -8,17 +9,18 @@ export type MinorGuardianAgeBand = "unknown" | "under_18" | "adult";
 
 type MinorGuardianState = {
   ageBand: MinorGuardianAgeBand;
-  source?: "register" | "account";
+  source?: MinorGuardianSource;
   updatedAt?: string;
   guardianNoticeAcceptedAt?: string;
   guardianNoticeAcceptedUserId?: string;
+  ownerUserId?: string;
 };
 
 type MinorGuardianContextValue = {
   ready: boolean;
   state: MinorGuardianState;
   requiresGuardianNotice: boolean;
-  setAgeBand: (ageBand: MinorGuardianAgeBand, source?: "register" | "account") => Promise<void>;
+  setAgeBand: (ageBand: MinorGuardianAgeBand, source?: MinorGuardianSource) => Promise<void>;
   acknowledgeGuardianNotice: () => Promise<void>;
 };
 
@@ -35,6 +37,42 @@ const persistMinorGuardianState = async (state: MinorGuardianState): Promise<voi
   await saveStoredJson(MINOR_GUARDIAN_STORAGE_KEY, state);
 };
 
+const normalizeMinorGuardianState = (state?: MinorGuardianState | null): MinorGuardianState => ({
+  ageBand: state?.ageBand ?? "unknown",
+  source: state?.source,
+  updatedAt: state?.updatedAt,
+  guardianNoticeAcceptedAt: state?.guardianNoticeAcceptedAt,
+  guardianNoticeAcceptedUserId: state?.guardianNoticeAcceptedUserId,
+  ownerUserId: state?.ownerUserId
+});
+
+const toMinorGuardianState = (
+  response?: MinorGuardianResponse | null,
+  ownerUserId?: string
+): MinorGuardianState => ({
+  ageBand: response?.age_band ?? "unknown",
+  source: response?.source,
+  updatedAt: response?.updated_at,
+  guardianNoticeAcceptedAt: response?.guardian_notice_accepted_at,
+  guardianNoticeAcceptedUserId: response?.guardian_notice_accepted_user_id,
+  ownerUserId
+});
+
+const shouldPromoteLocalStateToSession = (state: MinorGuardianState, userId: string): boolean => {
+  if (state.ownerUserId === userId) {
+    return true;
+  }
+
+  return !state.ownerUserId && state.source === "register" && state.ageBand !== "unknown";
+};
+
+const localStateDiffersFromRemote = (local: MinorGuardianState, remote: MinorGuardianState): boolean =>
+  local.ageBand !== remote.ageBand ||
+  local.source !== remote.source ||
+  local.updatedAt !== remote.updatedAt ||
+  local.guardianNoticeAcceptedAt !== remote.guardianNoticeAcceptedAt ||
+  local.guardianNoticeAcceptedUserId !== remote.guardianNoticeAcceptedUserId;
+
 export const formatMinorGuardianAgeBandLabel = (ageBand: MinorGuardianAgeBand): string => {
   switch (ageBand) {
     case "under_18":
@@ -47,7 +85,7 @@ export const formatMinorGuardianAgeBandLabel = (ageBand: MinorGuardianAgeBand): 
 };
 
 export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
-  const { session } = useAppSession();
+  const { session, runWithAuthorizedClient } = useAppSession();
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<MinorGuardianState>(defaultMinorGuardianState);
 
@@ -69,21 +107,91 @@ export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!ready || !session) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      try {
+        const profile = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProfile(accessToken));
+        const remoteState = toMinorGuardianState(profile.minor_guardian, session.userId);
+        let nextState = remoteState;
+
+        if (shouldPromoteLocalStateToSession(state, session.userId) && localStateDiffersFromRemote(state, remoteState)) {
+          const syncedState = await runWithAuthorizedClient((apiClient, accessToken) =>
+            apiClient.updateMinorGuardian(accessToken, {
+              age_band: state.ageBand,
+              source: state.source ?? "account"
+            })
+          );
+          nextState = toMinorGuardianState(syncedState, session.userId);
+
+          if (
+            state.ageBand === "under_18" &&
+            state.guardianNoticeAcceptedAt &&
+            state.guardianNoticeAcceptedUserId === session.userId &&
+            !nextState.guardianNoticeAcceptedAt
+          ) {
+            const acknowledgedState = await runWithAuthorizedClient((apiClient, accessToken) =>
+              apiClient.acknowledgeMinorGuardianNotice(accessToken)
+            );
+            nextState = toMinorGuardianState(acknowledgedState, session.userId);
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setState(nextState);
+        await persistMinorGuardianState(nextState);
+      } catch {
+        // Keep the last local snapshot when the remote profile is temporarily unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, runWithAuthorizedClient, session?.userId]);
+
+  const stateBelongsToCurrentSession = !session || !state.ownerUserId || state.ownerUserId === session.userId;
+
   const requiresGuardianNotice = Boolean(
     ready &&
       session &&
+      stateBelongsToCurrentSession &&
       state.ageBand === "under_18" &&
       state.guardianNoticeAcceptedUserId !== session.userId
   );
 
-  const setAgeBand = async (ageBand: MinorGuardianAgeBand, source: "register" | "account" = "account"): Promise<void> => {
-    const nextState: MinorGuardianState = {
+  const setAgeBand = async (ageBand: MinorGuardianAgeBand, source: MinorGuardianSource = "account"): Promise<void> => {
+    if (session) {
+      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.updateMinorGuardian(accessToken, {
+          age_band: ageBand,
+          source
+        })
+      );
+      const nextState = toMinorGuardianState(response, session.userId);
+      setState(nextState);
+      await persistMinorGuardianState(nextState);
+      return;
+    }
+
+    const nextState = normalizeMinorGuardianState({
       ageBand,
       source,
       updatedAt: nowIso(),
       guardianNoticeAcceptedAt: undefined,
-      guardianNoticeAcceptedUserId: undefined
-    };
+      guardianNoticeAcceptedUserId: undefined,
+      ownerUserId: undefined
+    });
 
     setState(nextState);
     await persistMinorGuardianState(nextState);
@@ -94,11 +202,10 @@ export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const nextState: MinorGuardianState = {
-      ...state,
-      guardianNoticeAcceptedAt: nowIso(),
-      guardianNoticeAcceptedUserId: session.userId
-    };
+    const response = await runWithAuthorizedClient((apiClient, accessToken) =>
+      apiClient.acknowledgeMinorGuardianNotice(accessToken)
+    );
+    const nextState = toMinorGuardianState(response, session.userId);
     setState(nextState);
     await persistMinorGuardianState(nextState);
   };
@@ -150,7 +257,7 @@ export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
               如你未满 18 周岁，请在监护人知情和同意下使用本产品，并合理安排学习时长、账号与付费行为。
             </Text>
             <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 19 }}>
-              当前首版仅补前台提示与学习时长提醒，尚未提供监护人留痕、亲子绑定或专门时长控制。
+              当前已记录监护提示确认留痕，尚未提供亲子绑定或未成年人专门时长控制。
             </Text>
             <Pressable
               onPress={() => void acknowledgeGuardianNotice()}

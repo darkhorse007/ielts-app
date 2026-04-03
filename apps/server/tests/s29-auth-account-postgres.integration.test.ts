@@ -103,6 +103,19 @@ describe("S29 auth/account postgres persistence", () => {
       });
       expect(profile.statusCode).toBe(200);
       expect(profile.json().email).toBe(email);
+
+      const minorGuardian = await server.app.inject({
+        method: "PUT",
+        url: "/v1/users/me/minor-guardian",
+        headers: {
+          authorization: `Bearer ${session.accessToken}`
+        },
+        payload: {
+          age_band: "under_18",
+          source: "account"
+        }
+      });
+      expect(minorGuardian.statusCode).toBe(200);
     } finally {
       await server.app.close();
     }
@@ -142,6 +155,10 @@ describe("S29 auth/account postgres persistence", () => {
       expect(profile.statusCode).toBe(200);
       expect(profile.json().email).toBe(email);
       expect(profile.json().status).toBe("active");
+      expect(profile.json().minor_guardian).toMatchObject({
+        age_band: "under_18",
+        source: "account"
+      });
     } finally {
       await server.app.close();
       await dropSchema(schema);

@@ -14,9 +14,28 @@ const exportSchema = z.object({
   format: z.enum(["json"]).default("json")
 });
 
+const minorGuardianSchema = z.object({
+  age_band: z.enum(["unknown", "under_18", "adult"]),
+  source: z.enum(["register", "account"]).default("account")
+});
+
 const toError = (code: string, message: string): { code: string; message: string } => ({
   code,
   message
+});
+
+const serializeMinorGuardian = (record: {
+  ageBand: "unknown" | "under_18" | "adult";
+  source?: "register" | "account";
+  updatedAt?: string;
+  guardianNoticeAcceptedAt?: string;
+  guardianNoticeAcceptedUserId?: string;
+}) => ({
+  age_band: record.ageBand,
+  source: record.source,
+  updated_at: record.updatedAt,
+  guardian_notice_accepted_at: record.guardianNoticeAcceptedAt,
+  guardian_notice_accepted_user_id: record.guardianNoticeAcceptedUserId
 });
 
 const accountDebugLog = (...parts: unknown[]): void => {
@@ -43,6 +62,7 @@ export const registerAccountRoutes = async (
         email: profile.email,
         phone: profile.phone,
         status: profile.status,
+        minor_guardian: serializeMinorGuardian(profile.minorGuardian),
         deletion_requested_at: profile.deletionRequestedAt,
         deleted_at: profile.deletedAt,
         created_at: profile.createdAt,
@@ -76,6 +96,75 @@ export const registerAccountRoutes = async (
       throw error;
     }
   });
+
+  app.put("/v1/users/me/minor-guardian", { preHandler: authenticate(services.authService) }, async (request, reply) => {
+    const parsed = minorGuardianSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400).send(toError("VALIDATION_ERROR", "minor guardian payload is invalid"));
+      return;
+    }
+
+    const authRequest = request as AuthenticatedRequest;
+    try {
+      const minorGuardian = services.accountService.updateMinorGuardian(authRequest.auth.userId, {
+        ageBand: parsed.data.age_band,
+        source: parsed.data.source
+      });
+      try {
+        await services.authAccountRepository?.flush();
+      } catch {
+        reply.code(503).send(toError("AUTH_ACCOUNT_STORAGE_UNAVAILABLE", "Auth/account storage is unavailable"));
+        return;
+      }
+      reply.code(200).send({
+        minor_guardian: serializeMinorGuardian(minorGuardian)
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "USER_ALREADY_DELETED") {
+        reply.code(409).send(toError("USER_ALREADY_DELETED", "User already deleted"));
+        return;
+      }
+      if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+        reply.code(404).send(toError("USER_NOT_FOUND", "User not found"));
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post(
+    "/v1/users/me/minor-guardian/acknowledge",
+    { preHandler: authenticate(services.authService) },
+    async (request, reply) => {
+      const authRequest = request as AuthenticatedRequest;
+      try {
+        const minorGuardian = services.accountService.acknowledgeMinorGuardianNotice(authRequest.auth.userId);
+        try {
+          await services.authAccountRepository?.flush();
+        } catch {
+          reply.code(503).send(toError("AUTH_ACCOUNT_STORAGE_UNAVAILABLE", "Auth/account storage is unavailable"));
+          return;
+        }
+        reply.code(200).send({
+          minor_guardian: serializeMinorGuardian(minorGuardian)
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "MINOR_GUARDIAN_NOTICE_NOT_REQUIRED") {
+          reply.code(409).send(toError("MINOR_GUARDIAN_NOTICE_NOT_REQUIRED", "Minor guardian notice is not required"));
+          return;
+        }
+        if (error instanceof Error && error.message === "USER_ALREADY_DELETED") {
+          reply.code(409).send(toError("USER_ALREADY_DELETED", "User already deleted"));
+          return;
+        }
+        if (error instanceof Error && error.message === "USER_NOT_FOUND") {
+          reply.code(404).send(toError("USER_NOT_FOUND", "User not found"));
+          return;
+        }
+        throw error;
+      }
+    }
+  );
 
   app.post(
     "/v1/users/me/deletion-request",

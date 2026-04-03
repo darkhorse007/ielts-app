@@ -4,7 +4,11 @@ import { hashPassword, randomToken, sha256, signAccessToken, verifyAccessToken, 
 import type { ServiceConfig } from "./config.js";
 import { addSeconds, isPast, nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
-import type { SystemRole } from "./types.js";
+import type { MinorGuardianRecord, SystemRole } from "./types.js";
+
+const defaultMinorGuardianRecord = (): MinorGuardianRecord => ({
+  ageBand: "unknown"
+});
 
 type RegisterInput = {
   email?: string;
@@ -383,6 +387,7 @@ export class AuthService {
     displayName?: string;
     systemRoles: SystemRole[];
     status: string;
+    minorGuardian: MinorGuardianRecord;
     deletionRequestedAt?: string;
     deletedAt?: string;
     createdAt: string;
@@ -399,6 +404,7 @@ export class AuthService {
       displayName: user.displayName,
       systemRoles: user.systemRoles,
       status: user.status,
+      minorGuardian: user.minorGuardian ?? defaultMinorGuardianRecord(),
       deletionRequestedAt: user.deletionRequestedAt,
       deletedAt: user.deletedAt,
       createdAt: user.createdAt,

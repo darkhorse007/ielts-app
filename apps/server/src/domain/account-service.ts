@@ -5,6 +5,11 @@ import { nowIso } from "./time.js";
 import { InMemoryStore } from "./store.js";
 import type { AuthService } from "./auth-service.js";
 import type { ProgressService } from "./progress-service.js";
+import type { MinorGuardianAgeBand, MinorGuardianRecord, MinorGuardianSource } from "./types.js";
+
+const defaultMinorGuardianRecord = (): MinorGuardianRecord => ({
+  ageBand: "unknown"
+});
 
 export class AccountService {
   constructor(
@@ -84,6 +89,7 @@ export class AccountService {
     user.email = undefined;
     user.phone = undefined;
     user.displayName = undefined;
+    user.minorGuardian = defaultMinorGuardianRecord();
     user.passwordHash = hashPassword(randomUUID());
     user.status = "deleted";
     user.deletedAt = timestamp;
@@ -283,12 +289,87 @@ export class AccountService {
     email?: string;
     phone?: string;
     status: string;
+    minorGuardian: MinorGuardianRecord;
     deletionRequestedAt?: string;
     deletedAt?: string;
     createdAt: string;
     updatedAt: string;
   } {
     return this.authService.getUserById(userId);
+  }
+
+  updateMinorGuardian(userId: string, input: {
+    ageBand: MinorGuardianAgeBand;
+    source: MinorGuardianSource;
+  }): MinorGuardianRecord {
+    const user = this.store.usersById.get(userId);
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+    if (user.status === "deleted") {
+      throw new Error("USER_ALREADY_DELETED");
+    }
+
+    const timestamp = nowIso();
+    const nextMinorGuardian: MinorGuardianRecord = {
+      ageBand: input.ageBand,
+      source: input.source,
+      updatedAt: timestamp,
+      guardianNoticeAcceptedAt: undefined,
+      guardianNoticeAcceptedUserId: undefined
+    };
+
+    user.minorGuardian = nextMinorGuardian;
+    user.updatedAt = timestamp;
+    this.store.usersById.set(user.id, user);
+
+    appendAudit(this.store, "minor_guardian_updated", {
+      userId,
+      metadata: {
+        ageBand: nextMinorGuardian.ageBand,
+        source: nextMinorGuardian.source,
+        updatedAt: nextMinorGuardian.updatedAt
+      }
+    });
+
+    return nextMinorGuardian;
+  }
+
+  acknowledgeMinorGuardianNotice(userId: string): MinorGuardianRecord {
+    const user = this.store.usersById.get(userId);
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+    if (user.status === "deleted") {
+      throw new Error("USER_ALREADY_DELETED");
+    }
+
+    const current = user.minorGuardian ?? defaultMinorGuardianRecord();
+    if (current.ageBand !== "under_18") {
+      throw new Error("MINOR_GUARDIAN_NOTICE_NOT_REQUIRED");
+    }
+
+    const timestamp = nowIso();
+    const nextMinorGuardian: MinorGuardianRecord = {
+      ...current,
+      updatedAt: timestamp,
+      guardianNoticeAcceptedAt: timestamp,
+      guardianNoticeAcceptedUserId: userId
+    };
+
+    user.minorGuardian = nextMinorGuardian;
+    user.updatedAt = timestamp;
+    this.store.usersById.set(user.id, user);
+
+    appendAudit(this.store, "minor_guardian_notice_acknowledged", {
+      userId,
+      metadata: {
+        ageBand: nextMinorGuardian.ageBand,
+        acceptedAt: nextMinorGuardian.guardianNoticeAcceptedAt
+      }
+    });
+
+    return nextMinorGuardian;
   }
 
   exportUserData(userId: string): {
@@ -366,6 +447,13 @@ export class AccountService {
         display_name: profile.displayName,
         system_roles: profile.systemRoles,
         status: profile.status,
+        minor_guardian: {
+          age_band: profile.minorGuardian.ageBand,
+          source: profile.minorGuardian.source,
+          updated_at: profile.minorGuardian.updatedAt,
+          guardian_notice_accepted_at: profile.minorGuardian.guardianNoticeAcceptedAt,
+          guardian_notice_accepted_user_id: profile.minorGuardian.guardianNoticeAcceptedUserId
+        },
         deletion_requested_at: profile.deletionRequestedAt,
         deleted_at: profile.deletedAt,
         created_at: profile.createdAt,

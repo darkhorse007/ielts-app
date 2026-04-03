@@ -4,6 +4,18 @@ export type UserStatus = "active" | "frozen" | "pending_deletion" | "deleted";
 
 export type SystemRole = "learner" | "qa" | "ops" | "admin";
 
+export type MinorGuardianAgeBand = "unknown" | "under_18" | "adult";
+
+export type MinorGuardianSource = "register" | "account";
+
+export type MinorGuardianRecord = {
+  ageBand: MinorGuardianAgeBand;
+  source?: MinorGuardianSource;
+  updatedAt?: string;
+  guardianNoticeAcceptedAt?: string;
+  guardianNoticeAcceptedUserId?: string;
+};
+
 export type User = {
   id: string;
   email?: string;
@@ -12,6 +24,7 @@ export type User = {
   systemRoles: SystemRole[];
   passwordHash: string;
   status: UserStatus;
+  minorGuardian?: MinorGuardianRecord;
   frozenAt?: string;
   unfrozenAt?: string;
   deletionRequestedAt?: string;
@@ -60,6 +73,8 @@ export type AuditEventType =
   | "progress_synced"
   | "progress_conflict"
   | "user_data_exported"
+  | "minor_guardian_updated"
+  | "minor_guardian_notice_acknowledged"
   | "deletion_requested"
   | "user_deleted"
   | "practice_session_created"

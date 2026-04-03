@@ -4,7 +4,12 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { ReminderDeviceRegistrationResponse, StoredSession } from "../src/lib/api-types";
+import type {
+  MinorGuardianResponse,
+  ReminderDeviceRegistrationResponse,
+  StoredSession,
+  UserProfileResponse
+} from "../src/lib/api-types";
 import { buildScopedStorageKey } from "../src/lib/storage";
 import { buildCurrentRemoteReminderDeviceRegistrationAsync } from "../src/lib/notifications";
 import type { InstanceConfig } from "../src/lib/runtime-config";
@@ -83,9 +88,21 @@ const createSessionContext = (overrides?: {
   instanceConfig?: InstanceConfig | null;
   reminderDevices?: ReminderDeviceRegistrationResponse[];
 }): ReturnType<typeof useAppSession> => {
+  const sessionValue = overrides?.session ?? defaultSession;
   const reminderDevicesByInstallationId = new Map<string, ReminderDeviceRegistrationResponse>(
     (overrides?.reminderDevices ?? []).map((item) => [item.installation_id, { ...item }])
   );
+  const profileState: UserProfileResponse & { minor_guardian: MinorGuardianResponse } = {
+    id: sessionValue?.userId ?? "user-1",
+    email: "learner@example.com",
+    phone: "13800000000",
+    status: "active" as const,
+    minor_guardian: {
+      age_band: "unknown" as const
+    },
+    created_at: "2026-03-28T00:00:00.000Z",
+    updated_at: "2026-03-28T00:00:00.000Z"
+  };
   const listReminderDevices = vi.fn(async () => {
     const items = Array.from(reminderDevicesByInstallationId.values()).sort((left, right) =>
       right.updated_at.localeCompare(left.updated_at)
@@ -135,15 +152,46 @@ const createSessionContext = (overrides?: {
     installation_id: installationId,
     removed: reminderDevicesByInstallationId.delete(installationId)
   }));
+  const updateMinorGuardian = vi.fn(
+    async (
+      _accessToken: string,
+      payload: {
+        age_band: "unknown" | "under_18" | "adult";
+        source?: "register" | "account";
+      }
+    ) => {
+      const timestamp = new Date().toISOString();
+      profileState.minor_guardian = {
+        age_band: payload.age_band,
+        source: payload.source ?? "account",
+        updated_at: timestamp
+      };
+      profileState.updated_at = timestamp;
+      return {
+        ...profileState.minor_guardian
+      };
+    }
+  );
+  const acknowledgeMinorGuardianNotice = vi.fn(async () => {
+    const timestamp = new Date().toISOString();
+    profileState.minor_guardian = {
+      ...profileState.minor_guardian,
+      updated_at: timestamp,
+      guardian_notice_accepted_at: timestamp,
+      guardian_notice_accepted_user_id: sessionValue?.userId ?? "user-1"
+    };
+    profileState.updated_at = timestamp;
+    return {
+      ...profileState.minor_guardian
+    };
+  });
   const apiClient = {
-    getProfile: vi.fn().mockResolvedValue({
-      id: "user-1",
-      email: "learner@example.com",
-      phone: "13800000000",
-      status: "active",
-      created_at: "2026-03-28T00:00:00.000Z",
-      updated_at: "2026-03-28T00:00:00.000Z"
-    }),
+    getProfile: vi.fn().mockImplementation(async () => ({
+      ...profileState,
+      minor_guardian: {
+        ...profileState.minor_guardian
+      }
+    })),
     getReminderPreference: vi.fn().mockResolvedValue({
       subscribed: true,
       active_hour_utc: 12,
@@ -162,12 +210,12 @@ const createSessionContext = (overrides?: {
       content: "{\"user_id\":\"user-1\"}"
     }),
     requestDeletion: vi.fn().mockResolvedValue({
-      user_id: "user-1",
+      user_id: sessionValue?.userId ?? "user-1",
       status: "pending_deletion",
       deletion_requested_at: "2026-03-28T00:00:00.000Z"
     }),
     deleteAccount: vi.fn().mockResolvedValue({
-      user_id: "user-1",
+      user_id: sessionValue?.userId ?? "user-1",
       status: "deleted",
       deleted_at: "2026-03-28T00:00:00.000Z",
       revoked_sessions: 2,
@@ -186,6 +234,8 @@ const createSessionContext = (overrides?: {
     listReminderDevices,
     upsertReminderDevice,
     deleteReminderDevice,
+    updateMinorGuardian,
+    acknowledgeMinorGuardianNotice,
     createMockExam: vi.fn().mockResolvedValue({
       exam_id: "mock-1",
       status: "in_progress",
@@ -216,7 +266,7 @@ const createSessionContext = (overrides?: {
     ready: true,
     defaultInstanceConfig,
     instanceConfig: overrides?.instanceConfig ?? defaultInstanceConfig,
-    session: overrides?.session ?? defaultSession,
+    session: sessionValue,
     saveInstanceConfig: vi.fn(),
     saveSession: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),

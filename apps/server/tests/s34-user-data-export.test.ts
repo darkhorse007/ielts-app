@@ -127,6 +127,28 @@ describe("S34 user data export", () => {
     });
     expect(reminderDispatch.statusCode).toBe(200);
 
+    const minorGuardian = await context.app.inject({
+      method: "PUT",
+      url: "/v1/users/me/minor-guardian",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      },
+      payload: {
+        age_band: "under_18",
+        source: "account"
+      }
+    });
+    expect(minorGuardian.statusCode).toBe(200);
+
+    const acknowledgeMinorGuardian = await context.app.inject({
+      method: "POST",
+      url: "/v1/users/me/minor-guardian/acknowledge",
+      headers: {
+        authorization: `Bearer ${user.access_token}`
+      }
+    });
+    expect(acknowledgeMinorGuardian.statusCode).toBe(200);
+
     const exported = await context.app.inject({
       method: "GET",
       url: "/v1/users/me/export",
@@ -140,6 +162,10 @@ describe("S34 user data export", () => {
     const body = exported.json() as {
       profile: {
         id: string;
+        minor_guardian: {
+          age_band: string;
+          guardian_notice_accepted_user_id?: string;
+        };
       };
       auth: {
         sessions: Array<{
@@ -172,6 +198,8 @@ describe("S34 user data export", () => {
     };
 
     expect(body.profile.id).toBe(user.user_id);
+    expect(body.profile.minor_guardian.age_band).toBe("under_18");
+    expect(body.profile.minor_guardian.guardian_notice_accepted_user_id).toBe(user.user_id);
     expect(body.auth.sessions.length).toBeGreaterThanOrEqual(1);
     expect(body.auth.sessions[0].deviceId).toBe("macos");
     expect(body.reminders.preference?.subscribed).toBe(true);

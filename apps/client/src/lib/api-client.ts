@@ -13,6 +13,7 @@ import type {
   MockExamReportResponse,
   MockExamResponse,
   MockExamSubmitResponse,
+  MinorGuardianResponse,
   OnboardingPayload,
   OnboardingResponse,
   OnboardingStatusResponse,
@@ -41,6 +42,7 @@ import type {
   StudyPlanAdjustmentHistoryResponse,
   StudyPlanResponse,
   TokenResponse,
+  UpdateMinorGuardianPayload,
   UserDataExportResponse,
   UserProfileResponse,
   WritingArchiveResponse,
@@ -421,6 +423,31 @@ export class ApiClient {
         Authorization: `Bearer ${accessToken}`
       }
     });
+  }
+
+  async updateMinorGuardian(accessToken: string, payload: UpdateMinorGuardianPayload): Promise<MinorGuardianResponse> {
+    const response = await this.request<{ minor_guardian: MinorGuardianResponse }>("/v1/users/me/minor-guardian", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    return response.minor_guardian;
+  }
+
+  async acknowledgeMinorGuardianNotice(accessToken: string): Promise<MinorGuardianResponse> {
+    const response = await this.request<{ minor_guardian: MinorGuardianResponse }>(
+      "/v1/users/me/minor-guardian/acknowledge",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({})
+      }
+    );
+    return response.minor_guardian;
   }
 
   async exportUserData(accessToken: string): Promise<UserDataExportResponse> {
