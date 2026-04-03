@@ -22,7 +22,7 @@
 6. 全科模考、报告导出与计划回写
 7. 学习行为分析、提醒与轻量实验能力
 8. 账号导出与删除
-9. Mobile 当前已落地：实例配置、安全会话存储、注册/登录、首页工作台、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、数据导出、删除账号、API/WS smoke、route-level vitest smoke，以及 iOS simulator / Android emulator-device Maestro smoke baseline 和 CI workflow
+9. Mobile 当前已落地：实例配置、安全会话存储、注册/登录、首页工作台、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心、提醒偏好、未成年人监护留痕、未成年人专门学习时长控制、数据导出、删除账号、API/WS smoke、route-level vitest smoke，以及 iOS simulator / Android emulator-device Maestro smoke baseline 和 CI workflow
 10. 共享基础层：`packages/shared-client` 复用 Web 侧 API 契约与校验逻辑
 
 以下能力已从代码中移除，不应再作为当前产品能力理解：

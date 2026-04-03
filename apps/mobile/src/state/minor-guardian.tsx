@@ -257,7 +257,7 @@ export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
               如你未满 18 周岁，请在监护人知情和同意下使用本产品，并合理安排学习时长、账号与付费行为。
             </Text>
             <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 19 }}>
-              当前已记录监护提示确认留痕，尚未提供亲子绑定或未成年人专门时长控制。
+              当前已记录监护提示确认留痕，并对未成年人启用更短提醒与连续学习上限控制；尚未提供亲子绑定。
             </Text>
             <Pressable
               onPress={() => void acknowledgeGuardianNotice()}
