@@ -121,8 +121,11 @@ vi.mock("react-native", () => {
       keyboardType: _keyboardType,
       autoCorrect: _autoCorrect,
       autoCapitalize: _autoCapitalize,
+      autoComplete: _autoComplete,
       multiline,
       numberOfLines: _numberOfLines,
+      secureTextEntry: _secureTextEntry,
+      textContentType: _textContentType,
       textAlignVertical: _textAlignVertical,
       ...props
     }: {
@@ -131,8 +134,11 @@ vi.mock("react-native", () => {
       keyboardType?: string;
       autoCorrect?: boolean;
       autoCapitalize?: string;
+      autoComplete?: string;
       multiline?: boolean;
       numberOfLines?: number;
+      secureTextEntry?: boolean;
+      textContentType?: string;
       textAlignVertical?: string;
       value?: string;
       style?: Record<string, unknown>;
