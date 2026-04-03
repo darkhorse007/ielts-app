@@ -22,6 +22,11 @@ import {
   scheduleReminderNotificationAsync,
   toNotificationPermissionLabel
 } from "../src/lib/notifications";
+import {
+  formatMinorGuardianAgeBandLabel,
+  useMinorGuardian,
+  type MinorGuardianAgeBand
+} from "../src/state/minor-guardian";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -114,6 +119,7 @@ const reminderNotificationHarnessEnabled = process.env.EXPO_PUBLIC_E2E_REMINDER_
 
 export default function AccountScreen() {
   const { instanceConfig, session, logout, runWithAuthorizedClient, syncReminderDevice } = useAppSession();
+  const { ready: minorGuardianReady, state: minorGuardianState, setAgeBand: setMinorGuardianAgeBand } = useMinorGuardian();
   const hydratingAccountRef = useRef(false);
   const [profile, setProfile] = useState<UserProfileResponse | null>(() =>
     session ? buildFallbackProfile(session.userId) : null
@@ -320,7 +326,35 @@ export default function AccountScreen() {
 
   const accountBusy = loading || hydratingProfile;
   const reminderBusy = loading || hydratingProfile || hydratingReminder || syncingNotifications;
+  const minorGuardianBusy = loading || !minorGuardianReady;
   const accountReady = Boolean(profile) && hasHydratedAccount && !hydratingProfile;
+  const guardianNoticeStatus =
+    minorGuardianState.ageBand === "under_18"
+      ? minorGuardianState.guardianNoticeAcceptedUserId === session?.userId
+        ? "已确认"
+        : "待确认"
+      : "-";
+
+  const updateMinorGuardianState = async (ageBand: MinorGuardianAgeBand): Promise<void> => {
+    setLoading(true);
+    try {
+      await setMinorGuardianAgeBand(ageBand, "account");
+      setStatusMessage(
+        ageBand === "under_18"
+          ? "已更新年龄状态，请完成监护提示确认"
+          : ageBand === "adult"
+            ? "已更新年龄状态：已满 18 周岁"
+            : "已清空年龄状态"
+      );
+      setError(null);
+    } catch (minorGuardianError) {
+      setError(
+        minorGuardianError instanceof Error ? minorGuardianError.message : "更新未成年人监护状态失败"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const saveReminderPreference = async (): Promise<void> => {
     setLoading(true);
@@ -770,6 +804,53 @@ export default function AccountScreen() {
           </Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>updated_at: {formatValue(profile?.updated_at)}</Text>
         </View>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>未成年人监护提示</Text>
+        <ButtonRow>
+          <StatusPill label={formatMinorGuardianAgeBandLabel(minorGuardianState.ageBand)} tone="accent" />
+          <StatusPill label={guardianNoticeStatus} tone={guardianNoticeStatus === "已确认" ? "success" : "neutral"} />
+        </ButtonRow>
+        <View style={{ gap: 6, marginTop: 10 }}>
+          <Text style={{ color: colors.textPrimary, fontSize: 14 }}>
+            minor_guardian_age_band: {formatMinorGuardianAgeBandLabel(minorGuardianState.ageBand)}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            minor_guardian_source: {formatValue(minorGuardianState.source)}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            minor_guardian_updated_at: {formatValue(minorGuardianState.updatedAt)}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            minor_guardian_notice: {guardianNoticeStatus}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+            minor_guardian_notice_accepted_at: {formatValue(minorGuardianState.guardianNoticeAcceptedAt)}
+          </Text>
+        </View>
+        <ButtonRow>
+          <PrimaryButton
+            label="切为已满 18 周岁"
+            onPress={() => void updateMinorGuardianState("adult")}
+            disabled={minorGuardianBusy}
+            testID="account.minorGuardianAdult"
+          />
+          <SecondaryButton
+            label="切为未满 18 周岁"
+            onPress={() => void updateMinorGuardianState("under_18")}
+            disabled={minorGuardianBusy}
+            testID="account.minorGuardianMinor"
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <SecondaryButton
+            label="重置年龄状态"
+            onPress={() => void updateMinorGuardianState("unknown")}
+            disabled={minorGuardianBusy}
+            testID="account.minorGuardianReset"
+          />
+        </ButtonRow>
       </InfoCard>
 
       <InfoCard>

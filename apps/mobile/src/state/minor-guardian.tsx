@@ -81,8 +81,8 @@ export const MinorGuardianProvider = ({ children }: PropsWithChildren) => {
       ageBand,
       source,
       updatedAt: nowIso(),
-      guardianNoticeAcceptedAt: ageBand === "under_18" ? undefined : state.guardianNoticeAcceptedAt,
-      guardianNoticeAcceptedUserId: ageBand === "under_18" ? undefined : state.guardianNoticeAcceptedUserId
+      guardianNoticeAcceptedAt: undefined,
+      guardianNoticeAcceptedUserId: undefined
     };
 
     setState(nextState);

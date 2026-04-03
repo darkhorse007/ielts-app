@@ -9,6 +9,7 @@ import { buildScopedStorageKey } from "../src/lib/storage";
 import { buildCurrentRemoteReminderDeviceRegistrationAsync } from "../src/lib/notifications";
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
+import { MinorGuardianProvider } from "../src/state/minor-guardian";
 import AccountScreen from "../app/account";
 import DiagnosticScreen from "../app/diagnostic";
 import HomeScreen from "../app/home";
@@ -46,6 +47,7 @@ const mockedUseAppSession = vi.mocked(useAppSession);
 const mockedSecureStore = SecureStore as typeof SecureStore & {
   __resetMockStorage: () => void;
   __setMockItem: (key: string, value: string) => void;
+  __getMockItem: (key: string) => string | null;
 };
 const mockedNotifications = Notifications as typeof Notifications & {
   __resetMockNotifications: () => void;
@@ -225,6 +227,13 @@ const createSessionContext = (overrides?: {
 };
 
 describe("mobile route smoke", () => {
+  const renderAccountScreen = () =>
+    render(
+      <MinorGuardianProvider>
+        <AccountScreen />
+      </MinorGuardianProvider>
+    );
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockedSecureStore.__resetMockStorage();
@@ -462,7 +471,7 @@ describe("mobile route smoke", () => {
   test("account screen loads profile and export/delete controls", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
 
-    render(<AccountScreen />);
+    renderAccountScreen();
 
     expect(screen.getByText("账户中心已进入移动端")).toBeTruthy();
     expect(screen.getByText((content) => content.includes("user-1"))).toBeTruthy();
@@ -479,7 +488,7 @@ describe("mobile route smoke", () => {
   test("account screen can schedule local reminder notification", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
 
-    render(<AccountScreen />);
+    renderAccountScreen();
 
     await waitFor(() => {
       expect(screen.getByText((content) => content.includes("notification_permission: 已授权"))).toBeTruthy();
@@ -511,7 +520,7 @@ describe("mobile route smoke", () => {
       data: "native-token-abcdef1234567890"
     });
 
-    render(<AccountScreen />);
+    renderAccountScreen();
 
     await waitFor(() => {
       expect(screen.getByText((content) => content.includes("remote_installation_id: installation-ios-1"))).toBeTruthy();
@@ -567,7 +576,7 @@ describe("mobile route smoke", () => {
       })
     );
 
-    render(<AccountScreen />);
+    renderAccountScreen();
 
     await waitFor(() => {
       expect(screen.getByText((content) => content.includes("remote_last_delivery_status: failed"))).toBeTruthy();
@@ -577,6 +586,42 @@ describe("mobile route smoke", () => {
       screen.getByText((content) => content.includes("remote_last_delivery_failure_message: APNS: 429: TooManyRequests"))
     ).toBeTruthy();
     expect(screen.getByText((content) => content.includes("remote_last_delivery_retry_count: 2"))).toBeTruthy();
+  });
+
+  test("account screen can update minor guardian state for existing users", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    renderAccountScreen();
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("minor_guardian_age_band: 未设置"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("account.minorGuardianMinor"));
+
+    await waitFor(() => {
+      expect(screen.getByText("未成年人使用提示")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("minor_guardian_notice: 待确认"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("minorGuardian.acknowledge"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("未成年人使用提示")).toBeNull();
+    });
+    expect(screen.getByText((content) => content.includes("minor_guardian_notice: 已确认"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("account.minorGuardianAdult"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("minor_guardian_age_band: 已满 18 周岁"))).toBeTruthy();
+    });
+    expect(
+      JSON.parse(String(mockedSecureStore.__getMockItem(buildScopedStorageKey("minor_guardian"))))
+    ).toMatchObject({
+      ageBand: "adult",
+      source: "account"
+    });
   });
 
   test("speaking screen renders permission gate and live controls", async () => {
