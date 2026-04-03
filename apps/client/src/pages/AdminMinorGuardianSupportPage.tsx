@@ -13,6 +13,7 @@ import { TokenStorage } from "../lib/token-storage";
 type AdminMinorGuardianSupportPageProps = {
   apiClient: Pick<
     ApiClient,
+    | "bulkUpdateInternalMinorGuardianSupportRequests"
     | "listInternalMinorGuardianSupportRequests"
     | "updateInternalMinorGuardianSupportRequest"
     | "exportInternalMinorGuardianSupportRequests"
@@ -200,9 +201,13 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
   const [slaSummary, setSlaSummary] = useState<MinorGuardianSupportRequestSlaSummary>(EMPTY_SLA_SUMMARY);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
   const [handledBy, setHandledBy] = useState("");
   const [operatorNote, setOperatorNote] = useState("");
   const [nextStatus, setNextStatus] = useState<MinorGuardianSupportRequestStatus>("contacted");
+  const [bulkHandledBy, setBulkHandledBy] = useState(currentOperatorId);
+  const [bulkOperatorNote, setBulkOperatorNote] = useState("");
+  const [bulkNextStatus, setBulkNextStatus] = useState<"keep" | MinorGuardianSupportRequestStatus>("keep");
   const [statusMessage, setStatusMessage] = useState("未加载工单");
   const [message, setMessage] = useState("未处理");
   const [exportMessage, setExportMessage] = useState("未导出");
@@ -215,6 +220,10 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     () => requests.find((item) => item.request_id === selectedRequestId) ?? null,
     [requests, selectedRequestId]
   );
+  const selectedRequests = useMemo(() => {
+    const selectedIds = new Set(selectedRequestIds);
+    return requests.filter((item) => selectedIds.has(item.request_id));
+  }, [requests, selectedRequestIds]);
 
   const activeHandledByFilter = assignmentFilter === "mine"
     ? currentOperatorId
@@ -337,6 +346,14 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setNextStatus(getDefaultNextStatus(selectedRequest.status));
   }, [selectedRequest, currentOperatorId]);
 
+  useEffect(() => {
+    setSelectedRequestIds((current) => current.filter((requestId) => requests.some((item) => item.request_id === requestId)));
+  }, [requests]);
+
+  useEffect(() => {
+    setBulkHandledBy((current) => (current.trim().length > 0 ? current : currentOperatorId));
+  }, [currentOperatorId]);
+
   const submitUpdate = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
     if (!accessToken) {
@@ -374,6 +391,49 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       });
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "更新工单失败");
+    }
+  };
+
+  const submitBulkUpdate = async (): Promise<void> => {
+    const accessToken = tokenStorage.getAccessToken();
+    if (!accessToken) {
+      setError("会话已失效，请重新登录");
+      return;
+    }
+    if (selectedRequestIds.length === 0) {
+      setError("请先勾选至少一条工单");
+      return;
+    }
+    if (bulkHandledBy.trim().length === 0) {
+      setError("请填写批量处理人");
+      return;
+    }
+    if (
+      bulkNextStatus !== "keep" &&
+      selectedRequests.some((request) => !canTransitionToStatus(request.status, bulkNextStatus))
+    ) {
+      setError("所选工单无法批量更新到目标状态");
+      return;
+    }
+
+    try {
+      const updated = await apiClient.bulkUpdateInternalMinorGuardianSupportRequests(accessToken, {
+        request_ids: selectedRequestIds,
+        status: bulkNextStatus === "keep" ? undefined : bulkNextStatus,
+        handled_by: bulkHandledBy.trim(),
+        operator_note: bulkOperatorNote.trim() || undefined
+      });
+      setMessage(`已批量更新 ${updated.updated_count} 条工单`);
+      setError(null);
+      setSelectedRequestIds([]);
+      setBulkNextStatus("keep");
+      setBulkOperatorNote("");
+      await loadRequests({
+        targetPage: currentPage,
+        preferredRequestId: selectedRequestId
+      });
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "批量更新工单失败");
     }
   };
 
@@ -478,6 +538,34 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setOperatorNote(buildCloseTemplate(selectedRequest));
     setError(null);
   };
+
+  const toggleRequestSelection = (requestId: string): void => {
+    setSelectedRequestIds((current) =>
+      current.includes(requestId) ? current.filter((item) => item !== requestId) : [...current, requestId]
+    );
+  };
+
+  const toggleSelectAllCurrentPage = (): void => {
+    if (requests.length === 0) {
+      return;
+    }
+
+    setSelectedRequestIds((current) => {
+      const requestIds = requests.map((request) => request.request_id);
+      const allSelected = requestIds.every((requestId) => current.includes(requestId));
+      if (allSelected) {
+        return current.filter((requestId) => !requestIds.includes(requestId));
+      }
+
+      return Array.from(new Set([...current, ...requestIds]));
+    });
+  };
+
+  const clearSelectedRequests = (): void => {
+    setSelectedRequestIds([]);
+  };
+
+  const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
 
   return (
     <section>
@@ -596,10 +684,75 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <button type="button" onClick={() => void exportCurrentFilter()}>
         导出当前筛选 CSV
       </button>
+
+      <h3>批量处理</h3>
+      <p>已勾选: {selectedRequestIds.length} 条</p>
+      <p>已选 request_id: {selectedRequestIds.length > 0 ? selectedRequestIds.join(", ") : "-"}</p>
+      <button type="button" onClick={toggleSelectAllCurrentPage} disabled={requests.length === 0}>
+        {allCurrentPageSelected ? "取消全选当前页" : "全选当前页"}
+      </button>
+      <button type="button" onClick={clearSelectedRequests} disabled={selectedRequestIds.length === 0}>
+        清空勾选
+      </button>
+
+      <label htmlFor="guardian-support-bulk-handled-by">批量处理人</label>
+      <input
+        id="guardian-support-bulk-handled-by"
+        value={bulkHandledBy}
+        onChange={(event) => setBulkHandledBy(event.target.value)}
+        placeholder="默认回填当前登录用户 ID"
+      />
+      <button type="button" onClick={() => setBulkHandledBy(currentOperatorId)}>
+        批量使用我的账号 ID
+      </button>
+
+      <label htmlFor="guardian-support-bulk-next-status">批量状态</label>
+      <select
+        id="guardian-support-bulk-next-status"
+        value={bulkNextStatus}
+        onChange={(event) => setBulkNextStatus(event.target.value as "keep" | MinorGuardianSupportRequestStatus)}
+      >
+        <option value="keep">保持当前状态</option>
+        {STATUS_OPTIONS.map((status) => (
+          <option
+            key={status}
+            value={status}
+            disabled={
+              selectedRequests.length > 0 &&
+              selectedRequests.some((request) => !canTransitionToStatus(request.status, status))
+            }
+          >
+            {STATUS_LABELS[status]}
+          </option>
+        ))}
+      </select>
+
+      <label htmlFor="guardian-support-bulk-operator-note">批量备注</label>
+      <textarea
+        id="guardian-support-bulk-operator-note"
+        rows={3}
+        value={bulkOperatorNote}
+        onChange={(event) => setBulkOperatorNote(event.target.value)}
+        placeholder="用于统一记录批量跟进结果或备注"
+      />
+
+      <button type="button" onClick={() => void submitBulkUpdate()} disabled={selectedRequestIds.length === 0}>
+        保存批量处理
+      </button>
+
       {requests.length === 0 ? <p>当前筛选下暂无工单。</p> : null}
       <ul>
         {requests.map((request) => (
           <li key={request.request_id}>
+            <label>
+              <input
+                type="checkbox"
+                aria-label={`选择工单 ${request.request_id}`}
+                checked={selectedRequestIds.includes(request.request_id)}
+                onChange={() => toggleRequestSelection(request.request_id)}
+              />
+              勾选
+            </label>
             <button type="button" onClick={() => setSelectedRequestId(request.request_id)}>
               {request.request_id === selectedRequestId ? "[当前]" : "[查看]"} {TOPIC_LABELS[request.topic]} /{" "}
               {STATUS_LABELS[request.status]} / {SLA_LABELS[request.sla_state]} / 等待 {request.queue_wait_minutes} 分钟 /{" "}

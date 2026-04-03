@@ -200,6 +200,7 @@ describe("account minor guardian routes", () => {
       }
     });
     expect(secondSupportRequest.statusCode).toBe(201);
+    const secondRequestId = secondSupportRequest.json().request.request_id as string;
 
     const firstUserRecord = context.store.usersById.get(firstUser.userId);
     expect(firstUserRecord?.minorGuardianSupportRequests).toBeDefined();
@@ -433,6 +434,56 @@ describe("account minor guardian routes", () => {
     expect(queriedByContact.json().items[0]).toMatchObject({
       topic: "account_review",
       contact_value: "guardian2@example.com"
+    });
+
+    const bulkClosed = await context.app.inject({
+      method: "PATCH",
+      url: "/internal/minor-guardian/support-requests/bulk",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      },
+      payload: {
+        request_ids: [firstRequestId, secondRequestId],
+        status: "closed",
+        handled_by: "ops-reviewer-2",
+        operator_note: "已统一完成监护人回访并关闭工单。"
+      }
+    });
+    expect(bulkClosed.statusCode).toBe(200);
+    expect(bulkClosed.json()).toMatchObject({
+      updated_count: 2,
+      request_ids: [firstRequestId, secondRequestId]
+    });
+    expect(bulkClosed.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          request_id: firstRequestId,
+          status: "closed",
+          handled_by: "ops-reviewer-2",
+          operator_note: "已统一完成监护人回访并关闭工单。"
+        }),
+        expect.objectContaining({
+          request_id: secondRequestId,
+          status: "closed",
+          handled_by: "ops-reviewer-2",
+          minor_guardian_age_band: "unknown"
+        })
+      ])
+    );
+
+    const closedList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?status=closed",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(closedList.statusCode).toBe(200);
+    expect(closedList.json().total_count).toBe(2);
+    expect(closedList.json().status_summary).toMatchObject({
+      pending_review: 0,
+      contacted: 0,
+      closed: 2
     });
 
     const invalidPage = await context.app.inject({

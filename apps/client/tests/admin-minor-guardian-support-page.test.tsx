@@ -114,6 +114,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest,
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -213,6 +214,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest,
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -309,6 +311,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest: vi.fn(),
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -438,6 +441,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest: vi.fn(),
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -468,6 +472,109 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-breached/)).toBeInTheDocument();
       expect(screen.getByText("sla_breached: yes")).toBeInTheDocument();
+    });
+  });
+
+  test("supports bulk assignment and status updates for selected requests", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi
+      .fn()
+      .mockResolvedValueOnce(
+        buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-1",
+              user_id: "user-1",
+              user_email: "guardian1@example.com"
+            }),
+            buildRequest({
+              request_id: "guardian-request-2",
+              user_id: "user-2",
+              user_email: "guardian2@example.com",
+              status: "contacted",
+              handled_by: "ops-user-1"
+            })
+          ]
+        })
+      )
+      .mockResolvedValueOnce(
+        buildListResponse({
+          total_count: 0,
+          items: []
+        })
+      );
+    const bulkUpdateInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue({
+      updated_count: 2,
+      request_ids: ["guardian-request-1", "guardian-request-2"],
+      items: [
+        buildRequest({
+          request_id: "guardian-request-1",
+          user_id: "user-1",
+          user_email: "guardian1@example.com",
+          status: "closed",
+          handled_by: "ops-reviewer-7",
+          operator_note: "批量完成监护人回访。",
+          resolved_at: "2026-04-03T12:30:00.000Z"
+        }),
+        buildRequest({
+          request_id: "guardian-request-2",
+          user_id: "user-2",
+          user_email: "guardian2@example.com",
+          status: "closed",
+          handled_by: "ops-reviewer-7",
+          operator_note: "批量完成监护人回访。",
+          resolved_at: "2026-04-03T12:30:00.000Z"
+        })
+      ]
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests,
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+      expect(screen.getByText(/guardian2@example.com/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("选择工单 guardian-request-1"));
+    fireEvent.click(screen.getByLabelText("选择工单 guardian-request-2"));
+    fireEvent.change(screen.getByLabelText("批量处理人"), {
+      target: {
+        value: "ops-reviewer-7"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("批量状态"), {
+      target: {
+        value: "closed"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("批量备注"), {
+      target: {
+        value: "批量完成监护人回访。"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存批量处理" }));
+
+    await waitFor(() => {
+      expect(bulkUpdateInternalMinorGuardianSupportRequests).toHaveBeenCalledWith("ops-access-token", {
+        request_ids: ["guardian-request-1", "guardian-request-2"],
+        status: "closed",
+        handled_by: "ops-reviewer-7",
+        operator_note: "批量完成监护人回访。"
+      });
+      expect(screen.getByText(/已批量更新 2 条工单/)).toBeInTheDocument();
+      expect(screen.getByText("当前筛选下暂无工单。")).toBeInTheDocument();
+      expect(screen.getByText("已勾选: 0 条")).toBeInTheDocument();
     });
   });
 
@@ -513,6 +620,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest: vi.fn(),
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -628,6 +736,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest,
           exportInternalMinorGuardianSupportRequests: vi.fn()
@@ -712,6 +821,7 @@ describe("admin minor guardian support page", () => {
     render(
       <AdminMinorGuardianSupportPage
         apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
           listInternalMinorGuardianSupportRequests,
           updateInternalMinorGuardianSupportRequest: vi.fn(),
           exportInternalMinorGuardianSupportRequests

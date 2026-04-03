@@ -150,6 +150,12 @@ const internalMinorGuardianSupportRequestUpdateSchema = z.object({
   handled_by: z.string().trim().min(1).max(120),
   operator_note: z.string().trim().min(1).max(600).optional()
 });
+const internalMinorGuardianSupportRequestBulkUpdateSchema = z.object({
+  request_ids: z.array(z.string().trim().min(1).max(120)).min(1).max(50),
+  status: z.enum(["pending_review", "contacted", "closed"]).optional(),
+  handled_by: z.string().trim().min(1).max(120),
+  operator_note: z.string().trim().min(1).max(600).optional()
+});
 
 const buildMinorGuardianSupportRequestStatusSummary = (
   items: Array<{
@@ -832,6 +838,76 @@ export const buildServer = (options?: BuildServerOptions): {
         .send(serializeInternalMinorGuardianSupportRequestsCsv(filteredItems, evaluatedAtMs));
     });
 
+    app.patch(
+      "/internal/minor-guardian/support-requests/bulk",
+      internalOpsPreHandler,
+      async (request, reply) => {
+      const parsed = internalMinorGuardianSupportRequestBulkUpdateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400).send({
+          code: "VALIDATION_ERROR",
+          message: "minor guardian support bulk update payload is invalid"
+        });
+        return;
+      }
+
+      try {
+        const updated = accountService.bulkUpdateMinorGuardianSupportRequests({
+          requestIds: parsed.data.request_ids,
+          status: parsed.data.status,
+          handledBy: parsed.data.handled_by,
+          operatorNote: parsed.data.operator_note
+        });
+        try {
+          await authAccountRepository.flush();
+        } catch {
+          reply.code(503).send({
+            code: "AUTH_ACCOUNT_STORAGE_UNAVAILABLE",
+            message: "Auth/account storage is unavailable"
+          });
+          return;
+        }
+
+        const evaluatedAtMs = Date.now();
+        reply.code(200).send({
+          updated_count: updated.updatedCount,
+          request_ids: updated.items.map((item) => item.request.id),
+          items: updated.items.map((item) => {
+            const user = authService.getUserById(item.userId);
+            return serializeInternalMinorGuardianSupportRequest(
+              {
+                userId: item.userId,
+                email: user.email,
+                phone: user.phone,
+                displayName: user.displayName,
+                userStatus: user.status,
+                minorGuardianAgeBand: user.minorGuardian?.ageBand ?? "unknown",
+                request: item.request
+              },
+              evaluatedAtMs
+            );
+          })
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND") {
+          reply.code(404).send({
+            code: "MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND",
+            message: "Minor guardian support request not found"
+          });
+          return;
+        }
+        if (error instanceof Error && error.message === "MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID") {
+          reply.code(409).send({
+            code: "MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID",
+            message: "Minor guardian support request status transition is invalid"
+          });
+          return;
+        }
+        throw error;
+      }
+      }
+    );
+
     app.patch<{ Params: { request_id: string } }>(
       "/internal/minor-guardian/support-requests/:request_id",
       internalOpsPreHandler,
@@ -869,7 +945,7 @@ export const buildServer = (options?: BuildServerOptions): {
             phone: user.phone,
             displayName: user.displayName,
             userStatus: user.status,
-            minorGuardianAgeBand: user.minorGuardian.ageBand,
+            minorGuardianAgeBand: user.minorGuardian?.ageBand ?? "unknown",
             request: updated.request
           })
         });

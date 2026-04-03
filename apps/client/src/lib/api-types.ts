@@ -220,6 +220,19 @@ export type UpdateInternalMinorGuardianSupportRequestPayload = {
   operator_note?: string;
 };
 
+export type BulkUpdateInternalMinorGuardianSupportRequestPayload = {
+  request_ids: string[];
+  status?: MinorGuardianSupportRequestStatus;
+  handled_by: string;
+  operator_note?: string;
+};
+
+export type InternalMinorGuardianSupportRequestBulkUpdateResponse = {
+  updated_count: number;
+  request_ids: string[];
+  items: InternalMinorGuardianSupportRequestResponse[];
+};
+
 export type SubmitMinorGuardianSupportRequestPayload = {
   topic: MinorGuardianSupportRequestTopic;
   contact_channel: MinorGuardianSupportContactChannel;

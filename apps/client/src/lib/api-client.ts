@@ -4,10 +4,12 @@ import type {
   AnalyticsExperimentBoardResponse,
   AnalyticsExperimentResponse,
   AnalyticsSummaryResponse,
+  BulkUpdateInternalMinorGuardianSupportRequestPayload,
   DeleteAccountResponse,
   DiagnosticAnswerResponse,
   DiagnosticCompletionResponse,
   DiagnosticQuestionsResponse,
+  InternalMinorGuardianSupportRequestBulkUpdateResponse,
   InternalMinorGuardianSupportRequestListResponse,
   InternalMinorGuardianSupportRequestResponse,
   LoginPayload,
@@ -584,6 +586,22 @@ export class ApiClient {
       }
     );
     return response.request;
+  }
+
+  async bulkUpdateInternalMinorGuardianSupportRequests(
+    accessToken: string,
+    payload: BulkUpdateInternalMinorGuardianSupportRequestPayload
+  ): Promise<InternalMinorGuardianSupportRequestBulkUpdateResponse> {
+    return this.request<InternalMinorGuardianSupportRequestBulkUpdateResponse>(
+      "/internal/minor-guardian/support-requests/bulk",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
   }
 
   async exportUserData(accessToken: string): Promise<UserDataExportResponse> {

@@ -12,7 +12,8 @@ import type {
   MinorGuardianSupportContactChannel,
   MinorGuardianSupportRequest,
   MinorGuardianSupportRequestStatus,
-  MinorGuardianSupportTopic
+  MinorGuardianSupportTopic,
+  User
 } from "./types.js";
 
 const defaultMinorGuardianRecord = (): MinorGuardianRecord => ({
@@ -97,6 +98,91 @@ const matchesMinorGuardianSupportRequestHandledBy = (
   }
 
   return normalizeSupportRequestHandledBy(request.handledBy) === normalizedHandledBy;
+};
+
+type MinorGuardianSupportRequestUpdateResult = {
+  userId: string;
+  request: MinorGuardianSupportRequest;
+  previousStatus: MinorGuardianSupportRequestStatus;
+};
+
+type PreparedMinorGuardianSupportRequestUpdate = {
+  user: User;
+  requestIndex: number;
+  previousStatus: MinorGuardianSupportRequestStatus;
+  nextRequest: MinorGuardianSupportRequest;
+};
+
+const prepareMinorGuardianSupportRequestUpdate = (
+  store: InMemoryStore,
+  input: {
+    requestId: string;
+    status?: MinorGuardianSupportRequestStatus;
+    handledBy: string;
+    operatorNote?: string;
+  },
+  timestamp = nowIso()
+): PreparedMinorGuardianSupportRequestUpdate => {
+  for (const user of store.usersById.values()) {
+    const requests = user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests();
+    const requestIndex = requests.findIndex((item) => item.id === input.requestId);
+    if (requestIndex < 0) {
+      continue;
+    }
+
+    const current = requests[requestIndex];
+    const nextStatus = input.status ?? current.status;
+    if (!canTransitionMinorGuardianSupportRequestStatus(current.status, nextStatus)) {
+      throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID");
+    }
+
+    return {
+      user,
+      requestIndex,
+      previousStatus: current.status,
+      nextRequest: {
+        ...current,
+        status: nextStatus,
+        updatedAt: timestamp,
+        resolvedAt: nextStatus === "closed" ? current.resolvedAt ?? timestamp : undefined,
+        handledBy: input.handledBy,
+        operatorNote: input.operatorNote
+      }
+    };
+  }
+
+  throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND");
+};
+
+const commitMinorGuardianSupportRequestUpdate = (
+  store: InMemoryStore,
+  prepared: PreparedMinorGuardianSupportRequestUpdate
+): MinorGuardianSupportRequestUpdateResult => {
+  const requests = prepared.user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests();
+  prepared.user.minorGuardianSupportRequests = requests.map((item, index) =>
+    index === prepared.requestIndex ? prepared.nextRequest : item
+  );
+  prepared.user.updatedAt = prepared.nextRequest.updatedAt;
+  store.usersById.set(prepared.user.id, prepared.user);
+
+  appendAudit(store, "minor_guardian_support_request_updated", {
+    userId: prepared.user.id,
+    metadata: {
+      requestId: prepared.nextRequest.id,
+      previousStatus: prepared.previousStatus,
+      status: prepared.nextRequest.status,
+      handledBy: prepared.nextRequest.handledBy,
+      operatorNote: prepared.nextRequest.operatorNote,
+      resolvedAt: prepared.nextRequest.resolvedAt,
+      updatedAt: prepared.nextRequest.updatedAt
+    }
+  });
+
+  return {
+    userId: prepared.user.id,
+    request: prepared.nextRequest,
+    previousStatus: prepared.previousStatus
+  };
 };
 
 export class AccountService {
@@ -574,57 +660,40 @@ export class AccountService {
     status: MinorGuardianSupportRequestStatus;
     handledBy: string;
     operatorNote?: string;
+  }): MinorGuardianSupportRequestUpdateResult {
+    const prepared = prepareMinorGuardianSupportRequestUpdate(this.store, input);
+    return commitMinorGuardianSupportRequestUpdate(this.store, prepared);
+  }
+
+  bulkUpdateMinorGuardianSupportRequests(input: {
+    requestIds: string[];
+    status?: MinorGuardianSupportRequestStatus;
+    handledBy: string;
+    operatorNote?: string;
   }): {
-    userId: string;
-    request: MinorGuardianSupportRequest;
-    previousStatus: MinorGuardianSupportRequestStatus;
+    updatedCount: number;
+    items: MinorGuardianSupportRequestUpdateResult[];
   } {
-    for (const user of this.store.usersById.values()) {
-      const requests = user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests();
-      const requestIndex = requests.findIndex((item) => item.id === input.requestId);
-      if (requestIndex < 0) {
-        continue;
-      }
+    const uniqueRequestIds = [...new Set(input.requestIds)];
+    const batchTimestamp = nowIso();
+    const preparedUpdates = uniqueRequestIds.map((requestId) =>
+      prepareMinorGuardianSupportRequestUpdate(
+        this.store,
+        {
+          requestId,
+          status: input.status,
+          handledBy: input.handledBy,
+          operatorNote: input.operatorNote
+        },
+        batchTimestamp
+      )
+    );
+    const items = preparedUpdates.map((prepared) => commitMinorGuardianSupportRequestUpdate(this.store, prepared));
 
-      const current = requests[requestIndex];
-      if (!canTransitionMinorGuardianSupportRequestStatus(current.status, input.status)) {
-        throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID");
-      }
-
-      const timestamp = nowIso();
-      const nextRequest: MinorGuardianSupportRequest = {
-        ...current,
-        status: input.status,
-        updatedAt: timestamp,
-        resolvedAt: input.status === "closed" ? current.resolvedAt ?? timestamp : undefined,
-        handledBy: input.handledBy,
-        operatorNote: input.operatorNote
-      };
-      user.minorGuardianSupportRequests = requests.map((item, index) => (index === requestIndex ? nextRequest : item));
-      user.updatedAt = timestamp;
-      this.store.usersById.set(user.id, user);
-
-      appendAudit(this.store, "minor_guardian_support_request_updated", {
-        userId: user.id,
-        metadata: {
-          requestId: current.id,
-          previousStatus: current.status,
-          status: nextRequest.status,
-          handledBy: nextRequest.handledBy,
-          operatorNote: nextRequest.operatorNote,
-          resolvedAt: nextRequest.resolvedAt,
-          updatedAt: timestamp
-        }
-      });
-
-      return {
-        userId: user.id,
-        request: nextRequest,
-        previousStatus: current.status
-      };
-    }
-
-    throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND");
+    return {
+      updatedCount: items.length,
+      items
+    };
   }
 
   exportUserData(userId: string): {
