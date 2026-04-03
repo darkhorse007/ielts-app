@@ -3,12 +3,18 @@ import { ApiRequestError, type ApiClient } from "../lib/api-client";
 import type {
   InternalMinorGuardianSupportRequestListResponse,
   InternalMinorGuardianSupportRequestResponse,
+  MinorGuardianSupportRequestStatusSummary,
   MinorGuardianSupportRequestStatus
 } from "../lib/api-types";
 import { TokenStorage } from "../lib/token-storage";
 
 type AdminMinorGuardianSupportPageProps = {
-  apiClient: Pick<ApiClient, "listInternalMinorGuardianSupportRequests" | "updateInternalMinorGuardianSupportRequest">;
+  apiClient: Pick<
+    ApiClient,
+    | "listInternalMinorGuardianSupportRequests"
+    | "updateInternalMinorGuardianSupportRequest"
+    | "exportInternalMinorGuardianSupportRequests"
+  >;
   tokenStorage: TokenStorage;
 };
 
@@ -21,6 +27,11 @@ type LoadRequestOptions = {
 type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
 
 const DEFAULT_PAGE_SIZE = 10;
+const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
+  pending_review: 0,
+  contacted: 0,
+  closed: 0
+};
 
 const STATUS_LABELS: Record<MinorGuardianSupportRequestStatus, string> = {
   pending_review: "待审核",
@@ -155,12 +166,16 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [orderedBy, setOrderedBy] = useState<InternalMinorGuardianSupportRequestListResponse["ordered_by"]>(
     "updated_at_desc"
   );
+  const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [handledBy, setHandledBy] = useState("");
   const [operatorNote, setOperatorNote] = useState("");
   const [nextStatus, setNextStatus] = useState<MinorGuardianSupportRequestStatus>("contacted");
   const [statusMessage, setStatusMessage] = useState("未加载工单");
   const [message, setMessage] = useState("未处理");
+  const [exportMessage, setExportMessage] = useState("未导出");
+  const [lastExportFilename, setLastExportFilename] = useState<string | null>(null);
+  const [lastExportContent, setLastExportContent] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const pageCount = totalCount === 0 ? 1 : Math.ceil(totalCount / pageSize);
@@ -177,6 +192,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setSelectedRequestId(null);
       setTotalCount(0);
       setHasNextPage(false);
+      setStatusSummary(EMPTY_STATUS_SUMMARY);
       setStatusMessage("工单加载失败");
       return;
     }
@@ -210,6 +226,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         setPageSize(response.page_size);
         setHasNextPage(response.has_next_page);
         setOrderedBy(response.ordered_by);
+        setStatusSummary(response.status_summary);
         setStatusMessage("当前页已空，正在回退上一页");
         setError(null);
         setCurrentPage(response.page - 1);
@@ -222,6 +239,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setPageSize(response.page_size);
       setHasNextPage(response.has_next_page);
       setOrderedBy(response.ordered_by);
+      setStatusSummary(response.status_summary);
       setCurrentPage(response.page);
       setStatusMessage(`已加载 ${response.total_count} 条工单，第 ${response.page}/${pageCountForResponse(response)} 页`);
       setError(null);
@@ -239,6 +257,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setHasNextPage(false);
       setPageSize(DEFAULT_PAGE_SIZE);
       setOrderedBy("updated_at_desc");
+      setStatusSummary(EMPTY_STATUS_SUMMARY);
       setStatusMessage("工单加载失败");
     }
   };
@@ -313,6 +332,28 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setSearchQuery("");
   };
 
+  const exportCurrentFilter = async (): Promise<void> => {
+    const accessToken = tokenStorage.getAccessToken();
+    if (!accessToken) {
+      setError("会话已失效，请重新登录");
+      return;
+    }
+
+    try {
+      const exported = await apiClient.exportInternalMinorGuardianSupportRequests({
+        accessToken,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        query: searchQuery.length > 0 ? searchQuery : undefined
+      });
+      setLastExportFilename(exported.filename);
+      setLastExportContent(exported.content);
+      setExportMessage(`已生成导出 ${exported.filename}`);
+      setError(null);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "导出监护人工单失败");
+    }
+  };
+
   const changeStatusFilter = (value: SupportRequestFilter): void => {
     setCurrentPage(1);
     setStatusFilter(value);
@@ -362,6 +403,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
 
       <p>加载状态: {statusMessage}</p>
       <p>消息: {message}</p>
+      <p>导出: {exportMessage}</p>
       <p>当前搜索: {searchQuery || "-"}</p>
 
       <label htmlFor="guardian-support-filter">工单状态筛选</label>
@@ -408,11 +450,18 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         分页: 第 {currentPage} / {pageCount} 页，每页 {pageSize} 条
       </p>
       <p>排序: {ORDER_LABELS[orderedBy]}</p>
+      <p>
+        队列摘要: 待审核 {statusSummary.pending_review} / 已联系 {statusSummary.contacted} / 已关闭{" "}
+        {statusSummary.closed}
+      </p>
       <button type="button" onClick={loadPreviousPage} disabled={currentPage <= 1}>
         上一页
       </button>
       <button type="button" onClick={loadNextPage} disabled={!hasNextPage}>
         下一页
+      </button>
+      <button type="button" onClick={() => void exportCurrentFilter()}>
+        导出当前筛选 CSV
       </button>
       {requests.length === 0 ? <p>当前筛选下暂无工单。</p> : null}
       <ul>
@@ -498,6 +547,14 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       ) : (
         <p>请选择一条工单查看详情。</p>
       )}
+
+      {lastExportFilename ? (
+        <section>
+          <h2>最近导出</h2>
+          <p>filename: {lastExportFilename}</p>
+          <textarea aria-label="最近导出内容" rows={8} readOnly value={lastExportContent} />
+        </section>
+      ) : null}
     </section>
   );
 };

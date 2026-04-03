@@ -515,6 +515,35 @@ export class ApiClient {
     );
   }
 
+  async exportInternalMinorGuardianSupportRequests(params: {
+    accessToken: string;
+    status?: "pending_review" | "contacted" | "closed";
+    query?: string;
+  }): Promise<{
+    filename: string;
+    content: string;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.status) {
+      query.set("status", params.status);
+    }
+    if (params?.query && params.query.trim().length > 0) {
+      query.set("q", params.query.trim());
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return this.requestText(
+      `/internal/minor-guardian/support-requests/export${suffix}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`
+        }
+      },
+      "minor-guardian-support-requests.csv"
+    );
+  }
+
   async updateInternalMinorGuardianSupportRequest(
     accessToken: string,
     requestId: string,

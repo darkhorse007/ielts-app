@@ -39,12 +39,18 @@ const buildListResponse = (input: {
   page?: number;
   page_size?: number;
   has_next_page?: boolean;
+  status_summary?: InternalMinorGuardianSupportRequestListResponse["status_summary"];
 }): InternalMinorGuardianSupportRequestListResponse => ({
   total_count: input.total_count ?? input.items.length,
   page: input.page ?? 1,
   page_size: input.page_size ?? 10,
   has_next_page: input.has_next_page ?? false,
   ordered_by: "updated_at_desc",
+  status_summary: input.status_summary ?? {
+    pending_review: input.items.filter((item) => item.status === "pending_review").length,
+    contacted: input.items.filter((item) => item.status === "contacted").length,
+    closed: input.items.filter((item) => item.status === "closed").length
+  },
   items: input.items
 });
 
@@ -99,7 +105,8 @@ describe("admin minor guardian support page", () => {
       <AdminMinorGuardianSupportPage
         apiClient={{
           listInternalMinorGuardianSupportRequests,
-          updateInternalMinorGuardianSupportRequest
+          updateInternalMinorGuardianSupportRequest,
+          exportInternalMinorGuardianSupportRequests: vi.fn()
         }}
         tokenStorage={tokenStorage}
       />
@@ -197,7 +204,8 @@ describe("admin minor guardian support page", () => {
       <AdminMinorGuardianSupportPage
         apiClient={{
           listInternalMinorGuardianSupportRequests,
-          updateInternalMinorGuardianSupportRequest
+          updateInternalMinorGuardianSupportRequest,
+          exportInternalMinorGuardianSupportRequests: vi.fn()
         }}
         tokenStorage={tokenStorage}
       />
@@ -280,7 +288,8 @@ describe("admin minor guardian support page", () => {
       <AdminMinorGuardianSupportPage
         apiClient={{
           listInternalMinorGuardianSupportRequests,
-          updateInternalMinorGuardianSupportRequest: vi.fn()
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
         }}
         tokenStorage={tokenStorage}
       />
@@ -288,6 +297,7 @@ describe("admin minor guardian support page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("分页: 第 1 / 2 页，每页 10 条")).toBeInTheDocument();
+      expect(screen.getByText("队列摘要: 待审核 10 / 已联系 0 / 已关闭 0")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
     });
 
@@ -393,7 +403,8 @@ describe("admin minor guardian support page", () => {
       <AdminMinorGuardianSupportPage
         apiClient={{
           listInternalMinorGuardianSupportRequests,
-          updateInternalMinorGuardianSupportRequest
+          updateInternalMinorGuardianSupportRequest,
+          exportInternalMinorGuardianSupportRequests: vi.fn()
         }}
         tokenStorage={tokenStorage}
       />
@@ -438,6 +449,66 @@ describe("admin minor guardian support page", () => {
       );
       expect(screen.getByText(/request_id: guardian-request-2/)).toBeInTheDocument();
       expect(screen.getByText(/user_email: guardian2@example.com/)).toBeInTheDocument();
+    });
+  });
+
+  test("exports the current filtered queue as csv", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue(
+      buildListResponse({
+        total_count: 2,
+        status_summary: {
+          pending_review: 2,
+          contacted: 1,
+          closed: 0
+        },
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1",
+            user_id: "user-1",
+            user_email: "guardian@example.com"
+          }),
+          buildRequest({
+            request_id: "guardian-request-2",
+            user_id: "user-2",
+            user_email: "guardian2@example.com",
+            topic: "data_deletion"
+          })
+        ]
+      })
+    );
+    const exportInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue({
+      filename: "minor-guardian-support-requests-2026-04-04.csv",
+      content: 'request_id,user_id\n"guardian-request-1","user-1"'
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("队列摘要: 待审核 2 / 已联系 1 / 已关闭 0")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出当前筛选 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        query: undefined
+      });
+      expect(screen.getByText(/已生成导出 minor-guardian-support-requests-2026-04-04.csv/)).toBeInTheDocument();
+      expect(screen.getByText("filename: minor-guardian-support-requests-2026-04-04.csv")).toBeInTheDocument();
+      expect(screen.getByLabelText("最近导出内容")).toHaveValue('request_id,user_id\n"guardian-request-1","user-1"');
     });
   });
 });

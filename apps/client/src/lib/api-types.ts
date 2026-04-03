@@ -185,12 +185,19 @@ export type InternalMinorGuardianSupportRequestResponse = {
   operator_note?: string;
 };
 
+export type MinorGuardianSupportRequestStatusSummary = {
+  pending_review: number;
+  contacted: number;
+  closed: number;
+};
+
 export type InternalMinorGuardianSupportRequestListResponse = {
   total_count: number;
   page: number;
   page_size: number;
   has_next_page: boolean;
   ordered_by: "updated_at_desc";
+  status_summary: MinorGuardianSupportRequestStatusSummary;
   items: InternalMinorGuardianSupportRequestResponse[];
 };
 

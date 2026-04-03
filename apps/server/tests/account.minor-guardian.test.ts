@@ -218,6 +218,11 @@ describe("account minor guardian routes", () => {
     });
     expect(internalList.statusCode).toBe(200);
     expect(internalList.json().total_count).toBe(2);
+    expect(internalList.json().status_summary).toMatchObject({
+      pending_review: 2,
+      contacted: 0,
+      closed: 0
+    });
     const listedFirstRequest = (internalList.json().items as Array<Record<string, unknown>>).find(
       (item) => item.request_id === firstRequestId
     );
@@ -260,6 +265,11 @@ describe("account minor guardian routes", () => {
     });
     expect(contactedList.statusCode).toBe(200);
     expect(contactedList.json().total_count).toBe(1);
+    expect(contactedList.json().status_summary).toMatchObject({
+      pending_review: 1,
+      contacted: 1,
+      closed: 0
+    });
     expect(contactedList.json().items[0]).toMatchObject({
       request_id: firstRequestId,
       status: "contacted"
@@ -278,7 +288,12 @@ describe("account minor guardian routes", () => {
       page: 1,
       page_size: 1,
       has_next_page: true,
-      ordered_by: "updated_at_desc"
+      ordered_by: "updated_at_desc",
+      status_summary: {
+        pending_review: 1,
+        contacted: 1,
+        closed: 0
+      }
     });
     expect(paginatedFirstPage.json().items[0]).toMatchObject({
       request_id: firstRequestId,
@@ -298,12 +313,31 @@ describe("account minor guardian routes", () => {
       page: 2,
       page_size: 1,
       has_next_page: false,
-      ordered_by: "updated_at_desc"
+      ordered_by: "updated_at_desc",
+      status_summary: {
+        pending_review: 1,
+        contacted: 1,
+        closed: 0
+      }
     });
     expect(paginatedSecondPage.json().items[0]).toMatchObject({
       topic: "account_review",
       contact_value: "guardian2@example.com"
     });
+
+    const exportedContacted = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests/export?status=contacted",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(exportedContacted.statusCode).toBe(200);
+    expect(exportedContacted.headers["content-type"]).toContain("text/csv");
+    expect(exportedContacted.headers["content-disposition"]).toContain("minor-guardian-support-requests-");
+    expect(exportedContacted.body).toContain("request_id,user_id,user_email");
+    expect(exportedContacted.body).toContain(firstRequestId);
+    expect(exportedContacted.body).not.toContain("guardian2@example.com");
 
     const queriedByContact = await context.app.inject({
       method: "GET",
@@ -314,6 +348,11 @@ describe("account minor guardian routes", () => {
     });
     expect(queriedByContact.statusCode).toBe(200);
     expect(queriedByContact.json().total_count).toBe(1);
+    expect(queriedByContact.json().status_summary).toMatchObject({
+      pending_review: 1,
+      contacted: 0,
+      closed: 0
+    });
     expect(queriedByContact.json().items[0]).toMatchObject({
       topic: "account_review",
       contact_value: "guardian2@example.com"

@@ -69,4 +69,35 @@ describe("S28 api client content-type defaults", () => {
       content: '{"user_id":"u-1"}'
     });
   });
+
+  test("supports guardian support csv export responses with filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('request_id,user_id\n"r-1","u-1"', {
+        status: 200,
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": 'attachment; filename="minor-guardian-support-requests-2026-04-04.csv"'
+        }
+      })
+    );
+
+    const client = new ApiClient(baseUrl, fetchMock as unknown as typeof fetch);
+    const result = await client.exportInternalMinorGuardianSupportRequests({
+      accessToken: "token",
+      status: "contacted",
+      query: "guardian@example.com"
+    });
+
+    expect(result).toEqual({
+      filename: "minor-guardian-support-requests-2026-04-04.csv",
+      content: 'request_id,user_id\n"r-1","u-1"'
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/internal/minor-guardian/support-requests/export?status=contacted&q=guardian%40example.com",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.any(Headers)
+      })
+    );
+  });
 });

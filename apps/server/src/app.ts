@@ -55,6 +55,8 @@ import {
   type ReminderPushRuntimeDiagnostics
 } from "./domain/reminder-delivery-service.js";
 import { createReminderPushProviderSenders } from "./domain/reminder-push-provider-senders.js";
+import { appendAudit } from "./domain/audit.js";
+import { nowIso } from "./domain/time.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -65,7 +67,7 @@ import { registerWritingRoutes } from "./routes/writing.js";
 import { registerMockExamRoutes } from "./routes/mock-exam.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerReminderRoutes } from "./routes/reminder.js";
-import { authenticate, authorizeSystemRoles } from "./middleware/auth.js";
+import { authenticate, authorizeSystemRoles, type AuthenticatedRequest } from "./middleware/auth.js";
 
 export type ReminderDispatchSchedulerStatusSnapshot = {
   enabled: boolean;
@@ -140,6 +142,101 @@ const internalMinorGuardianSupportRequestUpdateSchema = z.object({
   handled_by: z.string().trim().min(1).max(120),
   operator_note: z.string().trim().min(1).max(600).optional()
 });
+
+const buildMinorGuardianSupportRequestStatusSummary = (
+  items: Array<{
+    request: {
+      status: "pending_review" | "contacted" | "closed";
+    };
+  }>
+): {
+  pending_review: number;
+  contacted: number;
+  closed: number;
+} =>
+  items.reduce(
+    (summary, item) => {
+      summary[item.request.status] += 1;
+      return summary;
+    },
+    {
+      pending_review: 0,
+      contacted: 0,
+      closed: 0
+    }
+  );
+
+const escapeCsvCell = (value: unknown): string => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+
+const serializeInternalMinorGuardianSupportRequestsCsv = (
+  items: Array<{
+    userId: string;
+    email?: string;
+    phone?: string;
+    displayName?: string;
+    userStatus: string;
+    minorGuardianAgeBand: "unknown" | "under_18" | "adult";
+    request: {
+      id: string;
+      topic: "account_review" | "data_deletion" | "usage_concern" | "other";
+      contactChannel: "email" | "phone";
+      contactValue: string;
+      message: string;
+      status: "pending_review" | "contacted" | "closed";
+      createdAt: string;
+      updatedAt: string;
+      resolvedAt?: string;
+      handledBy?: string;
+      operatorNote?: string;
+    };
+  }>
+): string => {
+  const header = [
+    "request_id",
+    "user_id",
+    "user_email",
+    "user_phone",
+    "user_display_name",
+    "user_status",
+    "minor_guardian_age_band",
+    "topic",
+    "contact_channel",
+    "contact_value",
+    "message",
+    "status",
+    "created_at",
+    "updated_at",
+    "resolved_at",
+    "handled_by",
+    "operator_note"
+  ];
+
+  const rows = items.map((item) =>
+    [
+      item.request.id,
+      item.userId,
+      item.email,
+      item.phone,
+      item.displayName,
+      item.userStatus,
+      item.minorGuardianAgeBand,
+      item.request.topic,
+      item.request.contactChannel,
+      item.request.contactValue,
+      item.request.message,
+      item.request.status,
+      item.request.createdAt,
+      item.request.updatedAt,
+      item.request.resolvedAt,
+      item.request.handledBy,
+      item.request.operatorNote
+    ]
+      .map((value) => escapeCsvCell(value))
+      .join(",")
+  );
+
+  return [header.join(","), ...rows].join("\n");
+};
 
 const serializeReminderDispatchSchedulerStatus = (
   status?: ReminderDispatchSchedulerStatusSnapshot
@@ -532,13 +629,15 @@ export const buildServer = (options?: BuildServerOptions): {
 
       const page = parsed.data.page ?? 1;
       const pageSize = parsed.data.page_size ?? 10;
-      const items = accountService.listAllMinorGuardianSupportRequests({
-        status: parsed.data.status,
+      const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
         query: parsed.data.q
       });
-      const totalCount = items.length;
+      const filteredItems = parsed.data.status
+        ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
+        : allMatchingItems;
+      const totalCount = filteredItems.length;
       const pageStartIndex = (page - 1) * pageSize;
-      const paginatedItems = items
+      const paginatedItems = filteredItems
         .slice(pageStartIndex, pageStartIndex + pageSize)
         .map((item) => serializeInternalMinorGuardianSupportRequest(item));
 
@@ -548,8 +647,47 @@ export const buildServer = (options?: BuildServerOptions): {
         page_size: pageSize,
         has_next_page: pageStartIndex + pageSize < totalCount,
         ordered_by: "updated_at_desc",
+        status_summary: buildMinorGuardianSupportRequestStatusSummary(allMatchingItems),
         items: paginatedItems
       });
+    });
+
+    app.get("/internal/minor-guardian/support-requests/export", internalOpsPreHandler, async (request, reply) => {
+      const parsed = internalMinorGuardianSupportRequestListSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400).send({
+          code: "VALIDATION_ERROR",
+          message: "minor guardian support request query is invalid"
+        });
+        return;
+      }
+
+      const authRequest = request as AuthenticatedRequest;
+      const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
+        query: parsed.data.q
+      });
+      const filteredItems = parsed.data.status
+        ? allMatchingItems.filter((item) => item.request.status === parsed.data.status)
+        : allMatchingItems;
+      const timestamp = nowIso().replace(/[:.]/g, "-");
+      const filename = `minor-guardian-support-requests-${timestamp}.csv`;
+
+      appendAudit(store, "admin_report_exported", {
+        userId: authRequest.auth.userId,
+        sessionId: authRequest.auth.sessionId,
+        metadata: {
+          reportType: "minor_guardian_support_requests",
+          status: parsed.data.status ?? "all",
+          query: parsed.data.q ?? "",
+          exportedCount: filteredItems.length
+        }
+      });
+
+      reply
+        .code(200)
+        .type("text/csv; charset=utf-8")
+        .header("content-disposition", `attachment; filename="${filename}"`)
+        .send(serializeInternalMinorGuardianSupportRequestsCsv(filteredItems));
     });
 
     app.patch<{ Params: { request_id: string } }>(

@@ -141,6 +141,11 @@ describe("app route guards", () => {
             page_size: 10,
             has_next_page: false,
             ordered_by: "updated_at_desc",
+            status_summary: {
+              pending_review: 0,
+              contacted: 0,
+              closed: 0
+            },
             items: []
           });
         }
