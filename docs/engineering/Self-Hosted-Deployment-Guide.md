@@ -186,3 +186,36 @@ npm run smoke:postgres:e2e-local
 1. `GET /health`
 2. `GET /internal/reminders/scheduler-status`，仅当 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时开放
 3. `GET /internal/reminders/push-status`，仅当 `INTERNAL_DEBUG_ROUTES_ENABLED=true` 时开放，可用于排查 push provider 配置与设备接入情况
+
+## 12. 本地 Reminder Push 真链路冒烟
+当你已经拿到真实 APNs/FCM device token，且希望从空账号一路验证到 provider accepted dispatch，可直接运行：
+
+```bash
+REMINDER_PUSH_APNS_ENABLED=true \
+REMINDER_PUSH_APNS_BUNDLE_ID=com.example.ielts \
+REMINDER_PUSH_APNS_TEAM_ID=TEAM123 \
+REMINDER_PUSH_APNS_KEY_ID=KEY123 \
+REMINDER_PUSH_APNS_PRIVATE_KEY_FILE=/path/to/AuthKey_KEY123.p8 \
+REMINDER_PUSH_SMOKE_PLATFORM=ios \
+REMINDER_PUSH_SMOKE_ENVIRONMENT=preview \
+REMINDER_PUSH_SMOKE_PUSH_TOKEN=<real-apns-device-token> \
+npm run smoke:reminder-push:local
+```
+
+Android / FCM 示例：
+
+```bash
+REMINDER_PUSH_FCM_ENABLED=true \
+REMINDER_PUSH_FCM_SERVICE_ACCOUNT_JSON_FILE=/path/to/firebase-service-account.json \
+REMINDER_PUSH_SMOKE_PLATFORM=android \
+REMINDER_PUSH_SMOKE_PUSH_TOKEN=<real-fcm-device-token> \
+npm run smoke:reminder-push:local
+```
+
+说明：
+
+1. 脚本会在本地启动 server，并自动打开 `INTERNAL_DEBUG_ROUTES_ENABLED=true`
+2. 脚本会创建 smoke 账号、登记 reminder device、走完 onboarding/diagnostic 生成学习计划，再创建 reminder recommendation 并直接触发真实 dispatch
+3. server 侧只会验证 provider accepted send；通知是否真正到达设备、点击后是否恢复 deep link，仍需在真机上人工确认
+4. 若你已经有外部 running server，也可设置 `REMINDER_PUSH_SMOKE_START_SERVER=false` 与 `REMINDER_PUSH_SMOKE_API_BASE_URL=https://...`
+5. iOS 的 `REMINDER_PUSH_SMOKE_ENVIRONMENT` 必须与 token 对应的构建环境一致：`preview/development` 会走 APNs sandbox，`production` 会走 APNs production

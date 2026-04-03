@@ -87,7 +87,7 @@
 ## 8. 仓库落地建议
 1. 第一步已经完成：新增 `apps/mobile`，打通认证、实例配置、首页骨架、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户中心，以及 API/WS 连通性。
 2. 第二步已经开始：新增 `packages/shared-client`，先复用 API 契约、校验器和 API 客户端。
-3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，以及 EAS dev / preview / production build baseline，并已落地通知点击 deep link 恢复、提醒 click 回写、前台自动 device token 重同步，且将 reminder recommendation / local scheduling / remote device sync 纳入 account smoke，并新增 reminder notification smoke 覆盖桥接后的页面恢复。下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
+3. 第三步继续按质量与交付推进：当前已补上本地与 CI 的 iOS simulator / Android emulator-device 设备级 smoke 基线，以及 EAS dev / preview / production build baseline，并已落地通知点击 deep link 恢复、提醒 click 回写、前台自动 device token 重同步，且将 reminder recommendation / local scheduling / remote device sync 纳入 account smoke，并新增 reminder notification smoke 覆盖桥接后的页面恢复。同时已新增 `scripts/local-reminder-push-smoke.sh`，可在拿到真实 APNs / FCM token 后，从空账号一路验证到 provider accepted dispatch。下一步继续推进通知/原生能力深化，以及商店或内测分发准备。
 4. 在移动端稳定前，不改写现有 Web 客户端结构，也不引入 React Native Web 替代当前 Web 应用。
 
 ## 9. 官方参考
