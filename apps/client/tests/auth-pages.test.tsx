@@ -2,10 +2,12 @@ import { describe, expect, test, beforeEach, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RegisterPage } from "../src/pages/RegisterPage";
 import { LoginPage } from "../src/pages/LoginPage";
+import { clearCachedSessionProfile } from "../src/lib/session-profile-cache";
 import { TokenStorage } from "../src/lib/token-storage";
 
 beforeEach(() => {
   localStorage.clear();
+  clearCachedSessionProfile();
 });
 
 describe("S1 register/login pages", () => {
@@ -52,10 +54,18 @@ describe("S1 register/login pages", () => {
       user_id: "user-id",
       session_id: "session-id"
     });
+    const getProfile = vi.fn().mockResolvedValue({
+      id: "user-id",
+      email: "user@example.com",
+      system_roles: ["learner"],
+      status: "active",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
 
     render(
       <LoginPage
-        apiClient={{ login }}
+        apiClient={{ login, getProfile }}
         tokenStorage={tokenStorage}
         onLoginSuccess={onLoginSuccess}
       />
@@ -77,6 +87,7 @@ describe("S1 register/login pages", () => {
     await waitFor(() => {
       expect(login).toHaveBeenCalledTimes(1);
       expect(onLoginSuccess).toHaveBeenCalledTimes(1);
+      expect(getProfile).toHaveBeenCalledTimes(1);
     });
 
     expect(tokenStorage.getAccessToken()).toBe("access");

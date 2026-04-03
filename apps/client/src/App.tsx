@@ -1,8 +1,10 @@
-import { useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { ApiClient } from "./lib/api-client";
 import { resolveRuntimeConfig } from "./lib/runtime-config";
+import { loadCachedSessionProfile } from "./lib/session-profile-cache";
 import { TokenStorage } from "./lib/token-storage";
+import { hasInternalOpsAccess } from "./lib/system-roles";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { HomePage } from "./pages/HomePage";
@@ -16,6 +18,7 @@ import { ReadingPracticePage } from "./pages/ReadingPracticePage";
 import { SpeakingRealtimePage } from "./pages/SpeakingRealtimePage";
 import { WritingEvaluationPage } from "./pages/WritingEvaluationPage";
 import { MockExamPage } from "./pages/MockExamPage";
+import { AdminMinorGuardianSupportPage } from "./pages/AdminMinorGuardianSupportPage";
 
 const AuthenticatedRoute = ({ children }: { children: ReactElement }) => {
   const tokenStorage = useMemo(() => new TokenStorage(), []);
@@ -50,6 +53,59 @@ const RegisterRoute = ({ apiClient }: { apiClient: ApiClient }) => {
       }}
     />
   );
+};
+
+const InternalOpsRoute = ({
+  apiClient,
+  tokenStorage,
+  children
+}: {
+  apiClient: Pick<ApiClient, "getProfile">;
+  tokenStorage: TokenStorage;
+  children: ReactElement;
+}) => {
+  const [status, setStatus] = useState<"checking" | "allowed" | "denied">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifyAccess = async (): Promise<void> => {
+      const accessToken = tokenStorage.getAccessToken();
+      if (!accessToken) {
+        if (!cancelled) {
+          setStatus("denied");
+        }
+        return;
+      }
+
+      try {
+        const profile = await loadCachedSessionProfile(apiClient, accessToken);
+        if (!cancelled) {
+          setStatus(hasInternalOpsAccess(profile.system_roles) ? "allowed" : "denied");
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("denied");
+        }
+      }
+    };
+
+    void verifyAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, tokenStorage]);
+
+  if (status === "checking") {
+    return <p>正在校验内部权限...</p>;
+  }
+
+  if (status === "denied") {
+    return <Navigate to="/home" replace />;
+  }
+
+  return children;
 };
 
 const OnboardingRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
@@ -100,6 +156,14 @@ const MockExamRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; toke
   return <MockExamPage apiClient={apiClient} tokenStorage={tokenStorage} />;
 };
 
+const HomeRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
+  return <HomePage apiClient={apiClient} tokenStorage={tokenStorage} />;
+};
+
+const AdminRoute = ({ apiClient, tokenStorage }: { apiClient: ApiClient; tokenStorage: TokenStorage }) => {
+  return <AdminMinorGuardianSupportPage apiClient={apiClient} tokenStorage={tokenStorage} />;
+};
+
 export const App = () => {
   const runtimeConfig = useMemo(() => resolveRuntimeConfig(import.meta.env), []);
   const apiClient = useMemo(() => new ApiClient(runtimeConfig.apiBaseUrl), [runtimeConfig.apiBaseUrl]);
@@ -114,7 +178,7 @@ export const App = () => {
           path="/home"
           element={
             <AuthenticatedRoute>
-              <HomePage />
+              <HomeRoute apiClient={apiClient} tokenStorage={tokenStorage} />
             </AuthenticatedRoute>
           }
         />
@@ -206,7 +270,16 @@ export const App = () => {
         <Route path="/observability" element={<Navigate to="/home" replace />} />
         <Route path="/system-roles" element={<Navigate to="/home" replace />} />
         <Route path="/stability" element={<Navigate to="/home" replace />} />
-        <Route path="/admin" element={<Navigate to="/home" replace />} />
+        <Route
+          path="/admin"
+          element={
+            <AuthenticatedRoute>
+              <InternalOpsRoute apiClient={apiClient} tokenStorage={tokenStorage}>
+                <AdminRoute apiClient={apiClient} tokenStorage={tokenStorage} />
+              </InternalOpsRoute>
+            </AuthenticatedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

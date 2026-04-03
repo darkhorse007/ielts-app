@@ -88,6 +88,34 @@ describe("S7 personalized reminders", () => {
     };
   };
 
+  const registerAndLoginOpsOn = async (serverContext: TestContext) => {
+    const email = `ops-reviewer-${randomUUID()}@example.com`;
+    const register = await serverContext.app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        email,
+        password: "StrongPass123"
+      }
+    });
+    expect(register.statusCode).toBe(201);
+
+    const login = await serverContext.app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        identifier: email,
+        password: "StrongPass123",
+        device_id: "ops-console"
+      }
+    });
+    expect(login.statusCode).toBe(200);
+    return login.json() as {
+      user_id: string;
+      access_token: string;
+    };
+  };
+
   const registerAndLogin = async () => registerAndLoginOn(context);
 
   const seedActivePlan = (userId: string, serverContext: TestContext = context): { planId: string; taskId: string } => {
@@ -777,6 +805,7 @@ describe("S7 personalized reminders", () => {
     context = await build({
       enableInternalDebugRoutes: true
     });
+    const opsUser = await registerAndLoginOpsOn(context);
 
     const user = await registerAndLogin();
     seedActivePlan(user.user_id);
@@ -813,7 +842,10 @@ describe("S7 personalized reminders", () => {
 
     const firstSweep = await context.app.inject({
       method: "POST",
-      url: "/internal/reminders/dispatch-due?limit=5"
+      url: "/internal/reminders/dispatch-due?limit=5",
+      headers: {
+        authorization: `Bearer ${opsUser.access_token}`
+      }
     });
     expect(firstSweep.statusCode).toBe(200);
     expect(firstSweep.json()).toMatchObject({
@@ -839,7 +871,10 @@ describe("S7 personalized reminders", () => {
 
     const secondSweep = await context.app.inject({
       method: "POST",
-      url: "/internal/reminders/dispatch-due?limit=5"
+      url: "/internal/reminders/dispatch-due?limit=5",
+      headers: {
+        authorization: `Bearer ${opsUser.access_token}`
+      }
     });
     expect(secondSweep.statusCode).toBe(200);
     expect(secondSweep.json()).toMatchObject({

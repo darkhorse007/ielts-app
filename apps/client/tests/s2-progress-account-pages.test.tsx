@@ -87,6 +87,7 @@ describe("S2 progress/account pages", () => {
 
     const getProfile = vi.fn().mockResolvedValue({
       id: "u-1",
+      system_roles: ["learner"],
       status: "active",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -184,6 +185,7 @@ describe("S2 progress/account pages", () => {
 
     const getProfile = vi.fn().mockResolvedValue({
       id: "u-2",
+      system_roles: ["learner"],
       status: "active",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

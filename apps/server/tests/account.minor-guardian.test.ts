@@ -22,9 +22,7 @@ describe("account minor guardian routes", () => {
     await context.app.close();
   });
 
-  test("persists minor guardian profile state and acknowledgment through authenticated account routes", async () => {
-    const email = nextEmail();
-
+  const registerAndLogin = async (email = nextEmail()) => {
     const register = await context.app.inject({
       method: "POST",
       url: "/v1/auth/register",
@@ -34,7 +32,6 @@ describe("account minor guardian routes", () => {
       }
     });
     expect(register.statusCode).toBe(201);
-    const userId = register.json().user_id as string;
 
     const login = await context.app.inject({
       method: "POST",
@@ -46,7 +43,17 @@ describe("account minor guardian routes", () => {
       }
     });
     expect(login.statusCode).toBe(200);
-    const accessToken = login.json().access_token as string;
+
+    return {
+      email,
+      userId: register.json().user_id as string,
+      accessToken: login.json().access_token as string
+    };
+  };
+
+  test("persists minor guardian profile state and acknowledgment through authenticated account routes", async () => {
+    const user = await registerAndLogin();
+    const accessToken = user.accessToken;
 
     const initialProfile = await context.app.inject({
       method: "GET",
@@ -56,6 +63,7 @@ describe("account minor guardian routes", () => {
       }
     });
     expect(initialProfile.statusCode).toBe(200);
+    expect(initialProfile.json().system_roles).toEqual(["learner"]);
     expect(initialProfile.json().minor_guardian).toMatchObject({
       age_band: "unknown"
     });
@@ -122,7 +130,7 @@ describe("account minor guardian routes", () => {
     expect(acknowledged.statusCode).toBe(200);
     expect(acknowledged.json().minor_guardian).toMatchObject({
       age_band: "under_18",
-      guardian_notice_accepted_user_id: userId
+      guardian_notice_accepted_user_id: user.userId
     });
     expect(typeof acknowledged.json().minor_guardian.guardian_notice_accepted_at).toBe("string");
 
@@ -134,10 +142,205 @@ describe("account minor guardian routes", () => {
       }
     });
     expect(profile.statusCode).toBe(200);
+    expect(profile.json().system_roles).toEqual(["learner"]);
     expect(profile.json().minor_guardian).toMatchObject({
       age_band: "under_18",
       source: "account",
-      guardian_notice_accepted_user_id: userId
+      guardian_notice_accepted_user_id: user.userId
     });
+  });
+
+  test("lists and updates guardian support requests through internal debug routes", async () => {
+    const firstUser = await registerAndLogin();
+    const secondUser = await registerAndLogin();
+    const opsUser = await registerAndLogin(`ops-reviewer-${crypto.randomUUID()}@example.com`);
+
+    const firstMinorGuardian = await context.app.inject({
+      method: "PUT",
+      url: "/v1/users/me/minor-guardian",
+      headers: {
+        authorization: `Bearer ${firstUser.accessToken}`
+      },
+      payload: {
+        age_band: "under_18",
+        source: "account"
+      }
+    });
+    expect(firstMinorGuardian.statusCode).toBe(200);
+
+    const firstSupportRequest = await context.app.inject({
+      method: "POST",
+      url: "/v1/users/me/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${firstUser.accessToken}`
+      },
+      payload: {
+        topic: "usage_concern",
+        contact_channel: "phone",
+        contact_value: "13800000000",
+        message: "希望客服联系监护人确认未成年学习时长限制。"
+      }
+    });
+    expect(firstSupportRequest.statusCode).toBe(201);
+    const firstRequestId = firstSupportRequest.json().request.request_id as string;
+
+    const secondSupportRequest = await context.app.inject({
+      method: "POST",
+      url: "/v1/users/me/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${secondUser.accessToken}`
+      },
+      payload: {
+        topic: "account_review",
+        contact_channel: "email",
+        contact_value: "guardian2@example.com",
+        message: "需要了解账号审查和导出申请处理进度。"
+      }
+    });
+    expect(secondSupportRequest.statusCode).toBe(201);
+
+    const internalListForbidden = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${firstUser.accessToken}`
+      }
+    });
+    expect(internalListForbidden.statusCode).toBe(403);
+    expect(internalListForbidden.json().code).toBe("FORBIDDEN");
+
+    const internalList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(internalList.statusCode).toBe(200);
+    expect(internalList.json().total_count).toBe(2);
+    const listedFirstRequest = (internalList.json().items as Array<Record<string, unknown>>).find(
+      (item) => item.request_id === firstRequestId
+    );
+    expect(listedFirstRequest).toBeDefined();
+    expect(listedFirstRequest).toMatchObject({
+      user_id: firstUser.userId,
+      user_status: "active",
+      minor_guardian_age_band: "under_18",
+      status: "pending_review"
+    });
+    expect(listedFirstRequest).not.toHaveProperty("handled_by");
+
+    const updateToContacted = await context.app.inject({
+      method: "PATCH",
+      url: `/internal/minor-guardian/support-requests/${firstRequestId}`,
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      },
+      payload: {
+        status: "contacted",
+        handled_by: "ops-reviewer-1",
+        operator_note: "已通过电话联系监护人，等待回执。"
+      }
+    });
+    expect(updateToContacted.statusCode).toBe(200);
+    expect(updateToContacted.json().request).toMatchObject({
+      request_id: firstRequestId,
+      user_id: firstUser.userId,
+      status: "contacted",
+      handled_by: "ops-reviewer-1",
+      operator_note: "已通过电话联系监护人，等待回执。"
+    });
+
+    const contactedList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?status=contacted",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(contactedList.statusCode).toBe(200);
+    expect(contactedList.json().total_count).toBe(1);
+    expect(contactedList.json().items[0]).toMatchObject({
+      request_id: firstRequestId,
+      status: "contacted"
+    });
+
+    const paginatedFirstPage = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?page=1&page_size=1",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(paginatedFirstPage.statusCode).toBe(200);
+    expect(paginatedFirstPage.json()).toMatchObject({
+      total_count: 2,
+      page: 1,
+      page_size: 1,
+      has_next_page: true,
+      ordered_by: "updated_at_desc"
+    });
+    expect(paginatedFirstPage.json().items[0]).toMatchObject({
+      request_id: firstRequestId,
+      status: "contacted"
+    });
+
+    const paginatedSecondPage = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?page=2&page_size=1",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(paginatedSecondPage.statusCode).toBe(200);
+    expect(paginatedSecondPage.json()).toMatchObject({
+      total_count: 2,
+      page: 2,
+      page_size: 1,
+      has_next_page: false,
+      ordered_by: "updated_at_desc"
+    });
+    expect(paginatedSecondPage.json().items[0]).toMatchObject({
+      topic: "account_review",
+      contact_value: "guardian2@example.com"
+    });
+
+    const queriedByContact = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?q=guardian2@example.com",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(queriedByContact.statusCode).toBe(200);
+    expect(queriedByContact.json().total_count).toBe(1);
+    expect(queriedByContact.json().items[0]).toMatchObject({
+      topic: "account_review",
+      contact_value: "guardian2@example.com"
+    });
+
+    const invalidPage = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?page=0",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(invalidPage.statusCode).toBe(400);
+    expect(invalidPage.json().code).toBe("VALIDATION_ERROR");
+
+    const invalidRollback = await context.app.inject({
+      method: "PATCH",
+      url: `/internal/minor-guardian/support-requests/${firstRequestId}`,
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      },
+      payload: {
+        status: "pending_review",
+        handled_by: "ops-reviewer-2"
+      }
+    });
+    expect(invalidRollback.statusCode).toBe(409);
+    expect(invalidRollback.json().code).toBe("MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID");
   });
 });

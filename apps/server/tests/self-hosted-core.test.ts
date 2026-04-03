@@ -4,6 +4,7 @@ import { buildServer } from "../src/app.js";
 
 describe("self-hosted core mode", () => {
   const nextEmail = () => `candidate-${crypto.randomUUID()}@example.com`;
+  const nextOpsEmail = () => `ops-reviewer-${crypto.randomUUID()}@example.com`;
 
   const build = async (overrides?: Parameters<typeof buildServer>[0]) => {
     const server = buildServer(overrides);
@@ -21,9 +22,7 @@ describe("self-hosted core mode", () => {
     await context.app.close();
   });
 
-  test("disables public subscription endpoints while keeping mock exam available without quota gating", async () => {
-    const email = nextEmail();
-
+  const registerAndLogin = async (email = nextEmail(), deviceId = "self-hosted-browser") => {
     const register = await context.app.inject({
       method: "POST",
       url: "/v1/auth/register",
@@ -40,11 +39,20 @@ describe("self-hosted core mode", () => {
       payload: {
         identifier: email,
         password: "StrongPass123",
-        device_id: "self-hosted-browser"
+        device_id: deviceId
       }
     });
     expect(login.statusCode).toBe(200);
-    const accessToken = login.json().access_token as string;
+
+    return {
+      email,
+      accessToken: login.json().access_token as string
+    };
+  };
+
+  test("disables public subscription endpoints while keeping mock exam available without quota gating", async () => {
+    const learner = await registerAndLogin();
+    const accessToken = learner.accessToken;
 
     const subscription = await context.app.inject({
       method: "GET",
@@ -152,10 +160,14 @@ describe("self-hosted core mode", () => {
         lastError: "temporary provider timeout"
       }
     });
+    const opsUser = await registerAndLogin(nextOpsEmail(), "ops-console");
 
     const response = await context.app.inject({
       method: "GET",
-      url: "/internal/reminders/scheduler-status"
+      url: "/internal/reminders/scheduler-status",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
     });
 
     expect(response.statusCode).toBe(200);
@@ -209,6 +221,7 @@ describe("self-hosted core mode", () => {
       reminderDeliveryFcmClientEmail: "push@example.iam.gserviceaccount.com",
       reminderDeliveryFcmPrivateKey: fcmPrivateKey
     });
+    const opsUser = await registerAndLogin(nextOpsEmail(), "ops-console");
 
     context.reminderService.upsertDevice({
       userId: "user-apns-1",
@@ -248,7 +261,10 @@ describe("self-hosted core mode", () => {
 
     const response = await context.app.inject({
       method: "GET",
-      url: "/internal/reminders/push-status"
+      url: "/internal/reminders/push-status",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
     });
 
     expect(response.statusCode).toBe(200);

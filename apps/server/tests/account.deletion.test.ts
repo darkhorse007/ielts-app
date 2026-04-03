@@ -24,6 +24,7 @@ describe("S2 account deletion and data cleanup", () => {
 
   test("requests deletion then deletes account and revokes access", async () => {
     const email = nextEmail();
+    const opsEmail = `ops-reviewer-${crypto.randomUUID()}@example.com`;
 
     const register = await context.app.inject({
       method: "POST",
@@ -46,6 +47,28 @@ describe("S2 account deletion and data cleanup", () => {
     });
     expect(login.statusCode).toBe(200);
     const loginBody = login.json();
+
+    const opsRegister = await context.app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        email: opsEmail,
+        password: "StrongPass123"
+      }
+    });
+    expect(opsRegister.statusCode).toBe(201);
+
+    const opsLogin = await context.app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        identifier: opsEmail,
+        password: "StrongPass123",
+        device_id: "ops-console"
+      }
+    });
+    expect(opsLogin.statusCode).toBe(200);
+    const opsAccessToken = opsLogin.json().access_token as string;
 
     const requestDeletion = await context.app.inject({
       method: "POST",
@@ -96,7 +119,10 @@ describe("S2 account deletion and data cleanup", () => {
 
     const userState = await context.app.inject({
       method: "GET",
-      url: `/internal/users/${loginBody.user_id}`
+      url: `/internal/users/${loginBody.user_id}`,
+      headers: {
+        authorization: `Bearer ${opsAccessToken}`
+      }
     });
 
     expect(userState.statusCode).toBe(200);

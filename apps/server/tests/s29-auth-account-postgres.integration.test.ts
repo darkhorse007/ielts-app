@@ -103,6 +103,7 @@ describe("S29 auth/account postgres persistence", () => {
       });
       expect(profile.statusCode).toBe(200);
       expect(profile.json().email).toBe(email);
+      expect(profile.json().system_roles).toEqual(["learner"]);
 
       const minorGuardian = await server.app.inject({
         method: "PUT",
@@ -169,6 +170,7 @@ describe("S29 auth/account postgres persistence", () => {
       });
       expect(profile.statusCode).toBe(200);
       expect(profile.json().email).toBe(email);
+      expect(profile.json().system_roles).toEqual(["learner"]);
       expect(profile.json().status).toBe("active");
       expect(profile.json().minor_guardian).toMatchObject({
         age_band: "under_18",
@@ -200,6 +202,7 @@ describe("S29 auth/account postgres persistence", () => {
     let server = createServer(schema);
     let learnerEmail = "";
     let learnerUserId = "";
+    let opsEmail = "";
 
     try {
       await server.app.ready();
@@ -207,6 +210,8 @@ describe("S29 auth/account postgres persistence", () => {
       const learner = await registerAndLogin(server, "candidate-role-target", password);
       learnerEmail = learner.email;
       learnerUserId = learner.userId;
+      const ops = await registerAndLogin(server, "ops-reviewer", password);
+      opsEmail = ops.email;
 
       const deletionRequest = await server.app.inject({
         method: "POST",
@@ -237,12 +242,125 @@ describe("S29 auth/account postgres persistence", () => {
       expect(learnerRelogin.statusCode).toBe(403);
       expect(learnerRelogin.json().code).toBe("USER_DISABLED");
 
+      const opsRelogin = await server.app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        payload: {
+          identifier: opsEmail,
+          password,
+          device_id: "ops-console-restart"
+        }
+      });
+      expect(opsRelogin.statusCode).toBe(200);
+
       const internalUser = await server.app.inject({
         method: "GET",
-        url: `/internal/users/${learnerUserId}`
+        url: `/internal/users/${learnerUserId}`,
+        headers: {
+          authorization: `Bearer ${opsRelogin.json().access_token as string}`
+        }
       });
       expect(internalUser.statusCode).toBe(200);
       expect(internalUser.json().status).toBe("pending_deletion");
+    } finally {
+      await server.app.close();
+      await dropSchema(schema);
+    }
+  });
+
+  runIfPostgres("persists internal guardian support request processing state across server restarts", async () => {
+    const schema = `auth_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const password = "StrongPass123";
+    let server = createServer(schema);
+    let requestId = "";
+    let userId = "";
+    let opsEmail = "";
+
+    try {
+      await server.app.ready();
+
+      const learner = await registerAndLogin(server, "guardian-ops", password);
+      userId = learner.userId;
+      const ops = await registerAndLogin(server, "ops-reviewer", password);
+      opsEmail = ops.email;
+
+      const minorGuardian = await server.app.inject({
+        method: "PUT",
+        url: "/v1/users/me/minor-guardian",
+        headers: {
+          authorization: `Bearer ${learner.accessToken}`
+        },
+        payload: {
+          age_band: "under_18",
+          source: "account"
+        }
+      });
+      expect(minorGuardian.statusCode).toBe(200);
+
+      const supportRequest = await server.app.inject({
+        method: "POST",
+        url: "/v1/users/me/minor-guardian/support-requests",
+        headers: {
+          authorization: `Bearer ${learner.accessToken}`
+        },
+        payload: {
+          topic: "usage_concern",
+          contact_channel: "email",
+          contact_value: "guardian@example.com",
+          message: "需要客服介入说明未成年学习限制。"
+        }
+      });
+      expect(supportRequest.statusCode).toBe(201);
+      requestId = supportRequest.json().request.request_id as string;
+
+      const updateRequest = await server.app.inject({
+        method: "PATCH",
+        url: `/internal/minor-guardian/support-requests/${requestId}`,
+        headers: {
+          authorization: `Bearer ${ops.accessToken}`
+        },
+        payload: {
+          status: "contacted",
+          handled_by: "ops-reviewer-1",
+          operator_note: "已邮件联系监护人。"
+        }
+      });
+      expect(updateRequest.statusCode).toBe(200);
+    } finally {
+      await server.app.close();
+    }
+
+    server = createServer(schema);
+    try {
+      await server.app.ready();
+
+      const opsRelogin = await server.app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        payload: {
+          identifier: opsEmail,
+          password,
+          device_id: "ops-console-restart"
+        }
+      });
+      expect(opsRelogin.statusCode).toBe(200);
+
+      const contactedList = await server.app.inject({
+        method: "GET",
+        url: "/internal/minor-guardian/support-requests?status=contacted",
+        headers: {
+          authorization: `Bearer ${opsRelogin.json().access_token as string}`
+        }
+      });
+      expect(contactedList.statusCode).toBe(200);
+      expect(contactedList.json().total_count).toBe(1);
+      expect(contactedList.json().items[0]).toMatchObject({
+        request_id: requestId,
+        user_id: userId,
+        status: "contacted",
+        handled_by: "ops-reviewer-1",
+        operator_note: "已邮件联系监护人。"
+      });
     } finally {
       await server.app.close();
       await dropSchema(schema);

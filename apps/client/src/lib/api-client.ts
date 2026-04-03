@@ -8,6 +8,8 @@ import type {
   DiagnosticAnswerResponse,
   DiagnosticCompletionResponse,
   DiagnosticQuestionsResponse,
+  InternalMinorGuardianSupportRequestListResponse,
+  InternalMinorGuardianSupportRequestResponse,
   LoginPayload,
   MockExamExportResponse,
   MockExamReportResponse,
@@ -45,6 +47,7 @@ import type {
   StudyPlanResponse,
   TokenResponse,
   SubmitMinorGuardianSupportRequestPayload,
+  UpdateInternalMinorGuardianSupportRequestPayload,
   UpdateMinorGuardianPayload,
   UserDataExportResponse,
   UserProfileResponse,
@@ -470,6 +473,57 @@ export class ApiClient {
       "/v1/users/me/minor-guardian/support-requests",
       {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+    return response.request;
+  }
+
+  async listInternalMinorGuardianSupportRequests(params: {
+    accessToken: string;
+    status?: "pending_review" | "contacted" | "closed";
+    query?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<InternalMinorGuardianSupportRequestListResponse> {
+    const query = new URLSearchParams();
+    if (params?.status) {
+      query.set("status", params.status);
+    }
+    if (params?.query && params.query.trim().length > 0) {
+      query.set("q", params.query.trim());
+    }
+    if (typeof params?.page === "number") {
+      query.set("page", String(params.page));
+    }
+    if (typeof params?.pageSize === "number") {
+      query.set("page_size", String(params.pageSize));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return this.request<InternalMinorGuardianSupportRequestListResponse>(
+      `/internal/minor-guardian/support-requests${suffix}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`
+        }
+      }
+    );
+  }
+
+  async updateInternalMinorGuardianSupportRequest(
+    accessToken: string,
+    requestId: string,
+    payload: UpdateInternalMinorGuardianSupportRequestPayload
+  ): Promise<InternalMinorGuardianSupportRequestResponse> {
+    const response = await this.request<{ request: InternalMinorGuardianSupportRequestResponse }>(
+      `/internal/minor-guardian/support-requests/${encodeURIComponent(requestId)}`,
+      {
+        method: "PATCH",
         headers: {
           Authorization: `Bearer ${accessToken}`
         },

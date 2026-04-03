@@ -11,6 +11,7 @@ import type {
   MinorGuardianSource,
   MinorGuardianSupportContactChannel,
   MinorGuardianSupportRequest,
+  MinorGuardianSupportRequestStatus,
   MinorGuardianSupportTopic
 } from "./types.js";
 
@@ -19,6 +20,70 @@ const defaultMinorGuardianRecord = (): MinorGuardianRecord => ({
 });
 
 const defaultMinorGuardianSupportRequests = (): MinorGuardianSupportRequest[] => [];
+
+const sortSupportRequestsByCreatedAtDesc = (
+  left: MinorGuardianSupportRequest,
+  right: MinorGuardianSupportRequest
+): number => right.createdAt.localeCompare(left.createdAt);
+
+const sortSupportRequestsByUpdatedAtDesc = (
+  left: { request: MinorGuardianSupportRequest },
+  right: { request: MinorGuardianSupportRequest }
+): number => right.request.updatedAt.localeCompare(left.request.updatedAt);
+
+const canTransitionMinorGuardianSupportRequestStatus = (
+  current: MinorGuardianSupportRequestStatus,
+  next: MinorGuardianSupportRequestStatus
+): boolean => {
+  if (current === next) {
+    return true;
+  }
+  if (current === "pending_review") {
+    return next === "contacted" || next === "closed";
+  }
+  if (current === "contacted") {
+    return next === "closed";
+  }
+  return false;
+};
+
+const normalizeSupportRequestSearchText = (value?: string): string => value?.trim().toLowerCase() ?? "";
+
+const matchesMinorGuardianSupportRequestQuery = (
+  input: {
+    userId: string;
+    email?: string;
+    phone?: string;
+    displayName?: string;
+    request: MinorGuardianSupportRequest;
+  },
+  query?: string
+): boolean => {
+  const normalizedQuery = normalizeSupportRequestSearchText(query);
+  if (normalizedQuery.length === 0) {
+    return true;
+  }
+
+  const haystack = [
+    input.userId,
+    input.email,
+    input.phone,
+    input.displayName,
+    input.request.id,
+    input.request.topic,
+    input.request.status,
+    input.request.contactChannel,
+    input.request.contactValue,
+    input.request.message,
+    input.request.handledBy,
+    input.request.operatorNote
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join("\n")
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+};
 
 export class AccountService {
   constructor(
@@ -300,6 +365,7 @@ export class AccountService {
     id: string;
     email?: string;
     phone?: string;
+    systemRoles: ("learner" | "qa" | "ops" | "admin")[];
     status: string;
     minorGuardian: MinorGuardianRecord;
     deletionRequestedAt?: string;
@@ -410,8 +476,8 @@ export class AccountService {
       updatedAt: timestamp
     };
 
-    const requests = [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests()), request].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
+    const requests = [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests()), request].sort(
+      sortSupportRequestsByCreatedAtDesc
     );
     user.minorGuardianSupportRequests = requests;
     user.updatedAt = timestamp;
@@ -439,9 +505,108 @@ export class AccountService {
       throw new Error("USER_ALREADY_DELETED");
     }
 
-    return [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests())].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
+    return [...(user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests())].sort(
+      sortSupportRequestsByCreatedAtDesc
     );
+  }
+
+  listAllMinorGuardianSupportRequests(input?: {
+    status?: MinorGuardianSupportRequestStatus;
+    query?: string;
+  }): Array<{
+    userId: string;
+    email?: string;
+    phone?: string;
+    displayName?: string;
+    userStatus: string;
+    minorGuardianAgeBand: MinorGuardianAgeBand;
+    request: MinorGuardianSupportRequest;
+  }> {
+    const items = Array.from(this.store.usersById.values()).flatMap((user) =>
+      (user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests())
+        .filter((request) => !input?.status || request.status === input.status)
+        .filter((request) =>
+          matchesMinorGuardianSupportRequestQuery(
+            {
+              userId: user.id,
+              email: user.email,
+              phone: user.phone,
+              displayName: user.displayName,
+              request
+            },
+            input?.query
+          )
+        )
+        .map((request) => ({
+          userId: user.id,
+          email: user.email,
+          phone: user.phone,
+          displayName: user.displayName,
+          userStatus: user.status,
+          minorGuardianAgeBand: (user.minorGuardian ?? defaultMinorGuardianRecord()).ageBand,
+          request
+        }))
+    );
+
+    return items.sort(sortSupportRequestsByUpdatedAtDesc);
+  }
+
+  updateMinorGuardianSupportRequest(input: {
+    requestId: string;
+    status: MinorGuardianSupportRequestStatus;
+    handledBy: string;
+    operatorNote?: string;
+  }): {
+    userId: string;
+    request: MinorGuardianSupportRequest;
+    previousStatus: MinorGuardianSupportRequestStatus;
+  } {
+    for (const user of this.store.usersById.values()) {
+      const requests = user.minorGuardianSupportRequests ?? defaultMinorGuardianSupportRequests();
+      const requestIndex = requests.findIndex((item) => item.id === input.requestId);
+      if (requestIndex < 0) {
+        continue;
+      }
+
+      const current = requests[requestIndex];
+      if (!canTransitionMinorGuardianSupportRequestStatus(current.status, input.status)) {
+        throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID");
+      }
+
+      const timestamp = nowIso();
+      const nextRequest: MinorGuardianSupportRequest = {
+        ...current,
+        status: input.status,
+        updatedAt: timestamp,
+        resolvedAt: input.status === "closed" ? current.resolvedAt ?? timestamp : undefined,
+        handledBy: input.handledBy,
+        operatorNote: input.operatorNote
+      };
+      user.minorGuardianSupportRequests = requests.map((item, index) => (index === requestIndex ? nextRequest : item));
+      user.updatedAt = timestamp;
+      this.store.usersById.set(user.id, user);
+
+      appendAudit(this.store, "minor_guardian_support_request_updated", {
+        userId: user.id,
+        metadata: {
+          requestId: current.id,
+          previousStatus: current.status,
+          status: nextRequest.status,
+          handledBy: nextRequest.handledBy,
+          operatorNote: nextRequest.operatorNote,
+          resolvedAt: nextRequest.resolvedAt,
+          updatedAt: timestamp
+        }
+      });
+
+      return {
+        userId: user.id,
+        request: nextRequest,
+        previousStatus: current.status
+      };
+    }
+
+    throw new Error("MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND");
   }
 
   exportUserData(userId: string): {

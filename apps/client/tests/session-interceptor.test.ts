@@ -1,10 +1,12 @@
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { HttpClient } from "../src/lib/http-client";
+import { clearCachedSessionProfile } from "../src/lib/session-profile-cache";
 import { TokenStorage } from "../src/lib/token-storage";
 import { SessionManager } from "../src/lib/session-manager";
 
 beforeEach(() => {
   localStorage.clear();
+  clearCachedSessionProfile();
 });
 
 describe("S1 auto refresh and retry interceptor", () => {
@@ -24,10 +26,19 @@ describe("S1 auto refresh and retry interceptor", () => {
       user_id: "u-1",
       session_id: "s-1"
     });
+    const getProfile = vi.fn().mockResolvedValue({
+      id: "u-1",
+      email: "ops@example.com",
+      system_roles: ["learner", "ops"],
+      status: "active",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
 
     const sessionManager = new SessionManager(
       {
         refresh,
+        getProfile,
         register: vi.fn(),
         login: vi.fn(),
         logout: vi.fn(),
@@ -79,6 +90,7 @@ describe("S1 auto refresh and retry interceptor", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(tokenStorage.getAccessToken()).toBe("access-new");
+    expect(getProfile).toHaveBeenCalledTimes(1);
   });
 
   test("clears local session when refresh fails", async () => {
@@ -91,10 +103,12 @@ describe("S1 auto refresh and retry interceptor", () => {
     });
 
     const refresh = vi.fn().mockRejectedValue(new Error("refresh failed"));
+    const getProfile = vi.fn();
 
     const sessionManager = new SessionManager(
       {
         refresh,
+        getProfile,
         register: vi.fn(),
         login: vi.fn(),
         logout: vi.fn(),
@@ -132,5 +146,6 @@ describe("S1 auto refresh and retry interceptor", () => {
 
     expect(tokenStorage.getAccessToken()).toBeNull();
     expect(tokenStorage.getRefreshToken()).toBeNull();
+    expect(getProfile).not.toHaveBeenCalled();
   });
 });

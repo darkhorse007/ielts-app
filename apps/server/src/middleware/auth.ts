@@ -42,4 +42,26 @@ export const authenticate =
     }
   };
 
+export const authorizeSystemRoles =
+  (allowedRoles: SystemRole[]) =>
+  async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const auth = (request as Partial<AuthenticatedRequest>).auth;
+    if (!auth) {
+      reply.code(401).send({
+        code: "UNAUTHORIZED",
+        message: "Missing authenticated session"
+      });
+      return;
+    }
+
+    if (allowedRoles.some((role) => auth.roles.includes(role))) {
+      return;
+    }
+
+    reply.code(403).send({
+      code: "FORBIDDEN",
+      message: `Requires one of roles: ${allowedRoles.join(", ")}`
+    });
+  };
+
 export type { AuthenticatedRequest };

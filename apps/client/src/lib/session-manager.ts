@@ -1,4 +1,5 @@
 import type { ApiClient } from "./api-client";
+import { loadCachedSessionProfile } from "./session-profile-cache";
 import { TokenStorage } from "./token-storage";
 
 export class SessionManager {
@@ -29,6 +30,7 @@ export class SessionManager {
           expiresIn: tokens.expires_in,
           userId: tokens.user_id
         });
+        void loadCachedSessionProfile(this.apiClient, tokens.access_token).catch(() => undefined);
         return true;
       })
       .catch(() => {

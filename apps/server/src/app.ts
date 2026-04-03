@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
+import { z } from "zod";
 import { defaultConfig, type ServiceConfig } from "./domain/config.js";
 import { getBrowserOrigin, isBrowserOriginAllowed, normalizeBrowserOrigin } from "./domain/browser-origin-policy.js";
 import { InMemoryStore } from "./domain/store.js";
@@ -64,6 +65,7 @@ import { registerWritingRoutes } from "./routes/writing.js";
 import { registerMockExamRoutes } from "./routes/mock-exam.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerReminderRoutes } from "./routes/reminder.js";
+import { authenticate, authorizeSystemRoles } from "./middleware/auth.js";
 
 export type ReminderDispatchSchedulerStatusSnapshot = {
   enabled: boolean;
@@ -127,6 +129,17 @@ type BuildServerOptions = Partial<ServiceConfig> & {
 
 const ACCESS_CONTROL_ALLOW_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
 const DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS = "Authorization, Content-Type, Idempotency-Key, X-Device-Id";
+const internalMinorGuardianSupportRequestListSchema = z.object({
+  status: z.enum(["pending_review", "contacted", "closed"]).optional(),
+  q: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).optional(),
+  page_size: z.coerce.number().int().min(1).max(50).optional()
+});
+const internalMinorGuardianSupportRequestUpdateSchema = z.object({
+  status: z.enum(["pending_review", "contacted", "closed"]),
+  handled_by: z.string().trim().min(1).max(120),
+  operator_note: z.string().trim().min(1).max(600).optional()
+});
 
 const serializeReminderDispatchSchedulerStatus = (
   status?: ReminderDispatchSchedulerStatusSnapshot
@@ -229,6 +242,46 @@ const serializeReminderPushRuntimeDiagnostics = (
     environment_counts: diagnostics.fcm.environmentCounts,
     project_id: diagnostics.fcm.projectId
   }
+});
+
+const serializeInternalMinorGuardianSupportRequest = (item: {
+  userId: string;
+  email?: string;
+  phone?: string;
+  displayName?: string;
+  userStatus: string;
+  minorGuardianAgeBand: "unknown" | "under_18" | "adult";
+  request: {
+    id: string;
+    topic: "account_review" | "data_deletion" | "usage_concern" | "other";
+    contactChannel: "email" | "phone";
+    contactValue: string;
+    message: string;
+    status: "pending_review" | "contacted" | "closed";
+    createdAt: string;
+    updatedAt: string;
+    resolvedAt?: string;
+    handledBy?: string;
+    operatorNote?: string;
+  };
+}) => ({
+  request_id: item.request.id,
+  user_id: item.userId,
+  user_email: item.email,
+  user_phone: item.phone,
+  user_display_name: item.displayName,
+  user_status: item.userStatus,
+  minor_guardian_age_band: item.minorGuardianAgeBand,
+  topic: item.request.topic,
+  contact_channel: item.request.contactChannel,
+  contact_value: item.request.contactValue,
+  message: item.request.message,
+  status: item.request.status,
+  created_at: item.request.createdAt,
+  updated_at: item.request.updatedAt,
+  resolved_at: item.request.resolvedAt,
+  handled_by: item.request.handledBy,
+  operator_note: item.request.operatorNote
 });
 
 const setCorsHeaders = (
@@ -447,11 +500,15 @@ export const buildServer = (options?: BuildServerOptions): {
   }));
 
   if (enableInternalDebugRoutes) {
-    app.get("/internal/audit-events", async () => ({
+    const internalOpsPreHandler = {
+      preHandler: [authenticate(authService), authorizeSystemRoles(["ops", "admin"])]
+    };
+
+    app.get("/internal/audit-events", internalOpsPreHandler, async () => ({
       items: store.auditEvents
     }));
 
-    app.get<{ Params: { user_id: string } }>("/internal/users/:user_id", async (request, reply) => {
+    app.get<{ Params: { user_id: string } }>("/internal/users/:user_id", internalOpsPreHandler, async (request, reply) => {
       try {
         const user = authService.getUserById(request.params.user_id);
         reply.code(200).send(user);
@@ -463,7 +520,103 @@ export const buildServer = (options?: BuildServerOptions): {
       }
     });
 
-    app.post<{ Querystring: { limit?: string } }>("/internal/reminders/dispatch-due", async (request, reply) => {
+    app.get("/internal/minor-guardian/support-requests", internalOpsPreHandler, async (request, reply) => {
+      const parsed = internalMinorGuardianSupportRequestListSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400).send({
+          code: "VALIDATION_ERROR",
+          message: "minor guardian support request query is invalid"
+        });
+        return;
+      }
+
+      const page = parsed.data.page ?? 1;
+      const pageSize = parsed.data.page_size ?? 10;
+      const items = accountService.listAllMinorGuardianSupportRequests({
+        status: parsed.data.status,
+        query: parsed.data.q
+      });
+      const totalCount = items.length;
+      const pageStartIndex = (page - 1) * pageSize;
+      const paginatedItems = items
+        .slice(pageStartIndex, pageStartIndex + pageSize)
+        .map((item) => serializeInternalMinorGuardianSupportRequest(item));
+
+      reply.code(200).send({
+        total_count: totalCount,
+        page,
+        page_size: pageSize,
+        has_next_page: pageStartIndex + pageSize < totalCount,
+        ordered_by: "updated_at_desc",
+        items: paginatedItems
+      });
+    });
+
+    app.patch<{ Params: { request_id: string } }>(
+      "/internal/minor-guardian/support-requests/:request_id",
+      internalOpsPreHandler,
+      async (request, reply) => {
+      const parsed = internalMinorGuardianSupportRequestUpdateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400).send({
+          code: "VALIDATION_ERROR",
+          message: "minor guardian support request update payload is invalid"
+        });
+        return;
+      }
+
+      try {
+        const updated = accountService.updateMinorGuardianSupportRequest({
+          requestId: request.params.request_id,
+          status: parsed.data.status,
+          handledBy: parsed.data.handled_by,
+          operatorNote: parsed.data.operator_note
+        });
+        try {
+          await authAccountRepository.flush();
+        } catch {
+          reply.code(503).send({
+            code: "AUTH_ACCOUNT_STORAGE_UNAVAILABLE",
+            message: "Auth/account storage is unavailable"
+          });
+          return;
+        }
+        const user = authService.getUserById(updated.userId);
+        reply.code(200).send({
+          request: serializeInternalMinorGuardianSupportRequest({
+            userId: updated.userId,
+            email: user.email,
+            phone: user.phone,
+            displayName: user.displayName,
+            userStatus: user.status,
+            minorGuardianAgeBand: user.minorGuardian.ageBand,
+            request: updated.request
+          })
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND") {
+          reply.code(404).send({
+            code: "MINOR_GUARDIAN_SUPPORT_REQUEST_NOT_FOUND",
+            message: "Minor guardian support request not found"
+          });
+          return;
+        }
+        if (error instanceof Error && error.message === "MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID") {
+          reply.code(409).send({
+            code: "MINOR_GUARDIAN_SUPPORT_REQUEST_STATUS_TRANSITION_INVALID",
+            message: "Minor guardian support request status transition is invalid"
+          });
+          return;
+        }
+        throw error;
+      }
+      }
+    );
+
+    app.post<{ Querystring: { limit?: string } }>(
+      "/internal/reminders/dispatch-due",
+      internalOpsPreHandler,
+      async (request, reply) => {
       const rawLimit = request.query.limit?.trim();
       const limit = rawLimit ? Number(rawLimit) : undefined;
       if (rawLimit && (!Number.isInteger(limit) || (limit ?? 0) <= 0)) {
@@ -501,13 +654,14 @@ export const buildServer = (options?: BuildServerOptions): {
             : undefined
         }))
       });
-    });
+      }
+    );
 
-    app.get("/internal/reminders/scheduler-status", async () => ({
+    app.get("/internal/reminders/scheduler-status", internalOpsPreHandler, async () => ({
       reminder_dispatch_scheduler: serializeReminderDispatchSchedulerStatus(reminderDispatchSchedulerStatus)
     }));
 
-    app.get("/internal/reminders/push-status", async () => ({
+    app.get("/internal/reminders/push-status", internalOpsPreHandler, async () => ({
       reminder_push_providers: serializeReminderPushRuntimeDiagnostics(reminderDeliveryService.getRuntimeDiagnostics())
     }));
   }

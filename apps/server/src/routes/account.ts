@@ -90,6 +90,7 @@ export const registerAccountRoutes = async (
         id: profile.id,
         email: profile.email,
         phone: profile.phone,
+        system_roles: profile.systemRoles,
         status: profile.status,
         minor_guardian: serializeMinorGuardian(profile.minorGuardian),
         deletion_requested_at: profile.deletionRequestedAt,

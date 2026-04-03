@@ -127,6 +127,8 @@ export type MinorGuardianAgeBand = "unknown" | "under_18" | "adult";
 
 export type MinorGuardianSource = "register" | "account";
 
+export type SystemRole = "learner" | "qa" | "ops" | "admin";
+
 export type MinorGuardianResponse = {
   age_band: MinorGuardianAgeBand;
   source?: MinorGuardianSource;
@@ -163,6 +165,41 @@ export type MinorGuardianSupportRequestListResponse = {
   items: MinorGuardianSupportRequestResponse[];
 };
 
+export type InternalMinorGuardianSupportRequestResponse = {
+  request_id: string;
+  user_id: string;
+  user_email?: string;
+  user_phone?: string;
+  user_display_name?: string;
+  user_status: "active" | "frozen" | "pending_deletion" | "deleted";
+  minor_guardian_age_band: MinorGuardianAgeBand;
+  topic: MinorGuardianSupportRequestTopic;
+  contact_channel: MinorGuardianSupportContactChannel;
+  contact_value: string;
+  message: string;
+  status: MinorGuardianSupportRequestStatus;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+  handled_by?: string;
+  operator_note?: string;
+};
+
+export type InternalMinorGuardianSupportRequestListResponse = {
+  total_count: number;
+  page: number;
+  page_size: number;
+  has_next_page: boolean;
+  ordered_by: "updated_at_desc";
+  items: InternalMinorGuardianSupportRequestResponse[];
+};
+
+export type UpdateInternalMinorGuardianSupportRequestPayload = {
+  status: MinorGuardianSupportRequestStatus;
+  handled_by: string;
+  operator_note?: string;
+};
+
 export type SubmitMinorGuardianSupportRequestPayload = {
   topic: MinorGuardianSupportRequestTopic;
   contact_channel: MinorGuardianSupportContactChannel;
@@ -174,6 +211,7 @@ export type UserProfileResponse = {
   id: string;
   email?: string;
   phone?: string;
+  system_roles: SystemRole[];
   status: "active" | "frozen" | "pending_deletion" | "deleted";
   minor_guardian?: MinorGuardianResponse;
   deletion_requested_at?: string;

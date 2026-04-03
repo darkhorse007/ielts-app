@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { loadCachedSessionProfile } from "../lib/session-profile-cache";
 import { validateEmail, validatePhone } from "../lib/validators";
 import { TokenStorage } from "../lib/token-storage";
 
 type LoginPageProps = {
-  apiClient: Pick<ApiClient, "login">;
+  apiClient: Pick<ApiClient, "login" | "getProfile">;
   tokenStorage: TokenStorage;
   onLoginSuccess?: () => void;
 };
@@ -48,6 +49,7 @@ export const LoginPage = ({ apiClient, tokenStorage, onLoginSuccess }: LoginPage
         expiresIn: tokens.expires_in,
         userId: tokens.user_id
       });
+      void loadCachedSessionProfile(apiClient, tokens.access_token).catch(() => undefined);
 
       onLoginSuccess?.();
     } catch (submitError) {

@@ -138,7 +138,8 @@ describe("S1 session continuity and security", () => {
     });
 
     const email = nextEmail();
-    await registerAndLogin(email, "iphone-15");
+    const firstLogin = await registerAndLogin(email, "iphone-15");
+    const opsLogin = await registerAndLogin(`ops-reviewer-${crypto.randomUUID()}@example.com`, "ops-console");
     const second = await context.app.inject({
       method: "POST",
       url: "/v1/auth/login",
@@ -151,9 +152,22 @@ describe("S1 session continuity and security", () => {
 
     expect(second.statusCode).toBe(200);
 
+    const learnerAudit = await context.app.inject({
+      method: "GET",
+      url: "/internal/audit-events",
+      headers: {
+        authorization: `Bearer ${firstLogin.access_token}`
+      }
+    });
+    expect(learnerAudit.statusCode).toBe(403);
+    expect(learnerAudit.json().code).toBe("FORBIDDEN");
+
     const audit = await context.app.inject({
       method: "GET",
-      url: "/internal/audit-events"
+      url: "/internal/audit-events",
+      headers: {
+        authorization: `Bearer ${opsLogin.access_token}`
+      }
     });
 
     const events = audit.json().items as Array<{ type: string }>;

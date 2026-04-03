@@ -1,3 +1,5 @@
+import { clearCachedSessionProfile } from "./session-profile-cache";
+
 export type SessionTokens = {
   accessToken: string;
   refreshToken: string;
@@ -12,7 +14,11 @@ export class TokenStorage {
   private static readonly USER_ID_KEY = "ielts.user_id";
 
   save(tokens: SessionTokens): void {
+    const previousAccessToken = this.getAccessToken();
     const expiresAtEpochSeconds = Math.floor(Date.now() / 1000) + tokens.expiresIn;
+    if (previousAccessToken && previousAccessToken !== tokens.accessToken) {
+      clearCachedSessionProfile(previousAccessToken);
+    }
     localStorage.setItem(TokenStorage.ACCESS_TOKEN_KEY, tokens.accessToken);
     localStorage.setItem(TokenStorage.REFRESH_TOKEN_KEY, tokens.refreshToken);
     localStorage.setItem(TokenStorage.EXPIRES_AT_KEY, String(expiresAtEpochSeconds));
@@ -32,6 +38,7 @@ export class TokenStorage {
   }
 
   clear(): void {
+    clearCachedSessionProfile(this.getAccessToken());
     localStorage.removeItem(TokenStorage.ACCESS_TOKEN_KEY);
     localStorage.removeItem(TokenStorage.REFRESH_TOKEN_KEY);
     localStorage.removeItem(TokenStorage.EXPIRES_AT_KEY);

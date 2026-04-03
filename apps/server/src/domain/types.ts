@@ -32,6 +32,8 @@ export type MinorGuardianSupportRequest = {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  handledBy?: string;
+  operatorNote?: string;
 };
 
 export type User = {
@@ -95,6 +97,7 @@ export type AuditEventType =
   | "minor_guardian_updated"
   | "minor_guardian_notice_acknowledged"
   | "minor_guardian_support_requested"
+  | "minor_guardian_support_request_updated"
   | "deletion_requested"
   | "user_deleted"
   | "practice_session_created"
