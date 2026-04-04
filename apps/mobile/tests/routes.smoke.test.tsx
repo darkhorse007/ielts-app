@@ -403,6 +403,67 @@ describe("mobile route smoke", () => {
     expect(screen.getByText((content) => content.includes("最近结果: /health=ok"))).toBeTruthy();
   });
 
+  test("instance screen shows source labels and can fill default draft", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: {
+          apiBaseUrl: "http://192.168.0.20:8787",
+          wsBaseUrl: "ws://192.168.0.20:8787"
+        }
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    expect(screen.getByText("当前正在使用本地覆盖实例")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("预置 API: http://127.0.0.1:8787"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("instance.applyDefaultDraft"));
+
+    expect(screen.getByDisplayValue("http://127.0.0.1:8787")).toBeTruthy();
+    expect(screen.getByDisplayValue("ws://127.0.0.1:8787")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("预检状态: 未验证"))).toBeTruthy();
+  });
+
+  test("instance screen can restore default instance with validation", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://127.0.0.1:8787/health");
+      expect(init?.method).toBe("GET");
+
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    });
+    const saveInstanceConfig = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: {
+          apiBaseUrl: "http://192.168.0.20:8787",
+          wsBaseUrl: "ws://192.168.0.20:8787"
+        },
+        saveInstanceConfig
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    fireEvent.click(screen.getByTestId("instance.restoreDefault"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(saveInstanceConfig).toHaveBeenCalledWith({
+        apiBaseUrl: "http://127.0.0.1:8787",
+        wsBaseUrl: "ws://127.0.0.1:8787"
+      });
+      expect(router.replace).toHaveBeenCalledWith("/");
+    });
+    expect(screen.getByText((content) => content.includes("预检状态: 预置实例已通过"))).toBeTruthy();
+  });
+
   test("instance screen blocks saving when health validation fails", async () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError("Network request failed");

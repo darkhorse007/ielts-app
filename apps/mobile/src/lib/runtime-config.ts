@@ -106,6 +106,9 @@ export const normalizeInstanceConfig = (input: {
   };
 };
 
+export const isSameInstanceConfig = (left: InstanceConfig | null | undefined, right: InstanceConfig | null | undefined): boolean =>
+  Boolean(left && right && left.apiBaseUrl === right.apiBaseUrl && left.wsBaseUrl === right.wsBaseUrl);
+
 export const getInstanceConfigRisks = (config: InstanceConfig): InstanceConfigRisk[] => {
   const apiUrl = new URL(config.apiBaseUrl);
   const wsUrl = new URL(config.wsBaseUrl);

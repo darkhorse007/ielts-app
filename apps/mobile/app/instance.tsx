@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
 import { ApiClient, ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
-import { getInstanceConfigRisks, normalizeInstanceConfig } from "../src/lib/runtime-config";
+import { getInstanceConfigRisks, isSameInstanceConfig, normalizeInstanceConfig, type InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -36,25 +36,45 @@ export default function InstanceConfigScreen() {
     }
   }, [defaultInstanceConfig, instanceConfig]);
 
-  const validateConnection = async (): Promise<{
+  const resetValidationState = (): void => {
+    setValidationStatus("未验证");
+    setValidationResult("-");
+  };
+
+  const validateConnectionForConfig = async (
+    input: {
+      apiBaseUrl: string;
+      wsBaseUrl?: string;
+    },
+    options?: {
+      statusLabel?: string;
+    }
+  ): Promise<{
     apiBaseUrl: string;
     wsBaseUrl: string;
     healthStatus: string;
   }> => {
-    const normalized = normalizeInstanceConfig({
-      apiBaseUrl,
-      wsBaseUrl
-    });
+    const normalized = normalizeInstanceConfig(input);
     setValidationStatus("正在验证 /health");
     const apiClient = new ApiClient(normalized.apiBaseUrl);
     const health = await apiClient.health();
-    setValidationStatus("已通过");
+    setValidationStatus(options?.statusLabel ?? "已通过");
     setValidationResult(`/health=${health.status}`);
     return {
       ...normalized,
       healthStatus: health.status
     };
   };
+
+  const validateConnection = async (): Promise<{
+    apiBaseUrl: string;
+    wsBaseUrl: string;
+    healthStatus: string;
+  }> =>
+    validateConnectionForConfig({
+      apiBaseUrl,
+      wsBaseUrl
+    });
 
   const submit = async (): Promise<void> => {
     setSaving(true);
@@ -91,6 +111,35 @@ export default function InstanceConfigScreen() {
     }
   };
 
+  const restoreDefaultInstance = async (): Promise<void> => {
+    if (!defaultInstanceConfig) {
+      setError("当前安装包没有预置默认实例");
+      return;
+    }
+
+    setSaving(true);
+    setApiBaseUrl(defaultInstanceConfig.apiBaseUrl);
+    setWsBaseUrl(defaultInstanceConfig.wsBaseUrl);
+    try {
+      setError(null);
+      const validated = await validateConnectionForConfig(defaultInstanceConfig, {
+        statusLabel: "预置实例已通过"
+      });
+      await saveInstanceConfig({
+        apiBaseUrl: validated.apiBaseUrl,
+        wsBaseUrl: validated.wsBaseUrl
+      });
+      setError(null);
+      router.replace("/");
+    } catch (restoreError) {
+      setValidationStatus("预置实例验证失败");
+      setValidationResult("-");
+      setError(toInstanceConfigErrorMessage(restoreError, "恢复预置实例失败"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const preview = (() => {
     try {
       return normalizeInstanceConfig({
@@ -102,6 +151,14 @@ export default function InstanceConfigScreen() {
     }
   })();
   const previewRisks = preview ? getInstanceConfigRisks(preview) : [];
+  const usingDefaultInstance = isSameInstanceConfig(instanceConfig, defaultInstanceConfig);
+  const sourceLabel = defaultInstanceConfig
+    ? usingDefaultInstance
+      ? "当前正在使用安装包预置实例"
+      : instanceConfig
+        ? "当前正在使用本地覆盖实例"
+        : "尚未保存实例，预置值可直接恢复"
+    : "当前安装包未预置默认实例";
 
   return (
     <AppScreen
@@ -113,6 +170,38 @@ export default function InstanceConfigScreen() {
         <Text style={{ color: colors.textPrimary, fontSize: 14, lineHeight: 20 }}>
           推荐本地起点：`http://127.0.0.1:8787` 适合与服务端运行在同一主机的场景。真机调试时，通常需要改成局域网 IP。
         </Text>
+      </InfoCard>
+
+      <InfoCard>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>配置来源</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14, lineHeight: 20 }}>{sourceLabel}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 8 }}>
+          预置 API: {defaultInstanceConfig?.apiBaseUrl ?? "-"}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+          预置 WS: {defaultInstanceConfig?.wsBaseUrl ?? "-"}
+        </Text>
+        {defaultInstanceConfig ? (
+          <ButtonRow>
+            <SecondaryButton
+              label="恢复预置实例"
+              onPress={() => void restoreDefaultInstance()}
+              disabled={saving || usingDefaultInstance}
+              testID="instance.restoreDefault"
+            />
+            <SecondaryButton
+              label="填入预置实例"
+              onPress={() => {
+                setApiBaseUrl(defaultInstanceConfig.apiBaseUrl);
+                setWsBaseUrl(defaultInstanceConfig.wsBaseUrl);
+                resetValidationState();
+                setError(null);
+              }}
+              disabled={saving}
+              testID="instance.applyDefaultDraft"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <TextField
