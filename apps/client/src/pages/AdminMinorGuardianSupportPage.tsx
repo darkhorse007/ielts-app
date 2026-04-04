@@ -35,14 +35,22 @@ type SlaFilter = "all" | "due_soon" | "breached";
 type QuickViewFilter = "default" | "breached" | "due_soon";
 type QueueExportTemplate = "pending_review" | "unassigned" | "mine";
 type BulkActionTemplate = "claim" | "contacted" | "closed";
-type SavedQueueView = {
-  name: string;
+type QueueViewConfig = {
   statusFilter: SupportRequestFilter;
   assignmentFilter: AssignmentFilter;
   handledByFilterQuery: string;
   searchQuery: string;
   slaFilter: SlaFilter;
   orderedBy: InternalMinorGuardianSupportRequestOrderBy;
+};
+type SavedQueueView = {
+  name: string;
+  statusFilter: QueueViewConfig["statusFilter"];
+  assignmentFilter: QueueViewConfig["assignmentFilter"];
+  handledByFilterQuery: QueueViewConfig["handledByFilterQuery"];
+  searchQuery: QueueViewConfig["searchQuery"];
+  slaFilter: QueueViewConfig["slaFilter"];
+  orderedBy: QueueViewConfig["orderedBy"];
   isDefault: boolean;
 };
 
@@ -164,6 +172,17 @@ const BULK_TEMPLATE_NOTES: Record<BulkActionTemplate, string> = {
 };
 
 const formatRequestIdList = (requestIds: string[]): string => (requestIds.length > 0 ? requestIds.join(", ") : "-");
+
+const buildSavedQueueView = (name: string, config: QueueViewConfig, isDefault = false): SavedQueueView => ({
+  name,
+  statusFilter: config.statusFilter,
+  assignmentFilter: config.assignmentFilter,
+  handledByFilterQuery: config.handledByFilterQuery,
+  searchQuery: config.searchQuery,
+  slaFilter: config.slaFilter,
+  orderedBy: config.orderedBy,
+  isDefault
+});
 
 const buildBulkUpdateResultSummary = (
   updatedCount: number,
@@ -910,18 +929,17 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setError("请先选择一条工单");
       return;
     }
-
-    setCurrentPage(1);
-    setStatusFilter("all");
-    setAssignmentFilter("all");
-    setHandledByFilterInput("");
-    setHandledByFilterQuery("");
-    setSlaFilter("all");
-    setOrderedBy("updated_at_desc");
-    setSearchInput(selectedRequest.user_id);
-    setSearchQuery(selectedRequest.user_id);
-    setMessage(`已切换到用户历史工单 ${selectedRequest.user_id}`);
-    setError(null);
+    applyQueueViewConfig(
+      {
+        statusFilter: "all",
+        assignmentFilter: "all",
+        handledByFilterQuery: "",
+        searchQuery: selectedRequest.user_id,
+        slaFilter: "all",
+        orderedBy: "updated_at_desc"
+      },
+      `已切换到用户历史工单 ${selectedRequest.user_id}`
+    );
   };
 
   const focusSelectedRequestHandlerQueue = (): void => {
@@ -934,17 +952,17 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       return;
     }
 
-    setCurrentPage(1);
-    setStatusFilter("all");
-    setAssignmentFilter("handled_by");
-    setHandledByFilterInput(selectedRequest.handled_by);
-    setHandledByFilterQuery(selectedRequest.handled_by);
-    setSlaFilter("all");
-    setOrderedBy("updated_at_desc");
-    setSearchInput("");
-    setSearchQuery("");
-    setMessage(`已切换到处理人队列 ${selectedRequest.handled_by}`);
-    setError(null);
+    applyQueueViewConfig(
+      {
+        statusFilter: "all",
+        assignmentFilter: "handled_by",
+        handledByFilterQuery: selectedRequest.handled_by,
+        searchQuery: "",
+        slaFilter: "all",
+        orderedBy: "updated_at_desc"
+      },
+      `已切换到处理人队列 ${selectedRequest.handled_by}`
+    );
   };
 
   const focusSelectedRequestStatusQueue = (): void => {
@@ -953,17 +971,17 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       return;
     }
 
-    setCurrentPage(1);
-    setStatusFilter(selectedRequest.status);
-    setAssignmentFilter("all");
-    setHandledByFilterInput("");
-    setHandledByFilterQuery("");
-    setSlaFilter("all");
-    setOrderedBy("updated_at_desc");
-    setSearchInput("");
-    setSearchQuery("");
-    setMessage(`已切换到同状态队列 ${STATUS_LABELS[selectedRequest.status]}`);
-    setError(null);
+    applyQueueViewConfig(
+      {
+        statusFilter: selectedRequest.status,
+        assignmentFilter: "all",
+        handledByFilterQuery: "",
+        searchQuery: "",
+        slaFilter: "all",
+        orderedBy: "updated_at_desc"
+      },
+      `已切换到同状态队列 ${STATUS_LABELS[selectedRequest.status]}`
+    );
   };
 
   const focusSelectedRequestRiskQueue = (): void => {
@@ -976,17 +994,17 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       return;
     }
 
-    setCurrentPage(1);
-    setStatusFilter("all");
-    setAssignmentFilter("all");
-    setHandledByFilterInput("");
-    setHandledByFilterQuery("");
-    setSearchInput("");
-    setSearchQuery("");
-    setSlaFilter(selectedRequest.sla_state);
-    setOrderedBy("sla_priority_desc");
-    setMessage(`已切换到同风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`);
-    setError(null);
+    applyQueueViewConfig(
+      {
+        statusFilter: "all",
+        assignmentFilter: "all",
+        handledByFilterQuery: "",
+        searchQuery: "",
+        slaFilter: selectedRequest.sla_state,
+        orderedBy: "sla_priority_desc"
+      },
+      `已切换到同风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`
+    );
   };
 
   const toggleRequestSelection = (requestId: string): void => {
@@ -1095,6 +1113,104 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setError(null);
   };
 
+  const applyQueueViewConfig = (config: QueueViewConfig, messageText: string): void => {
+    setCurrentPage(1);
+    setStatusFilter(config.statusFilter);
+    setAssignmentFilter(config.assignmentFilter);
+    setHandledByFilterInput(config.handledByFilterQuery);
+    setHandledByFilterQuery(config.handledByFilterQuery);
+    setSearchInput(config.searchQuery);
+    setSearchQuery(config.searchQuery);
+    setSlaFilter(config.slaFilter);
+    setOrderedBy(config.orderedBy);
+    setMessage(messageText);
+    setError(null);
+  };
+
+  const persistNamedQueueView = (view: SavedQueueView): void => {
+    setSavedViews((current) => {
+      const existingView = current.find((item) => item.name === view.name);
+      const nextViews = [
+        {
+          ...view,
+          isDefault: existingView?.isDefault ?? view.isDefault
+        },
+        ...current.filter((item) => item.name !== view.name)
+      ].slice(0, 6);
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
+    setSavedViewName("");
+    setSavedViewRenameSource(null);
+    setMessage(`已保存视图 ${view.name}`);
+    setError(null);
+  };
+
+  const getCurrentQueueViewConfig = (): QueueViewConfig => ({
+    statusFilter,
+    assignmentFilter,
+    handledByFilterQuery,
+    searchQuery,
+    slaFilter,
+    orderedBy
+  });
+
+  const buildSelectedRequestUserHistoryView = (): SavedQueueView | null =>
+    selectedRequest
+      ? buildSavedQueueView(`用户历史 ${selectedRequest.user_id}`, {
+          statusFilter: "all",
+          assignmentFilter: "all",
+          handledByFilterQuery: "",
+          searchQuery: selectedRequest.user_id,
+          slaFilter: "all",
+          orderedBy: "updated_at_desc"
+        })
+      : null;
+
+  const buildSelectedRequestHandlerView = (): SavedQueueView | null =>
+    selectedRequest?.handled_by && selectedRequest.handled_by.trim().length > 0
+      ? buildSavedQueueView(`处理人队列 ${selectedRequest.handled_by}`, {
+          statusFilter: "all",
+          assignmentFilter: "handled_by",
+          handledByFilterQuery: selectedRequest.handled_by,
+          searchQuery: "",
+          slaFilter: "all",
+          orderedBy: "updated_at_desc"
+        })
+      : null;
+
+  const buildSelectedRequestStatusView = (): SavedQueueView | null =>
+    selectedRequest
+      ? buildSavedQueueView(`状态队列 ${STATUS_LABELS[selectedRequest.status]}`, {
+          statusFilter: selectedRequest.status,
+          assignmentFilter: "all",
+          handledByFilterQuery: "",
+          searchQuery: "",
+          slaFilter: "all",
+          orderedBy: "updated_at_desc"
+        })
+      : null;
+
+  const buildSelectedRequestRiskView = (): SavedQueueView | null =>
+    selectedRequest && (selectedRequest.sla_state === "due_soon" || selectedRequest.sla_state === "breached")
+      ? buildSavedQueueView(`风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`, {
+          statusFilter: "all",
+          assignmentFilter: "all",
+          handledByFilterQuery: "",
+          searchQuery: "",
+          slaFilter: selectedRequest.sla_state,
+          orderedBy: "sla_priority_desc"
+        })
+      : null;
+
+  const saveSelectedRequestShortcutView = (view: SavedQueueView | null): void => {
+    if (!view) {
+      setError("当前工单无法生成快捷视图");
+      return;
+    }
+    persistNamedQueueView(view);
+  };
+
   const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
 
   const saveCurrentView = (): void => {
@@ -1103,47 +1219,21 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setError("请填写保存视图名称");
       return;
     }
-
-    const nextView: SavedQueueView = {
-      name: normalizedName,
-      statusFilter,
-      assignmentFilter,
-      handledByFilterQuery,
-      searchQuery,
-      slaFilter,
-      orderedBy,
-      isDefault: false
-    };
-    setSavedViews((current) => {
-      const existingView = current.find((view) => view.name === normalizedName);
-      const nextViews = [
-        {
-          ...nextView,
-          isDefault: existingView?.isDefault ?? false
-        },
-        ...current.filter((view) => view.name !== normalizedName)
-      ].slice(0, 6);
-      persistSavedQueueViews(nextViews);
-      return nextViews;
-    });
-    setSavedViewName("");
-    setSavedViewRenameSource(null);
-    setMessage(`已保存视图 ${normalizedName}`);
-    setError(null);
+    persistNamedQueueView(buildSavedQueueView(normalizedName, getCurrentQueueViewConfig()));
   };
 
   const applySavedView = (view: SavedQueueView): void => {
-    setCurrentPage(1);
-    setStatusFilter(view.statusFilter);
-    setAssignmentFilter(view.assignmentFilter);
-    setHandledByFilterInput(view.handledByFilterQuery);
-    setHandledByFilterQuery(view.handledByFilterQuery);
-    setSearchInput(view.searchQuery);
-    setSearchQuery(view.searchQuery);
-    setSlaFilter(view.slaFilter);
-    setOrderedBy(view.orderedBy);
-    setMessage(`已应用视图 ${view.name}`);
-    setError(null);
+    applyQueueViewConfig(
+      {
+        statusFilter: view.statusFilter,
+        assignmentFilter: view.assignmentFilter,
+        handledByFilterQuery: view.handledByFilterQuery,
+        searchQuery: view.searchQuery,
+        slaFilter: view.slaFilter,
+        orderedBy: view.orderedBy
+      },
+      `已应用视图 ${view.name}`
+    );
   };
 
   const deleteSavedView = (name: string): void => {
@@ -1652,6 +1742,27 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
             disabled={selectedRequest.sla_state !== "due_soon" && selectedRequest.sla_state !== "breached"}
           >
             查看同风险队列
+          </button>
+          <p>保存快捷视图</p>
+          <button type="button" onClick={() => saveSelectedRequestShortcutView(buildSelectedRequestUserHistoryView())}>
+            保存用户历史视图
+          </button>
+          <button
+            type="button"
+            onClick={() => saveSelectedRequestShortcutView(buildSelectedRequestHandlerView())}
+            disabled={!selectedRequest.handled_by || selectedRequest.handled_by.trim().length === 0}
+          >
+            保存处理人视图
+          </button>
+          <button type="button" onClick={() => saveSelectedRequestShortcutView(buildSelectedRequestStatusView())}>
+            保存同状态视图
+          </button>
+          <button
+            type="button"
+            onClick={() => saveSelectedRequestShortcutView(buildSelectedRequestRiskView())}
+            disabled={selectedRequest.sla_state !== "due_soon" && selectedRequest.sla_state !== "breached"}
+          >
+            保存同风险视图
           </button>
           <p>快捷模板</p>
           <button type="button" onClick={applyContactTemplate}>
