@@ -33,8 +33,18 @@ type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
 type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
 type SlaFilter = "all" | "due_soon" | "breached";
 type QuickViewFilter = "default" | "breached" | "due_soon";
+type SavedQueueView = {
+  name: string;
+  statusFilter: SupportRequestFilter;
+  assignmentFilter: AssignmentFilter;
+  handledByFilterQuery: string;
+  searchQuery: string;
+  slaFilter: SlaFilter;
+  orderedBy: InternalMinorGuardianSupportRequestOrderBy;
+};
 
 const DEFAULT_PAGE_SIZE = 10;
+const SAVED_QUEUE_VIEWS_STORAGE_KEY = "ielts.admin_minor_guardian_support.saved_views";
 const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
   pending_review: 0,
   contacted: 0,
@@ -200,6 +210,57 @@ const resolveSelectedRequestId = (
   return response.items[0]?.request_id ?? null;
 };
 
+const parseSavedQueueViews = (): SavedQueueView[] => {
+  const raw = localStorage.getItem(SAVED_QUEUE_VIEWS_STORAGE_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") {
+        return [];
+      }
+
+      const candidate = item as Partial<SavedQueueView>;
+      if (
+        typeof candidate.name !== "string" ||
+        typeof candidate.statusFilter !== "string" ||
+        typeof candidate.assignmentFilter !== "string" ||
+        typeof candidate.handledByFilterQuery !== "string" ||
+        typeof candidate.searchQuery !== "string" ||
+        typeof candidate.slaFilter !== "string" ||
+        typeof candidate.orderedBy !== "string"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          name: candidate.name,
+          statusFilter: candidate.statusFilter,
+          assignmentFilter: candidate.assignmentFilter,
+          handledByFilterQuery: candidate.handledByFilterQuery,
+          searchQuery: candidate.searchQuery,
+          slaFilter: candidate.slaFilter,
+          orderedBy: candidate.orderedBy
+        }
+      ];
+    });
+  } catch {
+    return [];
+  }
+};
+
+const persistSavedQueueViews = (views: SavedQueueView[]): void => {
+  localStorage.setItem(SAVED_QUEUE_VIEWS_STORAGE_KEY, JSON.stringify(views));
+};
+
 export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: AdminMinorGuardianSupportPageProps) => {
   const currentOperatorId = tokenStorage.getUserId() ?? "";
   const [statusFilter, setStatusFilter] = useState<SupportRequestFilter>("pending_review");
@@ -232,6 +293,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [statusMessage, setStatusMessage] = useState("未加载工单");
   const [message, setMessage] = useState("未处理");
   const [exportMessage, setExportMessage] = useState("未导出");
+  const [savedViewName, setSavedViewName] = useState("");
+  const [savedViews, setSavedViews] = useState<SavedQueueView[]>(() => parseSavedQueueViews());
   const [lastExportFilename, setLastExportFilename] = useState<string | null>(null);
   const [lastExportContent, setLastExportContent] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -527,6 +590,31 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     }
   };
 
+  const exportRiskQueue = async (slaState: "due_soon" | "breached"): Promise<void> => {
+    const accessToken = tokenStorage.getAccessToken();
+    if (!accessToken) {
+      setError("会话已失效，请重新登录");
+      return;
+    }
+
+    try {
+      const exported = await apiClient.exportInternalMinorGuardianSupportRequests({
+        accessToken,
+        query: searchQuery.length > 0 ? searchQuery : undefined,
+        handledBy: activeHandledByFilter && activeHandledByFilter.trim().length > 0 ? activeHandledByFilter : undefined,
+        unassigned: activeUnassignedFilter ? true : undefined,
+        slaState,
+        orderBy: "sla_priority_desc"
+      });
+      setLastExportFilename(exported.filename);
+      setLastExportContent(exported.content);
+      setExportMessage(`已生成${slaState === "breached" ? "已超时" : "临近超时"}导出 ${exported.filename}`);
+      setError(null);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "导出风险队列失败");
+    }
+  };
+
   const changeStatusFilter = (value: SupportRequestFilter): void => {
     setCurrentPage(1);
     setStatusFilter(value);
@@ -612,6 +700,56 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   };
 
   const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
+
+  const saveCurrentView = (): void => {
+    const normalizedName = savedViewName.trim();
+    if (normalizedName.length === 0) {
+      setError("请填写保存视图名称");
+      return;
+    }
+
+    const nextView: SavedQueueView = {
+      name: normalizedName,
+      statusFilter,
+      assignmentFilter,
+      handledByFilterQuery,
+      searchQuery,
+      slaFilter,
+      orderedBy
+    };
+    setSavedViews((current) => {
+      const nextViews = [nextView, ...current.filter((view) => view.name !== normalizedName)].slice(0, 6);
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
+    setSavedViewName("");
+    setMessage(`已保存视图 ${normalizedName}`);
+    setError(null);
+  };
+
+  const applySavedView = (view: SavedQueueView): void => {
+    setCurrentPage(1);
+    setStatusFilter(view.statusFilter);
+    setAssignmentFilter(view.assignmentFilter);
+    setHandledByFilterInput(view.handledByFilterQuery);
+    setHandledByFilterQuery(view.handledByFilterQuery);
+    setSearchInput(view.searchQuery);
+    setSearchQuery(view.searchQuery);
+    setSlaFilter(view.slaFilter);
+    setOrderedBy(view.orderedBy);
+    setMessage(`已应用视图 ${view.name}`);
+    setError(null);
+  };
+
+  const deleteSavedView = (name: string): void => {
+    setSavedViews((current) => {
+      const nextViews = current.filter((view) => view.name !== name);
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
+    setMessage(`已删除视图 ${name}`);
+    setError(null);
+  };
 
   const applyQuickView = (view: QuickViewFilter): void => {
     setCurrentPage(1);
@@ -777,6 +915,38 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <button type="button" onClick={() => void exportCurrentFilter()}>
         导出当前筛选 CSV
       </button>
+      <button type="button" onClick={() => void exportRiskQueue("breached")}>
+        导出已超时队列 CSV
+      </button>
+      <button type="button" onClick={() => void exportRiskQueue("due_soon")}>
+        导出临近超时队列 CSV
+      </button>
+
+      <h3>保存视图</h3>
+      <label htmlFor="guardian-support-saved-view-name">视图名称</label>
+      <input
+        id="guardian-support-saved-view-name"
+        value={savedViewName}
+        onChange={(event) => setSavedViewName(event.target.value)}
+        placeholder="例如 我的高风险队列"
+      />
+      <button type="button" onClick={saveCurrentView}>
+        保存当前视图
+      </button>
+      <p>已保存视图: {savedViews.length}</p>
+      {savedViews.length === 0 ? <p>暂无已保存视图。</p> : null}
+      <ul>
+        {savedViews.map((view) => (
+          <li key={view.name}>
+            <button type="button" onClick={() => applySavedView(view)}>
+              应用视图 {view.name}
+            </button>
+            <button type="button" onClick={() => deleteSavedView(view.name)}>
+              删除视图 {view.name}
+            </button>
+          </li>
+        ))}
+      </ul>
 
       <h3>批量处理</h3>
       <p>已勾选: {selectedRequestIds.length} 条</p>

@@ -625,6 +625,208 @@ describe("admin minor guardian support page", () => {
     });
   });
 
+  test("saves and reapplies queue views from local storage", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      handledBy?: string;
+      query?: string;
+      orderBy?: "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+      slaState?: "within_sla" | "due_soon" | "breached";
+    }) => {
+      if (
+        params?.handledBy === "ops-reviewer-9" &&
+        params?.query === "guardian-special" &&
+        params?.orderBy === "queue_wait_desc" &&
+        params?.slaState === "due_soon"
+      ) {
+        return buildListResponse({
+          ordered_by: "queue_wait_desc",
+          items: [
+            buildRequest({
+              request_id: "guardian-request-saved-view",
+              user_email: "guardian-special@example.com",
+              queue_wait_minutes: 140,
+              handled_by: "ops-reviewer-9",
+              sla_state: "due_soon"
+            })
+          ]
+        });
+      }
+
+      return buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1"
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("指定处理人"), {
+      target: {
+        value: "ops-reviewer-9"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "按处理人筛选" }));
+    fireEvent.change(screen.getByLabelText("搜索监护人工单"), {
+      target: {
+        value: "guardian-special"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索工单" }));
+    fireEvent.change(screen.getByLabelText("SLA 过滤"), {
+      target: {
+        value: "due_soon"
+      }
+    });
+    fireEvent.change(screen.getByLabelText("队列排序"), {
+      target: {
+        value: "queue_wait_desc"
+      }
+    });
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        handledBy: "ops-reviewer-9",
+        orderBy: "queue_wait_desc",
+        query: "guardian-special",
+        slaState: "due_soon",
+        status: "pending_review",
+        page: 1,
+        pageSize: 10
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText("视图名称"), {
+      target: {
+        value: "高风险跟进"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存当前视图" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("已保存视图: 1")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "应用视图 高风险跟进" })).toBeInTheDocument();
+      expect(localStorage.getItem("ielts.admin_minor_guardian_support.saved_views")).toContain("高风险跟进");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认视图" }));
+    fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
+    fireEvent.click(screen.getByRole("button", { name: "清空归属筛选" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前搜索: -")).toBeInTheDocument();
+      expect(screen.getByText("当前归属: 全部工单")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "应用视图 高风险跟进" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        handledBy: "ops-reviewer-9",
+        orderBy: "queue_wait_desc",
+        query: "guardian-special",
+        slaState: "due_soon",
+        status: "pending_review",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("当前搜索: guardian-special")).toBeInTheDocument();
+      expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
+      expect(screen.getByText("当前 SLA: 临近超时")).toBeInTheDocument();
+      expect(screen.getByText("排序: 等待时长优先")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-saved-view/)).toBeInTheDocument();
+    });
+  });
+
+  test("exports breached and due soon queues with one click", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue(
+      buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1"
+          })
+        ]
+      })
+    );
+    const exportInternalMinorGuardianSupportRequests = vi
+      .fn()
+      .mockResolvedValueOnce({
+        filename: "guardian-breached.csv",
+        content: "breached"
+      })
+      .mockResolvedValueOnce({
+        filename: "guardian-due-soon.csv",
+        content: "due-soon"
+      });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出已超时队列 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenNthCalledWith(1, {
+        accessToken: "ops-access-token",
+        query: undefined,
+        handledBy: undefined,
+        unassigned: undefined,
+        slaState: "breached",
+        orderBy: "sla_priority_desc"
+      });
+      expect(screen.getByText(/已生成已超时导出 guardian-breached.csv/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出临近超时队列 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenNthCalledWith(2, {
+        accessToken: "ops-access-token",
+        query: undefined,
+        handledBy: undefined,
+        unassigned: undefined,
+        slaState: "due_soon",
+        orderBy: "sla_priority_desc"
+      });
+      expect(screen.getByText(/已生成临近超时导出 guardian-due-soon.csv/)).toBeInTheDocument();
+      expect(screen.getByLabelText("最近导出内容")).toHaveValue("due-soon");
+    });
+  });
+
   test("supports bulk assignment and status updates for selected requests", async () => {
     const tokenStorage = createTokenStorage();
 
