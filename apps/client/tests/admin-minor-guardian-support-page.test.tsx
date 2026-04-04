@@ -357,6 +357,209 @@ describe("admin minor guardian support page", () => {
     });
   });
 
+  test("supports detail quick filter linkage from selected request", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      accessToken?: string;
+      query?: string;
+      handledBy?: string;
+      status?: "pending_review" | "contacted" | "closed";
+      slaState?: "within_sla" | "due_soon" | "breached";
+      orderBy?: "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+      page?: number;
+      pageSize?: number;
+      unassigned?: boolean;
+    }) => {
+      if (params?.query === "user-detail-1") {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-detail-root",
+              user_id: "user-detail-1",
+              user_email: "detail@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "breached",
+              sla_breached: true,
+              queue_wait_minutes: 180
+            }),
+            buildRequest({
+              request_id: "guardian-request-user-history",
+              user_id: "user-detail-1",
+              user_email: "detail-history@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "within_sla"
+            })
+          ]
+        });
+      }
+      if (params?.handledBy === "ops-reviewer-9") {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-detail-root",
+              user_id: "user-detail-1",
+              user_email: "detail@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "breached",
+              sla_breached: true,
+              queue_wait_minutes: 180
+            }),
+            buildRequest({
+              request_id: "guardian-request-handler-queue",
+              user_id: "user-handler-1",
+              user_email: "handler@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "within_sla"
+            })
+          ]
+        });
+      }
+      if (params?.status === "contacted") {
+        return buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-detail-root",
+              user_id: "user-detail-1",
+              user_email: "detail@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "breached",
+              sla_breached: true,
+              queue_wait_minutes: 180
+            }),
+            buildRequest({
+              request_id: "guardian-request-status-queue",
+              user_id: "user-status-1",
+              user_email: "status@example.com",
+              status: "contacted",
+              handled_by: "ops-reviewer-2",
+              sla_state: "within_sla"
+            })
+          ]
+        });
+      }
+      if (params?.slaState === "breached" && params?.orderBy === "sla_priority_desc") {
+        return buildListResponse({
+          ordered_by: "sla_priority_desc",
+          items: [
+            buildRequest({
+              request_id: "guardian-request-detail-root",
+              user_id: "user-detail-1",
+              user_email: "detail@example.com",
+              handled_by: "ops-reviewer-9",
+              status: "contacted",
+              sla_state: "breached",
+              sla_breached: true,
+              queue_wait_minutes: 220
+            }),
+            buildRequest({
+              request_id: "guardian-request-risk-queue",
+              user_id: "user-risk-1",
+              user_email: "risk@example.com",
+              status: "pending_review",
+              handled_by: "ops-reviewer-4",
+              sla_state: "breached",
+              sla_breached: true,
+              queue_wait_minutes: 210
+            })
+          ]
+        });
+      }
+
+      return buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-detail-root",
+            user_id: "user-detail-1",
+            user_email: "detail@example.com",
+            handled_by: "ops-reviewer-9",
+            status: "contacted",
+            sla_state: "breached",
+            sla_breached: true,
+            queue_wait_minutes: 180
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-detail-root/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看该用户历史工单" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
+        query: "user-detail-1",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已切换到用户历史工单 user-detail-1")).toBeInTheDocument();
+      expect(screen.getByText("当前搜索: user-detail-1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看该处理人队列" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        handledBy: "ops-reviewer-9",
+        orderBy: "updated_at_desc",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已切换到处理人队列 ops-reviewer-9")).toBeInTheDocument();
+      expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看同状态队列" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
+        status: "contacted",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已切换到同状态队列 已联系")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看同风险队列" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        orderBy: "sla_priority_desc",
+        slaState: "breached",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已切换到同风险队列 已超时")).toBeInTheDocument();
+      expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
+      expect(screen.getByText("排序: SLA 优先")).toBeInTheDocument();
+    });
+  });
+
   test("filters queue by mine, unassigned and specific handler", async () => {
     const tokenStorage = createTokenStorage();
 

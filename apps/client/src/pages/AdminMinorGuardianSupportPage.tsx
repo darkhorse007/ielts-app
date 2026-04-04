@@ -905,6 +905,90 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setError(null);
   };
 
+  const focusSelectedRequestUserHistory = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter("all");
+    setAssignmentFilter("all");
+    setHandledByFilterInput("");
+    setHandledByFilterQuery("");
+    setSlaFilter("all");
+    setOrderedBy("updated_at_desc");
+    setSearchInput(selectedRequest.user_id);
+    setSearchQuery(selectedRequest.user_id);
+    setMessage(`已切换到用户历史工单 ${selectedRequest.user_id}`);
+    setError(null);
+  };
+
+  const focusSelectedRequestHandlerQueue = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+    if (!selectedRequest.handled_by || selectedRequest.handled_by.trim().length === 0) {
+      setError("当前工单暂无处理人，无法切换处理人队列");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter("all");
+    setAssignmentFilter("handled_by");
+    setHandledByFilterInput(selectedRequest.handled_by);
+    setHandledByFilterQuery(selectedRequest.handled_by);
+    setSlaFilter("all");
+    setOrderedBy("updated_at_desc");
+    setSearchInput("");
+    setSearchQuery("");
+    setMessage(`已切换到处理人队列 ${selectedRequest.handled_by}`);
+    setError(null);
+  };
+
+  const focusSelectedRequestStatusQueue = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter(selectedRequest.status);
+    setAssignmentFilter("all");
+    setHandledByFilterInput("");
+    setHandledByFilterQuery("");
+    setSlaFilter("all");
+    setOrderedBy("updated_at_desc");
+    setSearchInput("");
+    setSearchQuery("");
+    setMessage(`已切换到同状态队列 ${STATUS_LABELS[selectedRequest.status]}`);
+    setError(null);
+  };
+
+  const focusSelectedRequestRiskQueue = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+    if (selectedRequest.sla_state !== "due_soon" && selectedRequest.sla_state !== "breached") {
+      setError("当前工单不在风险队列中");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter("all");
+    setAssignmentFilter("all");
+    setHandledByFilterInput("");
+    setHandledByFilterQuery("");
+    setSearchInput("");
+    setSearchQuery("");
+    setSlaFilter(selectedRequest.sla_state);
+    setOrderedBy("sla_priority_desc");
+    setMessage(`已切换到同风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`);
+    setError(null);
+  };
+
   const toggleRequestSelection = (requestId: string): void => {
     setSelectedRequestIds((current) =>
       current.includes(requestId) ? current.filter((item) => item !== requestId) : [...current, requestId]
@@ -1547,6 +1631,27 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
           </button>
           <button type="button" onClick={selectNextActionableRequest} disabled={!nextActionableRequestId}>
             切到下一条待处理
+          </button>
+          <p>详情联动</p>
+          <button type="button" onClick={focusSelectedRequestUserHistory}>
+            查看该用户历史工单
+          </button>
+          <button
+            type="button"
+            onClick={focusSelectedRequestHandlerQueue}
+            disabled={!selectedRequest.handled_by || selectedRequest.handled_by.trim().length === 0}
+          >
+            查看该处理人队列
+          </button>
+          <button type="button" onClick={focusSelectedRequestStatusQueue}>
+            查看同状态队列
+          </button>
+          <button
+            type="button"
+            onClick={focusSelectedRequestRiskQueue}
+            disabled={selectedRequest.sla_state !== "due_soon" && selectedRequest.sla_state !== "breached"}
+          >
+            查看同风险队列
           </button>
           <p>快捷模板</p>
           <button type="button" onClick={applyContactTemplate}>
