@@ -286,6 +286,77 @@ describe("admin minor guardian support page", () => {
     expect(screen.getByLabelText("处理备注")).toHaveValue("已向监护人说明数据导出与删除流程，工单关闭。");
   });
 
+  test("supports single-request claim actions and next actionable navigation", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue(
+      buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1",
+            user_id: "user-1",
+            user_email: "guardian1@example.com",
+            contact_channel: "email",
+            topic: "usage_concern",
+            status: "pending_review"
+          }),
+          buildRequest({
+            request_id: "guardian-request-2",
+            user_id: "user-2",
+            user_email: "guardian2@example.com",
+            topic: "data_deletion",
+            status: "pending_review",
+            created_at: "2026-04-03T11:00:00.000Z",
+            updated_at: "2026-04-03T11:00:00.000Z"
+          })
+        ]
+      })
+    );
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+      expect(screen.getByText("详情导航: 当前 1 / 2，下一条待处理 guardian-request-2")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "认领并联系" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("处理人")).toHaveValue("ops-user-1");
+      expect(screen.getByLabelText("更新状态")).toHaveValue("contacted");
+      expect(screen.getByLabelText("处理备注")).toHaveValue("已通过邮箱联系监护人，等待反馈。");
+      expect(screen.getByText("消息: 已套用认领并联系动作 guardian-request-1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "切到下一条待处理" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-2/)).toBeInTheDocument();
+      expect(screen.getByText("消息: 已切换到下一条待处理工单 guardian-request-2")).toBeInTheDocument();
+      expect(screen.getByText("详情导航: 当前 2 / 2，下一条待处理 guardian-request-1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "认领并关闭" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("处理人")).toHaveValue("ops-user-1");
+      expect(screen.getByLabelText("更新状态")).toHaveValue("closed");
+      expect(screen.getByLabelText("处理备注")).toHaveValue("已向监护人说明数据导出与删除流程，工单关闭。");
+      expect(screen.getByText("消息: 已套用认领并关闭动作 guardian-request-2")).toBeInTheDocument();
+    });
+  });
+
   test("filters queue by mine, unassigned and specific handler", async () => {
     const tokenStorage = createTokenStorage();
 

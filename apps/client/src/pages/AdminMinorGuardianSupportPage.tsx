@@ -392,6 +392,17 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     const selectedIds = new Set(selectedRequestIds);
     return requests.filter((item) => selectedIds.has(item.request_id));
   }, [requests, selectedRequestIds]);
+  const selectedRequestPosition = useMemo(() => {
+    if (!selectedRequestId) {
+      return 0;
+    }
+    const index = requests.findIndex((item) => item.request_id === selectedRequestId);
+    return index >= 0 ? index + 1 : 0;
+  }, [requests, selectedRequestId]);
+  const nextActionableRequestId = useMemo(
+    () => (selectedRequest ? getNextActionableRequestId(requests, selectedRequest.request_id) : null),
+    [requests, selectedRequest]
+  );
   const defaultSavedView = useMemo(() => getDefaultSavedQueueView(savedViews), [savedViews]);
   const selectedRequestStatusSummary = useMemo(
     () =>
@@ -834,6 +845,63 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     }
     setNextStatus("closed");
     setOperatorNote(buildCloseTemplate(selectedRequest));
+    setError(null);
+  };
+
+  const applyOwnedContactAction = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+    if (currentOperatorId.trim().length === 0) {
+      setError("当前账号缺少用户 ID，无法认领工单");
+      return;
+    }
+    if (!canTransitionToStatus(selectedRequest.status, "contacted")) {
+      setError("当前工单无法直接切换到已联系");
+      return;
+    }
+
+    setHandledBy(currentOperatorId);
+    setNextStatus("contacted");
+    setOperatorNote(buildContactTemplate(selectedRequest));
+    setMessage(`已套用认领并联系动作 ${selectedRequest.request_id}`);
+    setError(null);
+  };
+
+  const applyOwnedCloseAction = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+    if (currentOperatorId.trim().length === 0) {
+      setError("当前账号缺少用户 ID，无法认领工单");
+      return;
+    }
+    if (!canTransitionToStatus(selectedRequest.status, "closed")) {
+      setError("当前工单无法直接切换到已关闭");
+      return;
+    }
+
+    setHandledBy(currentOperatorId);
+    setNextStatus("closed");
+    setOperatorNote(buildCloseTemplate(selectedRequest));
+    setMessage(`已套用认领并关闭动作 ${selectedRequest.request_id}`);
+    setError(null);
+  };
+
+  const selectNextActionableRequest = (): void => {
+    if (!selectedRequest) {
+      setError("请先选择一条工单");
+      return;
+    }
+    if (!nextActionableRequestId) {
+      setError("当前列表没有下一条待处理工单");
+      return;
+    }
+
+    setSelectedRequestId(nextActionableRequestId);
+    setMessage(`已切换到下一条待处理工单 ${nextActionableRequestId}`);
     setError(null);
   };
 
@@ -1460,6 +1528,26 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
           <p>operator_note: {toDisplayText(selectedRequest.operator_note)}</p>
 
           <h3>处理操作</h3>
+          <p>
+            详情导航: 当前 {selectedRequestPosition} / {requests.length}，下一条待处理 {nextActionableRequestId ?? "-"}
+          </p>
+          <button
+            type="button"
+            onClick={applyOwnedContactAction}
+            disabled={!canTransitionToStatus(selectedRequest.status, "contacted")}
+          >
+            认领并联系
+          </button>
+          <button
+            type="button"
+            onClick={applyOwnedCloseAction}
+            disabled={!canTransitionToStatus(selectedRequest.status, "closed")}
+          >
+            认领并关闭
+          </button>
+          <button type="button" onClick={selectNextActionableRequest} disabled={!nextActionableRequestId}>
+            切到下一条待处理
+          </button>
           <p>快捷模板</p>
           <button type="button" onClick={applyContactTemplate}>
             填入联系模板
