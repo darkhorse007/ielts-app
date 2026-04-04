@@ -5,11 +5,12 @@ import { ApiClient } from "../src/lib/api-client";
 import { formatMinorGuardianAgeBandLabel, useMinorGuardian, type MinorGuardianAgeBand } from "../src/state/minor-guardian";
 import { validateEmail, validatePassword, validatePhone } from "../src/lib/validators";
 import { useAppSession } from "../src/state/app-session";
+import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
 import { AppScreen, ButtonRow, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
 export default function RegisterScreen() {
-  const { instanceConfig } = useAppSession();
+  const { defaultInstanceConfig, instanceConfig } = useAppSession();
   const { setAgeBand } = useMinorGuardian();
   const plainTextPasswordFields = process.env.EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS === "true";
   const [email, setEmail] = useState("");
@@ -82,6 +83,12 @@ export default function RegisterScreen() {
       title="先把账号创建出来"
       subtitle="注册接口直接复用当前 Web 应用的认证契约，后续 iOS / Android 所有学习域都基于同一账号体系展开。"
     >
+      <InstanceConnectionCard
+        title="当前将连接到以下实例"
+        instanceConfig={instanceConfig}
+        defaultInstanceConfig={defaultInstanceConfig}
+      />
+
       <TextField
         label="邮箱"
         testID="register.email"

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { validateBandScore } from "../src/lib/validators";
 import { useAppSession } from "../src/state/app-session";
+import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -19,7 +20,7 @@ const todayDate = (): string => {
 };
 
 export default function OnboardingScreen() {
-  const { session, runWithAuthorizedClient } = useAppSession();
+  const { defaultInstanceConfig, instanceConfig, session, runWithAuthorizedClient } = useAppSession();
   const [targetBand, setTargetBand] = useState("6.5");
   const [targetExamDate, setTargetExamDate] = useState("");
   const [weeklyHours, setWeeklyHours] = useState("10");
@@ -29,6 +30,10 @@ export default function OnboardingScreen() {
   const [planId, setPlanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  if (!instanceConfig) {
+    return <Redirect href="/instance" />;
+  }
 
   if (!session) {
     return <Redirect href="/login" />;
@@ -101,6 +106,12 @@ export default function OnboardingScreen() {
       title="先把目标与约束写进系统"
       subtitle="这个页面已经接上当前 Web 使用的入门目标接口。提交成功后可以直接进入首次诊断。"
     >
+      <InstanceConnectionCard
+        title="当前将把目标写入以下实例"
+        instanceConfig={instanceConfig}
+        defaultInstanceConfig={defaultInstanceConfig}
+      />
+
       <TextField
         label="目标分"
         value={targetBand}

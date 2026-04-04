@@ -25,7 +25,9 @@ import InstanceConfigScreen from "../app/instance";
 import ListeningScreen from "../app/listening";
 import LoginScreen from "../app/login";
 import ReadingScreen from "../app/reading";
+import RegisterScreen from "../app/register";
 import MockExamScreen from "../app/mock-exam";
+import OnboardingScreen from "../app/onboarding";
 import SpeakingScreen from "../app/speaking";
 import WritingScreen from "../app/writing";
 
@@ -345,6 +347,13 @@ const createSessionContext = (overrides?: {
 };
 
 describe("mobile route smoke", () => {
+  const renderRegisterScreen = () =>
+    render(
+      <MinorGuardianProvider>
+        <RegisterScreen />
+      </MinorGuardianProvider>
+    );
+
   const renderAccountScreen = () =>
     render(
       <MinorGuardianProvider>
@@ -394,6 +403,47 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("ws://ws.example.com:8788")).toBeTruthy();
     expect(screen.getByText((content) => content.includes("API 与 WS 指向不同 host/port"))).toBeTruthy();
     expect(screen.getByText((content) => content.includes("外网地址仍使用 HTTP / WS"))).toBeTruthy();
+  });
+
+  test("register screen shows instance summary and risk warnings", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        session: null,
+        instanceConfig: {
+          apiBaseUrl: "http://api.example.com:8787",
+          wsBaseUrl: "ws://ws.example.com:8788"
+        }
+      })
+    );
+
+    renderRegisterScreen();
+
+    await waitFor(() => {
+      expect(screen.getByText("先把账号创建出来")).toBeTruthy();
+    });
+    expect(screen.getByText("当前正在使用本地覆盖实例")).toBeTruthy();
+    expect(screen.getByText("http://api.example.com:8787")).toBeTruthy();
+    expect(screen.getByText("ws://ws.example.com:8788")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("API 与 WS 指向不同 host/port"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("外网地址仍使用 HTTP / WS"))).toBeTruthy();
+  });
+
+  test("onboarding screen shows current instance summary", () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: {
+          apiBaseUrl: "http://192.168.0.20:8787",
+          wsBaseUrl: "ws://192.168.0.20:8787"
+        }
+      })
+    );
+
+    render(<OnboardingScreen />);
+
+    expect(screen.getByText("先把目标与约束写进系统")).toBeTruthy();
+    expect(screen.getByText("当前正在使用本地覆盖实例")).toBeTruthy();
+    expect(screen.getByText("http://192.168.0.20:8787")).toBeTruthy();
+    expect(screen.getByText("ws://192.168.0.20:8787")).toBeTruthy();
   });
 
   test("instance screen validates health before saving configuration", async () => {
