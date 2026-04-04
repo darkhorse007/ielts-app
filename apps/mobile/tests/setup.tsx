@@ -35,7 +35,15 @@ const mockConstants = {
   appOwnership: null as string | null,
   executionEnvironment: "standalone",
   expoConfig: {
-    version: "1.0.0-test"
+    version: "1.0.0-test",
+    ios: {
+      buildNumber: "1",
+      bundleIdentifier: "com.darkhorse.ieltsmobile"
+    },
+    android: {
+      versionCode: 1,
+      package: "com.darkhorse.ieltsmobile"
+    }
   }
 };
 let notificationHandler: Record<string, unknown> | null = null;
@@ -217,7 +225,15 @@ vi.mock("expo-constants", () => ({
     mockConstants.appOwnership = null;
     mockConstants.executionEnvironment = "standalone";
     mockConstants.expoConfig = {
-      version: "1.0.0-test"
+      version: "1.0.0-test",
+      ios: {
+        buildNumber: "1",
+        bundleIdentifier: "com.darkhorse.ieltsmobile"
+      },
+      android: {
+        versionCode: 1,
+        package: "com.darkhorse.ieltsmobile"
+      }
     };
   },
   __setMockConstants: (
@@ -226,6 +242,14 @@ vi.mock("expo-constants", () => ({
       executionEnvironment: string;
       expoConfig: {
         version?: string;
+        ios?: {
+          buildNumber?: string;
+          bundleIdentifier?: string;
+        };
+        android?: {
+          versionCode?: number;
+          package?: string;
+        };
       };
     }>
   ) => {
@@ -238,7 +262,15 @@ vi.mock("expo-constants", () => ({
     if (overrides.expoConfig) {
       mockConstants.expoConfig = {
         ...mockConstants.expoConfig,
-        ...overrides.expoConfig
+        ...overrides.expoConfig,
+        ios: {
+          ...mockConstants.expoConfig.ios,
+          ...overrides.expoConfig.ios
+        },
+        android: {
+          ...mockConstants.expoConfig.android,
+          ...overrides.expoConfig.android
+        }
       };
     }
   }

@@ -4,7 +4,7 @@ import * as Audio from "expo-audio";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
-import { Linking } from "react-native";
+import { Linking, Share } from "react-native";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type {
   MinorGuardianResponse,
@@ -83,6 +83,9 @@ const mockedNotifications = Notifications as typeof Notifications & {
 };
 const mockedLinking = Linking as typeof Linking & {
   openSettings: ReturnType<typeof vi.fn>;
+};
+const mockedShare = Share as typeof Share & {
+  share: ReturnType<typeof vi.fn>;
 };
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
@@ -579,8 +582,35 @@ describe("mobile route smoke", () => {
       expect(screen.getByText((content) => content.includes("notification_permission: 已授权"))).toBeTruthy();
     });
     expect(screen.getByText((content) => content.includes("remote_device_status: 当前设备未登记"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("app_version: 1.0.0-test"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("native_build: 1"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("ws_base_url: ws://127.0.0.1:8787"))).toBeTruthy();
     expect(screen.getByText("导出并分享")).toBeTruthy();
     expect(screen.getByText("立即删除")).toBeTruthy();
+  });
+
+  test("account screen can share runtime diagnostics", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    renderAccountScreen();
+
+    fireEvent.click(screen.getByTestId("account.shareRuntimeDiagnostics"));
+
+    await waitFor(() => {
+      expect(mockedShare.share).toHaveBeenCalledTimes(1);
+    });
+    expect(mockedShare.share).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "IELTS Mobile runtime diagnostics",
+        message: expect.stringContaining("app_version: 1.0.0-test")
+      })
+    );
+    expect(mockedShare.share).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("ws_base_url: ws://127.0.0.1:8787")
+      })
+    );
+    expect(screen.getByText("已分享构建诊断")).toBeTruthy();
   });
 
   test("account screen can schedule local reminder notification", async () => {

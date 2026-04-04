@@ -27,6 +27,7 @@ import {
   toNotificationPermissionLabel
 } from "../src/lib/notifications";
 import { openAppSettingsAsync } from "../src/lib/native-settings";
+import { buildMobileRuntimeDiagnostics, formatMobileRuntimeDiagnostics } from "../src/lib/runtime-diagnostics";
 import {
   formatMinorGuardianAgeBandLabel,
   useMinorGuardian,
@@ -156,6 +157,7 @@ const shouldSuggestOpeningNotificationSettings = (permission: NotificationPermis
 export default function AccountScreen() {
   const { instanceConfig, session, logout, runWithAuthorizedClient, syncReminderDevice } = useAppSession();
   const { ready: minorGuardianReady, state: minorGuardianState, setAgeBand: setMinorGuardianAgeBand } = useMinorGuardian();
+  const runtimeDiagnostics = buildMobileRuntimeDiagnostics(instanceConfig);
   const hydratingAccountRef = useRef(false);
   const [profile, setProfile] = useState<UserProfileResponse | null>(() =>
     session ? buildFallbackProfile(session.userId) : null
@@ -726,6 +728,19 @@ export default function AccountScreen() {
       setError(exportError instanceof Error ? exportError.message : "导出用户数据失败");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const shareRuntimeDiagnostics = async (): Promise<void> => {
+    try {
+      await Share.share({
+        title: "IELTS Mobile runtime diagnostics",
+        message: formatMobileRuntimeDiagnostics(runtimeDiagnostics)
+      });
+      setStatusMessage("已分享构建诊断");
+      setError(null);
+    } catch (shareError) {
+      setError(shareError instanceof Error ? shareError.message : "分享构建诊断失败");
     }
   };
 
@@ -1356,9 +1371,27 @@ export default function AccountScreen() {
 
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>运行诊断</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>platform: {runtimeDiagnostics.platform}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>app_version: {runtimeDiagnostics.appVersion}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>native_build: {runtimeDiagnostics.nativeBuild}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>app_identifier: {runtimeDiagnostics.appIdentifier}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>runtime_mode: {runtimeDiagnostics.runtimeMode}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          execution_environment: {runtimeDiagnostics.executionEnvironment}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>app_ownership: {runtimeDiagnostics.appOwnership}</Text>
         <Text style={{ color: colors.textPrimary, fontSize: 14 }}>api_base_url: {formatValue(instanceConfig?.apiBaseUrl)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>ws_base_url: {runtimeDiagnostics.wsBaseUrl}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>last_action: {lastAccountAction}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>last_result: {lastAccountResult}</Text>
+        <ButtonRow>
+          <SecondaryButton
+            label="分享构建诊断"
+            onPress={() => void shareRuntimeDiagnostics()}
+            disabled={loading}
+            testID="account.shareRuntimeDiagnostics"
+          />
+        </ButtonRow>
       </InfoCard>
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
