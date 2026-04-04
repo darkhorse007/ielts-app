@@ -1094,6 +1094,13 @@ describe("admin minor guardian support page", () => {
     fireEvent.click(screen.getByLabelText("选择工单 guardian-request-1"));
     fireEvent.click(screen.getByLabelText("选择工单 guardian-request-2"));
 
+    await waitFor(() => {
+      expect(screen.getByText("批量预检: 已分配 1 / 未分配 1")).toBeInTheDocument();
+      expect(screen.getByText("批量状态分组: 待审核 1 / 已联系 1 / 已关闭 0")).toBeInTheDocument();
+      expect(screen.getByText("批量提交条件: 可提交")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "保存批量处理" })).toBeEnabled();
+    });
+
     fireEvent.click(screen.getByRole("button", { name: "批量领取当前勾选" }));
 
     await waitFor(() => {
@@ -1124,7 +1131,22 @@ describe("admin minor guardian support page", () => {
     fireEvent.click(screen.getByRole("button", { name: "套用批量已联系模板" }));
 
     await waitFor(() => {
+      expect(screen.getByText("批量预检: 已分配 1 / 未分配 0")).toBeInTheDocument();
+      expect(screen.getByText("批量状态分组: 待审核 0 / 已联系 0 / 已关闭 1")).toBeInTheDocument();
       expect(screen.getByRole("alert")).toHaveTextContent("所选工单无法套用已联系模板");
+    });
+
+    fireEvent.change(screen.getByLabelText("批量状态"), {
+      target: {
+        value: "contacted"
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("批量可执行: 0 / 阻塞 1")).toBeInTheDocument();
+      expect(screen.getByText("批量阻塞 request_id: guardian-request-3")).toBeInTheDocument();
+      expect(screen.getByText("批量提交条件: 目标状态不适用于 guardian-request-3")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "保存批量处理" })).toBeDisabled();
     });
   });
 

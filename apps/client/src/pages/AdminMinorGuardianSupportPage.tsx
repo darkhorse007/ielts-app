@@ -154,6 +154,8 @@ const BULK_TEMPLATE_NOTES: Record<BulkActionTemplate, string> = {
   closed: "已批量完成监护人跟进并同步结果，工单关闭。"
 };
 
+const formatRequestIdList = (requestIds: string[]): string => (requestIds.length > 0 ? requestIds.join(", ") : "-");
+
 const canTransitionToStatus = (
   currentStatus: MinorGuardianSupportRequestStatus,
   nextStatus: MinorGuardianSupportRequestStatus
@@ -352,6 +354,48 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     return requests.filter((item) => selectedIds.has(item.request_id));
   }, [requests, selectedRequestIds]);
   const defaultSavedView = useMemo(() => getDefaultSavedQueueView(savedViews), [savedViews]);
+  const selectedRequestStatusSummary = useMemo(
+    () =>
+      selectedRequests.reduce<MinorGuardianSupportRequestStatusSummary>(
+        (summary, request) => ({
+          ...summary,
+          [request.status]: summary[request.status] + 1
+        }),
+        {
+          pending_review: 0,
+          contacted: 0,
+          closed: 0
+        }
+      ),
+    [selectedRequests]
+  );
+  const selectedAssignedCount = useMemo(
+    () => selectedRequests.filter((request) => typeof request.handled_by === "string" && request.handled_by.trim().length > 0).length,
+    [selectedRequests]
+  );
+  const selectedUnassignedCount = selectedRequests.length - selectedAssignedCount;
+  const bulkInvalidTransitionRequests = useMemo(
+    () =>
+      bulkNextStatus === "keep"
+        ? []
+        : selectedRequests
+            .filter((request) => !canTransitionToStatus(request.status, bulkNextStatus))
+            .map((request) => request.request_id),
+    [bulkNextStatus, selectedRequests]
+  );
+  const bulkExecutableCount = selectedRequests.length - bulkInvalidTransitionRequests.length;
+  const bulkBlockingReason = useMemo(() => {
+    if (selectedRequestIds.length === 0) {
+      return "请先勾选至少一条工单";
+    }
+    if (bulkHandledBy.trim().length === 0) {
+      return "请填写批量处理人";
+    }
+    if (bulkInvalidTransitionRequests.length > 0) {
+      return `目标状态不适用于 ${formatRequestIdList(bulkInvalidTransitionRequests)}`;
+    }
+    return null;
+  }, [bulkHandledBy, bulkInvalidTransitionRequests, selectedRequestIds.length]);
   const canApplyBulkContactTemplate =
     selectedRequests.length > 0 && selectedRequests.every((request) => canTransitionToStatus(request.status, "contacted"));
   const canApplyBulkCloseTemplate =
@@ -559,10 +603,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setError("请填写批量处理人");
       return;
     }
-    if (
-      bulkNextStatus !== "keep" &&
-      selectedRequests.some((request) => !canTransitionToStatus(request.status, bulkNextStatus))
-    ) {
+    if (bulkInvalidTransitionRequests.length > 0) {
       setError("所选工单无法批量更新到目标状态");
       return;
     }
@@ -1172,7 +1213,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
 
       <h3>批量处理</h3>
       <p>已勾选: {selectedRequestIds.length} 条</p>
-      <p>已选 request_id: {selectedRequestIds.length > 0 ? selectedRequestIds.join(", ") : "-"}</p>
+      <p>已选 request_id: {formatRequestIdList(selectedRequestIds)}</p>
       <button type="button" onClick={toggleSelectAllCurrentPage} disabled={requests.length === 0}>
         {allCurrentPageSelected ? "取消全选当前页" : "全选当前页"}
       </button>
@@ -1193,6 +1234,23 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <button type="button" onClick={() => applyBulkActionTemplate("closed")} disabled={selectedRequestIds.length === 0}>
         套用批量关闭模板
       </button>
+      <p>
+        批量预检: 已分配 {selectedAssignedCount} / 未分配 {selectedUnassignedCount}
+      </p>
+      <p>
+        批量状态分组: 待审核 {selectedRequestStatusSummary.pending_review} / 已联系{" "}
+        {selectedRequestStatusSummary.contacted} / 已关闭 {selectedRequestStatusSummary.closed}
+      </p>
+      <p>
+        批量目标状态: {bulkNextStatus === "keep" ? "保持当前状态" : STATUS_LABELS[bulkNextStatus]}
+      </p>
+      <p>
+        批量可执行: {bulkExecutableCount} / 阻塞 {bulkInvalidTransitionRequests.length}
+      </p>
+      {bulkInvalidTransitionRequests.length > 0 ? (
+        <p>批量阻塞 request_id: {formatRequestIdList(bulkInvalidTransitionRequests)}</p>
+      ) : null}
+      <p>批量提交条件: {bulkBlockingReason ?? "可提交"}</p>
 
       <label htmlFor="guardian-support-bulk-handled-by">批量处理人</label>
       <input
@@ -1235,7 +1293,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         placeholder="用于统一记录批量跟进结果或备注"
       />
 
-      <button type="button" onClick={() => void submitBulkUpdate()} disabled={selectedRequestIds.length === 0}>
+      <button type="button" onClick={() => void submitBulkUpdate()} disabled={bulkBlockingReason !== null}>
         保存批量处理
       </button>
 
