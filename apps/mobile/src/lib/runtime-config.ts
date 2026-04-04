@@ -109,6 +109,23 @@ export const normalizeInstanceConfig = (input: {
 export const isSameInstanceConfig = (left: InstanceConfig | null | undefined, right: InstanceConfig | null | undefined): boolean =>
   Boolean(left && right && left.apiBaseUrl === right.apiBaseUrl && left.wsBaseUrl === right.wsBaseUrl);
 
+export const getInstanceConfigSourceLabel = (
+  instanceConfig: InstanceConfig | null | undefined,
+  defaultInstanceConfig: InstanceConfig | null | undefined
+): string => {
+  if (defaultInstanceConfig) {
+    if (isSameInstanceConfig(instanceConfig, defaultInstanceConfig)) {
+      return "当前正在使用安装包预置实例";
+    }
+    if (instanceConfig) {
+      return "当前正在使用本地覆盖实例";
+    }
+    return "尚未保存实例，预置值可直接恢复";
+  }
+
+  return instanceConfig ? "当前实例来自本地手动配置" : "当前安装包未预置默认实例";
+};
+
 export const getInstanceConfigRisks = (config: InstanceConfig): InstanceConfigRisk[] => {
   const apiUrl = new URL(config.apiBaseUrl);
   const wsUrl = new URL(config.wsBaseUrl);

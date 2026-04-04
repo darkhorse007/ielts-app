@@ -2,7 +2,12 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
 import { ApiClient, ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
-import { getInstanceConfigRisks, isSameInstanceConfig, normalizeInstanceConfig, type InstanceConfig } from "../src/lib/runtime-config";
+import {
+  getInstanceConfigRisks,
+  getInstanceConfigSourceLabel,
+  isSameInstanceConfig,
+  normalizeInstanceConfig
+} from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -152,13 +157,7 @@ export default function InstanceConfigScreen() {
   })();
   const previewRisks = preview ? getInstanceConfigRisks(preview) : [];
   const usingDefaultInstance = isSameInstanceConfig(instanceConfig, defaultInstanceConfig);
-  const sourceLabel = defaultInstanceConfig
-    ? usingDefaultInstance
-      ? "当前正在使用安装包预置实例"
-      : instanceConfig
-        ? "当前正在使用本地覆盖实例"
-        : "尚未保存实例，预置值可直接恢复"
-    : "当前安装包未预置默认实例";
+  const sourceLabel = getInstanceConfigSourceLabel(instanceConfig, defaultInstanceConfig);
 
   return (
     <AppScreen

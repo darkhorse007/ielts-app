@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { ApiClient, runSpeakingWebSocketSmoke } from "../src/lib/api-client";
 import type { UserProfileResponse } from "../src/lib/api-types";
 import { useAppSession } from "../src/state/app-session";
+import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
 import {
   AppScreen,
   ButtonRow,
@@ -33,7 +34,7 @@ const availableModules = [
 ];
 
 export default function HomeScreen() {
-  const { instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
+  const { defaultInstanceConfig, instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [profileStatus, setProfileStatus] = useState("等待拉取");
   const [healthStatus, setHealthStatus] = useState("未检查");
@@ -138,11 +139,11 @@ export default function HomeScreen() {
       title="自托管移动端骨架已落地"
       subtitle="当前已打通实例配置、安全会话存储、注册/登录、首页骨架、入门目标、首次诊断、学习计划、学习进度、听力训练、阅读训练、实时口语、写作批改、模考与报告、账户与导出，以及 API / WebSocket 连接 smoke。"
     >
-      <InfoCard tone="accent">
-        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 8 }}>已绑定实例</Text>
-        <Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: "700" }}>{instanceConfig.apiBaseUrl}</Text>
-        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 8 }}>{instanceConfig.wsBaseUrl}</Text>
-      </InfoCard>
+      <InstanceConnectionCard
+        title="已绑定实例"
+        instanceConfig={instanceConfig}
+        defaultInstanceConfig={defaultInstanceConfig}
+      />
 
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>当前登录状态</Text>

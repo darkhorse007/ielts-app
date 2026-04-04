@@ -4,11 +4,12 @@ import { Platform, Text } from "react-native";
 import { ApiClient } from "../src/lib/api-client";
 import { validateEmail, validatePhone } from "../src/lib/validators";
 import { useAppSession } from "../src/state/app-session";
+import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
 import { AppScreen, ButtonRow, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
 export default function LoginScreen() {
-  const { instanceConfig, saveSession, session } = useAppSession();
+  const { defaultInstanceConfig, instanceConfig, saveSession, session } = useAppSession();
   const plainTextPasswordFields = process.env.EXPO_PUBLIC_E2E_PLAINTEXT_PASSWORD_FIELDS === "true";
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -61,6 +62,12 @@ export default function LoginScreen() {
       title="登录移动端工作台"
       subtitle="首期先打通认证与连接验证。成功登录后会把 access / refresh token 保存在安全存储中。"
     >
+      <InstanceConnectionCard
+        title="当前将连接到以下实例"
+        instanceConfig={instanceConfig}
+        defaultInstanceConfig={defaultInstanceConfig}
+      />
+
       <TextField
         label="邮箱或手机号"
         testID="login.identifier"

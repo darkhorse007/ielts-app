@@ -23,12 +23,15 @@ import DiagnosticScreen from "../app/diagnostic";
 import HomeScreen from "../app/home";
 import InstanceConfigScreen from "../app/instance";
 import ListeningScreen from "../app/listening";
+import LoginScreen from "../app/login";
 import ReadingScreen from "../app/reading";
 import MockExamScreen from "../app/mock-exam";
 import SpeakingScreen from "../app/speaking";
 import WritingScreen from "../app/writing";
 
 vi.mock("expo-router", () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Redirect: () => null,
   router: {
     push: vi.fn(),
     replace: vi.fn()
@@ -109,7 +112,18 @@ const createSessionContext = (overrides?: {
   reminderDevices?: ReminderDeviceRegistrationResponse[];
   saveInstanceConfig?: ReturnType<typeof vi.fn>;
 }): ReturnType<typeof useAppSession> => {
-  const sessionValue = overrides?.session ?? defaultSession;
+  const hasSessionOverride = Boolean(overrides && Object.prototype.hasOwnProperty.call(overrides, "session"));
+  const hasInstanceOverride = Boolean(overrides && Object.prototype.hasOwnProperty.call(overrides, "instanceConfig"));
+  const hasDefaultInstanceOverride = Boolean(
+    overrides && Object.prototype.hasOwnProperty.call(overrides, "defaultInstanceConfig")
+  );
+  const sessionValue = hasSessionOverride ? (overrides?.session ?? null) : defaultSession;
+  const resolvedDefaultInstanceConfig = hasDefaultInstanceOverride
+    ? (overrides?.defaultInstanceConfig ?? null)
+    : defaultInstanceConfig;
+  const resolvedInstanceConfig = hasInstanceOverride
+    ? (overrides?.instanceConfig ?? null)
+    : resolvedDefaultInstanceConfig;
   const minorGuardianSupportRequests: MinorGuardianSupportRequestResponse[] = [];
   const reminderDevicesByInstallationId = new Map<string, ReminderDeviceRegistrationResponse>(
     (overrides?.reminderDevices ?? []).map((item) => [item.installation_id, { ...item }])
@@ -318,8 +332,8 @@ const createSessionContext = (overrides?: {
 
   return {
     ready: true,
-    defaultInstanceConfig: overrides?.defaultInstanceConfig ?? defaultInstanceConfig,
-    instanceConfig: overrides?.instanceConfig ?? overrides?.defaultInstanceConfig ?? defaultInstanceConfig,
+    defaultInstanceConfig: resolvedDefaultInstanceConfig,
+    instanceConfig: resolvedInstanceConfig,
     session: sessionValue,
     saveInstanceConfig: overrides?.saveInstanceConfig ?? vi.fn(),
     saveSession: vi.fn(),
@@ -351,12 +365,35 @@ describe("mobile route smoke", () => {
     render(<HomeScreen />);
 
     expect(screen.getByText("自托管移动端骨架已落地")).toBeTruthy();
+    expect(screen.getByText("当前正在使用安装包预置实例")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("localhost/127.0.0.1 回环地址"))).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText((content) => content.includes("learner@example.com"))).toBeTruthy();
     });
     expect(screen.getByText("模考与报告")).toBeTruthy();
     expect(screen.getByText("进入账户中心")).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  test("login screen shows instance summary and risk warnings", () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        session: null,
+        instanceConfig: {
+          apiBaseUrl: "http://api.example.com:8787",
+          wsBaseUrl: "ws://ws.example.com:8788"
+        }
+      })
+    );
+
+    render(<LoginScreen />);
+
+    expect(screen.getByText("登录移动端工作台")).toBeTruthy();
+    expect(screen.getByText("当前正在使用本地覆盖实例")).toBeTruthy();
+    expect(screen.getByText("http://api.example.com:8787")).toBeTruthy();
+    expect(screen.getByText("ws://ws.example.com:8788")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("API 与 WS 指向不同 host/port"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("外网地址仍使用 HTTP / WS"))).toBeTruthy();
   });
 
   test("instance screen validates health before saving configuration", async () => {
