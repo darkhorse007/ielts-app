@@ -51,6 +51,9 @@ type SavedQueueView = {
   searchQuery: QueueViewConfig["searchQuery"];
   slaFilter: QueueViewConfig["slaFilter"];
   orderedBy: QueueViewConfig["orderedBy"];
+  source: "manual" | "detail_shortcut";
+  useCount: number;
+  lastAppliedAt?: string;
   isDefault: boolean;
 };
 
@@ -173,7 +176,16 @@ const BULK_TEMPLATE_NOTES: Record<BulkActionTemplate, string> = {
 
 const formatRequestIdList = (requestIds: string[]): string => (requestIds.length > 0 ? requestIds.join(", ") : "-");
 
-const buildSavedQueueView = (name: string, config: QueueViewConfig, isDefault = false): SavedQueueView => ({
+const buildSavedQueueView = (
+  name: string,
+  config: QueueViewConfig,
+  options?: {
+    isDefault?: boolean;
+    source?: SavedQueueView["source"];
+    useCount?: number;
+    lastAppliedAt?: string;
+  }
+): SavedQueueView => ({
   name,
   statusFilter: config.statusFilter,
   assignmentFilter: config.assignmentFilter,
@@ -181,7 +193,10 @@ const buildSavedQueueView = (name: string, config: QueueViewConfig, isDefault = 
   searchQuery: config.searchQuery,
   slaFilter: config.slaFilter,
   orderedBy: config.orderedBy,
-  isDefault
+  source: options?.source ?? "manual",
+  useCount: options?.useCount ?? 0,
+  lastAppliedAt: options?.lastAppliedAt,
+  isDefault: options?.isDefault ?? false
 });
 
 const buildBulkUpdateResultSummary = (
@@ -328,6 +343,9 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
           searchQuery: candidate.searchQuery,
           slaFilter: candidate.slaFilter,
           orderedBy: candidate.orderedBy,
+          source: candidate.source === "detail_shortcut" ? "detail_shortcut" : "manual",
+          useCount: typeof candidate.useCount === "number" && candidate.useCount >= 0 ? candidate.useCount : 0,
+          lastAppliedAt: typeof candidate.lastAppliedAt === "string" ? candidate.lastAppliedAt : undefined,
           isDefault
         }
       ];
@@ -339,6 +357,8 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
 
 const getDefaultSavedQueueView = (views: SavedQueueView[]): SavedQueueView | null =>
   views.find((view) => view.isDefault) ?? null;
+
+const isDetailShortcutSavedQueueView = (view: SavedQueueView): boolean => view.source === "detail_shortcut";
 
 const loadSavedQueueViewState = (): SavedQueueViewStateSnapshot => {
   const savedViews = parseSavedQueueViews();
@@ -423,6 +443,33 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     [requests, selectedRequest]
   );
   const defaultSavedView = useMemo(() => getDefaultSavedQueueView(savedViews), [savedViews]);
+  const highFrequencySavedViews = useMemo(
+    () =>
+      [...savedViews]
+        .filter((view) => view.useCount > 0)
+        .sort((left, right) => {
+          if (right.useCount !== left.useCount) {
+            return right.useCount - left.useCount;
+          }
+          return (right.lastAppliedAt ?? "").localeCompare(left.lastAppliedAt ?? "");
+        })
+        .slice(0, 3),
+    [savedViews]
+  );
+  const detailShortcutSavedViews = useMemo(
+    () =>
+      savedViews.filter(
+        (view) => isDetailShortcutSavedQueueView(view) && (!defaultSavedView || view.name !== defaultSavedView.name)
+      ),
+    [defaultSavedView, savedViews]
+  );
+  const customSavedViews = useMemo(
+    () =>
+      savedViews.filter(
+        (view) => !isDetailShortcutSavedQueueView(view) && (!defaultSavedView || view.name !== defaultSavedView.name)
+      ),
+    [defaultSavedView, savedViews]
+  );
   const selectedRequestStatusSummary = useMemo(
     () =>
       selectedRequests.reduce<MinorGuardianSupportRequestStatusSummary>(
@@ -1133,6 +1180,9 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       const nextViews = [
         {
           ...view,
+          source: existingView?.source ?? view.source,
+          useCount: existingView?.useCount ?? view.useCount,
+          lastAppliedAt: existingView?.lastAppliedAt ?? view.lastAppliedAt,
           isDefault: existingView?.isDefault ?? view.isDefault
         },
         ...current.filter((item) => item.name !== view.name)
@@ -1157,50 +1207,74 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
 
   const buildSelectedRequestUserHistoryView = (): SavedQueueView | null =>
     selectedRequest
-      ? buildSavedQueueView(`用户历史 ${selectedRequest.user_id}`, {
-          statusFilter: "all",
-          assignmentFilter: "all",
-          handledByFilterQuery: "",
-          searchQuery: selectedRequest.user_id,
-          slaFilter: "all",
-          orderedBy: "updated_at_desc"
-        })
+      ? buildSavedQueueView(
+          `用户历史 ${selectedRequest.user_id}`,
+          {
+            statusFilter: "all",
+            assignmentFilter: "all",
+            handledByFilterQuery: "",
+            searchQuery: selectedRequest.user_id,
+            slaFilter: "all",
+            orderedBy: "updated_at_desc"
+          },
+          {
+            source: "detail_shortcut"
+          }
+        )
       : null;
 
   const buildSelectedRequestHandlerView = (): SavedQueueView | null =>
     selectedRequest?.handled_by && selectedRequest.handled_by.trim().length > 0
-      ? buildSavedQueueView(`处理人队列 ${selectedRequest.handled_by}`, {
-          statusFilter: "all",
-          assignmentFilter: "handled_by",
-          handledByFilterQuery: selectedRequest.handled_by,
-          searchQuery: "",
-          slaFilter: "all",
-          orderedBy: "updated_at_desc"
-        })
+      ? buildSavedQueueView(
+          `处理人队列 ${selectedRequest.handled_by}`,
+          {
+            statusFilter: "all",
+            assignmentFilter: "handled_by",
+            handledByFilterQuery: selectedRequest.handled_by,
+            searchQuery: "",
+            slaFilter: "all",
+            orderedBy: "updated_at_desc"
+          },
+          {
+            source: "detail_shortcut"
+          }
+        )
       : null;
 
   const buildSelectedRequestStatusView = (): SavedQueueView | null =>
     selectedRequest
-      ? buildSavedQueueView(`状态队列 ${STATUS_LABELS[selectedRequest.status]}`, {
-          statusFilter: selectedRequest.status,
-          assignmentFilter: "all",
-          handledByFilterQuery: "",
-          searchQuery: "",
-          slaFilter: "all",
-          orderedBy: "updated_at_desc"
-        })
+      ? buildSavedQueueView(
+          `状态队列 ${STATUS_LABELS[selectedRequest.status]}`,
+          {
+            statusFilter: selectedRequest.status,
+            assignmentFilter: "all",
+            handledByFilterQuery: "",
+            searchQuery: "",
+            slaFilter: "all",
+            orderedBy: "updated_at_desc"
+          },
+          {
+            source: "detail_shortcut"
+          }
+        )
       : null;
 
   const buildSelectedRequestRiskView = (): SavedQueueView | null =>
     selectedRequest && (selectedRequest.sla_state === "due_soon" || selectedRequest.sla_state === "breached")
-      ? buildSavedQueueView(`风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`, {
-          statusFilter: "all",
-          assignmentFilter: "all",
-          handledByFilterQuery: "",
-          searchQuery: "",
-          slaFilter: selectedRequest.sla_state,
-          orderedBy: "sla_priority_desc"
-        })
+      ? buildSavedQueueView(
+          `风险队列 ${SLA_LABELS[selectedRequest.sla_state]}`,
+          {
+            statusFilter: "all",
+            assignmentFilter: "all",
+            handledByFilterQuery: "",
+            searchQuery: "",
+            slaFilter: selectedRequest.sla_state,
+            orderedBy: "sla_priority_desc"
+          },
+          {
+            source: "detail_shortcut"
+          }
+        )
       : null;
 
   const saveSelectedRequestShortcutView = (view: SavedQueueView | null): void => {
@@ -1223,6 +1297,19 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   };
 
   const applySavedView = (view: SavedQueueView): void => {
+    setSavedViews((current) => {
+      const nextViews = current.map((item) =>
+        item.name === view.name
+          ? {
+              ...item,
+              useCount: item.useCount + 1,
+              lastAppliedAt: new Date().toISOString()
+            }
+          : item
+      );
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
     applyQueueViewConfig(
       {
         statusFilter: view.statusFilter,
@@ -1520,11 +1607,64 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         </button>
       ) : null}
       <p>已保存视图: {savedViews.length}</p>
+      <p>高频视图: {highFrequencySavedViews.length}</p>
       <p>默认保存视图: {defaultSavedView?.name ?? "未设置"}</p>
+      <p>详情快捷视图: {detailShortcutSavedViews.length}</p>
+      <p>自定义视图: {customSavedViews.length}</p>
       {savedViews.length === 0 ? <p>暂无已保存视图。</p> : null}
+      {highFrequencySavedViews.length > 0 ? <p>高频快捷入口</p> : null}
       <ul>
-        {savedViews.map((view) => (
-          <li key={view.name}>
+        {highFrequencySavedViews.map((view) => (
+          <li key={`high-frequency-${view.name}`}>
+            <button type="button" onClick={() => applySavedView(view)}>
+              快速应用 {view.name}
+            </button>
+            <span> 使用 {view.useCount} 次</span>
+          </li>
+        ))}
+      </ul>
+      <p>默认视图分组</p>
+      <ul>
+        {defaultSavedView ? (
+          <li key={`default-${defaultSavedView.name}`}>
+            <button type="button" onClick={() => applySavedView(defaultSavedView)}>
+              应用视图 {defaultSavedView.name}
+            </button>
+            <button type="button" onClick={() => startRenamingSavedView(defaultSavedView.name)}>
+              重命名视图 {defaultSavedView.name}
+            </button>
+            <button type="button" onClick={() => toggleDefaultSavedView(defaultSavedView.name)}>
+              取消默认视图 {defaultSavedView.name}
+            </button>
+            <button type="button" onClick={() => deleteSavedView(defaultSavedView.name)}>
+              删除视图 {defaultSavedView.name}
+            </button>
+          </li>
+        ) : null}
+      </ul>
+      <p>详情快捷视图分组</p>
+      <ul>
+        {detailShortcutSavedViews.map((view) => (
+          <li key={`detail-shortcut-${view.name}`}>
+            <button type="button" onClick={() => applySavedView(view)}>
+              应用视图 {view.name}
+            </button>
+            <button type="button" onClick={() => startRenamingSavedView(view.name)}>
+              重命名视图 {view.name}
+            </button>
+            <button type="button" onClick={() => toggleDefaultSavedView(view.name)}>
+              {view.isDefault ? `取消默认视图 ${view.name}` : `设为默认视图 ${view.name}`}
+            </button>
+            <button type="button" onClick={() => deleteSavedView(view.name)}>
+              删除视图 {view.name}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p>自定义视图分组</p>
+      <ul>
+        {customSavedViews.map((view) => (
+          <li key={`custom-${view.name}`}>
             <button type="button" onClick={() => applySavedView(view)}>
               应用视图 {view.name}
             </button>

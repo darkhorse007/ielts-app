@@ -282,8 +282,10 @@ describe("admin minor guardian support page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "填入关闭模板" }));
 
-    expect(screen.getByLabelText("更新状态")).toHaveValue("closed");
-    expect(screen.getByLabelText("处理备注")).toHaveValue("已向监护人说明数据导出与删除流程，工单关闭。");
+    await waitFor(() => {
+      expect(screen.getByLabelText("更新状态")).toHaveValue("closed");
+      expect(screen.getByLabelText("处理备注")).toHaveValue("已向监护人说明数据导出与删除流程，工单关闭。");
+    });
   });
 
   test("supports single-request claim actions and next actionable navigation", async () => {
@@ -673,6 +675,8 @@ describe("admin minor guardian support page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("已保存视图: 4")).toBeInTheDocument();
+      expect(screen.getByText("详情快捷视图: 4")).toBeInTheDocument();
+      expect(screen.getByText("自定义视图: 0")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "应用视图 用户历史 user-detail-1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "应用视图 处理人队列 ops-reviewer-9" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "应用视图 状态队列 已联系" })).toBeInTheDocument();
@@ -693,6 +697,8 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("消息: 已应用视图 风险队列 已超时")).toBeInTheDocument();
       expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
       expect(screen.getByText("排序: SLA 优先")).toBeInTheDocument();
+      expect(screen.getByText("高频视图: 1")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "快速应用 风险队列 已超时" })).toBeInTheDocument();
     });
   });
 
@@ -1136,6 +1142,9 @@ describe("admin minor guardian support page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("已保存视图: 1")).toBeInTheDocument();
+      expect(screen.getByText("高频视图: 0")).toBeInTheDocument();
+      expect(screen.getByText("详情快捷视图: 0")).toBeInTheDocument();
+      expect(screen.getByText("自定义视图: 1")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "应用视图 高风险跟进" })).toBeInTheDocument();
       expect(localStorage.getItem(SAVED_QUEUE_VIEWS_STORAGE_KEY)).toContain("高风险跟进");
     });
@@ -1187,6 +1196,8 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
       expect(screen.getByText("当前 SLA: 临近超时")).toBeInTheDocument();
       expect(screen.getByText("排序: 等待时长优先")).toBeInTheDocument();
+      expect(screen.getByText("高频视图: 1")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "快速应用 高风险升级" })).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-saved-view/)).toBeInTheDocument();
     });
   });
