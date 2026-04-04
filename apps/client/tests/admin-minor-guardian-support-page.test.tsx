@@ -1248,6 +1248,11 @@ describe("admin minor guardian support page", () => {
         operator_note: "批量完成监护人回访。"
       });
       expect(screen.getByText(/已批量更新 2 条工单/)).toBeInTheDocument();
+      expect(screen.getByText("最近批量结果: 已更新 2 条")).toBeInTheDocument();
+      expect(screen.getByText("最近批量状态: 待审核 0 / 已联系 0 / 已关闭 2")).toBeInTheDocument();
+      expect(screen.getByText("最近批量关闭: 2 / 已写入备注 2")).toBeInTheDocument();
+      expect(screen.getByText("最近批量处理人: ops-reviewer-7")).toBeInTheDocument();
+      expect(screen.getByText("最近批量 request_id: guardian-request-1, guardian-request-2")).toBeInTheDocument();
       expect(screen.getByText("当前筛选下暂无工单。")).toBeInTheDocument();
       expect(screen.getByText("已勾选: 0 条")).toBeInTheDocument();
     });

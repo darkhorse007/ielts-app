@@ -51,6 +51,15 @@ type SavedQueueViewStateSnapshot = {
   defaultView: SavedQueueView | null;
 };
 
+type BulkUpdateResultSummary = {
+  updatedCount: number;
+  requestIds: string[];
+  statusSummary: MinorGuardianSupportRequestStatusSummary;
+  closedCount: number;
+  notedCount: number;
+  handledByValues: string[];
+};
+
 const DEFAULT_PAGE_SIZE = 10;
 const SAVED_QUEUE_VIEWS_STORAGE_KEY = "ielts.admin_minor_guardian_support.saved_views";
 const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
@@ -155,6 +164,35 @@ const BULK_TEMPLATE_NOTES: Record<BulkActionTemplate, string> = {
 };
 
 const formatRequestIdList = (requestIds: string[]): string => (requestIds.length > 0 ? requestIds.join(", ") : "-");
+
+const buildBulkUpdateResultSummary = (
+  updatedCount: number,
+  requestIds: string[],
+  items: InternalMinorGuardianSupportRequestResponse[]
+): BulkUpdateResultSummary => ({
+  updatedCount,
+  requestIds,
+  statusSummary: items.reduce<MinorGuardianSupportRequestStatusSummary>(
+    (summary, item) => ({
+      ...summary,
+      [item.status]: summary[item.status] + 1
+    }),
+    {
+      pending_review: 0,
+      contacted: 0,
+      closed: 0
+    }
+  ),
+  closedCount: items.filter((item) => item.status === "closed").length,
+  notedCount: items.filter((item) => typeof item.operator_note === "string" && item.operator_note.trim().length > 0).length,
+  handledByValues: Array.from(
+    new Set(
+      items
+        .map((item) => item.handled_by?.trim() ?? "")
+        .filter((handledBy) => handledBy.length > 0)
+    )
+  )
+});
 
 const canTransitionToStatus = (
   currentStatus: MinorGuardianSupportRequestStatus,
@@ -332,6 +370,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [bulkHandledBy, setBulkHandledBy] = useState(currentOperatorId);
   const [bulkOperatorNote, setBulkOperatorNote] = useState("");
   const [bulkNextStatus, setBulkNextStatus] = useState<"keep" | MinorGuardianSupportRequestStatus>("keep");
+  const [lastBulkUpdateSummary, setLastBulkUpdateSummary] = useState<BulkUpdateResultSummary | null>(null);
   const [statusMessage, setStatusMessage] = useState("未加载工单");
   const [message, setMessage] = useState(
     initialDefaultSavedView ? `已恢复默认保存视图 ${initialDefaultSavedView.name}` : "未处理"
@@ -615,6 +654,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         handled_by: bulkHandledBy.trim(),
         operator_note: bulkOperatorNote.trim() || undefined
       });
+      setLastBulkUpdateSummary(buildBulkUpdateResultSummary(updated.updated_count, updated.request_ids, updated.items));
       setMessage(`已批量更新 ${updated.updated_count} 条工单`);
       setError(null);
       setSelectedRequestIds([]);
@@ -1296,6 +1336,22 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <button type="button" onClick={() => void submitBulkUpdate()} disabled={bulkBlockingReason !== null}>
         保存批量处理
       </button>
+      {lastBulkUpdateSummary ? (
+        <>
+          <p>最近批量结果: 已更新 {lastBulkUpdateSummary.updatedCount} 条</p>
+          <p>
+            最近批量状态: 待审核 {lastBulkUpdateSummary.statusSummary.pending_review} / 已联系{" "}
+            {lastBulkUpdateSummary.statusSummary.contacted} / 已关闭 {lastBulkUpdateSummary.statusSummary.closed}
+          </p>
+          <p>
+            最近批量关闭: {lastBulkUpdateSummary.closedCount} / 已写入备注 {lastBulkUpdateSummary.notedCount}
+          </p>
+          <p>最近批量处理人: {formatRequestIdList(lastBulkUpdateSummary.handledByValues)}</p>
+          <p>最近批量 request_id: {formatRequestIdList(lastBulkUpdateSummary.requestIds)}</p>
+        </>
+      ) : (
+        <p>最近批量结果: 暂无</p>
+      )}
 
       {requests.length === 0 ? <p>当前筛选下暂无工单。</p> : null}
       <ul>
