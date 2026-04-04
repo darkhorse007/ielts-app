@@ -937,6 +937,116 @@ describe("admin minor guardian support page", () => {
     });
   });
 
+  test("exports pending review, unassigned and mine queue templates", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue(
+      buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1"
+          })
+        ]
+      })
+    );
+    const exportInternalMinorGuardianSupportRequests = vi
+      .fn()
+      .mockResolvedValueOnce({
+        filename: "guardian-pending-review.csv",
+        content: "pending-review"
+      })
+      .mockResolvedValueOnce({
+        filename: "guardian-unassigned.csv",
+        content: "unassigned"
+      })
+      .mockResolvedValueOnce({
+        filename: "guardian-mine.csv",
+        content: "mine"
+      });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("搜索监护人工单"), {
+      target: {
+        value: "guardian-special"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索工单" }));
+    fireEvent.change(screen.getByLabelText("指定处理人"), {
+      target: {
+        value: "ops-reviewer-9"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "按处理人筛选" }));
+    fireEvent.change(screen.getByLabelText("SLA 过滤"), {
+      target: {
+        value: "breached"
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("当前搜索: guardian-special")).toBeInTheDocument();
+      expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出待审核队列 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenNthCalledWith(1, {
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        query: "guardian-special",
+        handledBy: undefined,
+        unassigned: undefined,
+        orderBy: "sla_priority_desc"
+      });
+      expect(screen.getByText(/已生成待审核导出 guardian-pending-review.csv/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出未分配队列 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenNthCalledWith(2, {
+        accessToken: "ops-access-token",
+        status: undefined,
+        query: "guardian-special",
+        handledBy: undefined,
+        unassigned: true,
+        orderBy: "sla_priority_desc"
+      });
+      expect(screen.getByText(/已生成未分配导出 guardian-unassigned.csv/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "导出我的工单 CSV" }));
+
+    await waitFor(() => {
+      expect(exportInternalMinorGuardianSupportRequests).toHaveBeenNthCalledWith(3, {
+        accessToken: "ops-access-token",
+        status: undefined,
+        query: "guardian-special",
+        handledBy: "ops-user-1",
+        unassigned: undefined,
+        orderBy: "sla_priority_desc"
+      });
+      expect(screen.getByText(/已生成我的工单导出 guardian-mine.csv/)).toBeInTheDocument();
+      expect(screen.getByLabelText("最近导出内容")).toHaveValue("mine");
+    });
+  });
+
   test("supports bulk assignment and status updates for selected requests", async () => {
     const tokenStorage = createTokenStorage();
 

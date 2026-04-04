@@ -33,6 +33,7 @@ type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
 type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
 type SlaFilter = "all" | "due_soon" | "breached";
 type QuickViewFilter = "default" | "breached" | "due_soon";
+type QueueExportTemplate = "pending_review" | "unassigned" | "mine";
 type SavedQueueView = {
   name: string;
   statusFilter: SupportRequestFilter;
@@ -600,6 +601,39 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setAssignmentFilter("all");
   };
 
+  const exportTemplateQueue = async (template: QueueExportTemplate): Promise<void> => {
+    const accessToken = tokenStorage.getAccessToken();
+    if (!accessToken) {
+      setError("会话已失效，请重新登录");
+      return;
+    }
+    if (template === "mine" && currentOperatorId.trim().length === 0) {
+      setError("当前账号缺少用户 ID，无法导出我的工单");
+      return;
+    }
+
+    try {
+      const exported = await apiClient.exportInternalMinorGuardianSupportRequests({
+        accessToken,
+        status: template === "pending_review" ? "pending_review" : undefined,
+        query: searchQuery.length > 0 ? searchQuery : undefined,
+        handledBy: template === "mine" ? currentOperatorId : undefined,
+        unassigned: template === "unassigned" ? true : undefined,
+        orderBy: "sla_priority_desc"
+      });
+      setLastExportFilename(exported.filename);
+      setLastExportContent(exported.content);
+      setExportMessage(
+        `已生成${template === "pending_review" ? "待审核" : template === "unassigned" ? "未分配" : "我的工单"}导出 ${
+          exported.filename
+        }`
+      );
+      setError(null);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "导出模板队列失败");
+    }
+  };
+
   const exportCurrentFilter = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
     if (!accessToken) {
@@ -1042,6 +1076,15 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       </button>
       <button type="button" onClick={() => void exportRiskQueue("due_soon")}>
         导出临近超时队列 CSV
+      </button>
+      <button type="button" onClick={() => void exportTemplateQueue("pending_review")}>
+        导出待审核队列 CSV
+      </button>
+      <button type="button" onClick={() => void exportTemplateQueue("unassigned")}>
+        导出未分配队列 CSV
+      </button>
+      <button type="button" onClick={() => void exportTemplateQueue("mine")}>
+        导出我的工单 CSV
       </button>
 
       <h3>保存视图</h3>
