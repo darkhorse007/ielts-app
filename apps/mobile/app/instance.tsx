@@ -1,10 +1,24 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
+import { ApiClient, ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import { normalizeInstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
+
+const toInstanceConfigErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
 
 export default function InstanceConfigScreen() {
   const { instanceConfig, saveInstanceConfig, defaultInstanceConfig } = useAppSession();
@@ -12,6 +26,8 @@ export default function InstanceConfigScreen() {
   const [wsBaseUrl, setWsBaseUrl] = useState(instanceConfig?.wsBaseUrl ?? defaultInstanceConfig?.wsBaseUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [validationStatus, setValidationStatus] = useState("未验证");
+  const [validationResult, setValidationResult] = useState("-");
 
   useEffect(() => {
     if (!instanceConfig && defaultInstanceConfig) {
@@ -20,18 +36,56 @@ export default function InstanceConfigScreen() {
     }
   }, [defaultInstanceConfig, instanceConfig]);
 
+  const validateConnection = async (): Promise<{
+    apiBaseUrl: string;
+    wsBaseUrl: string;
+    healthStatus: string;
+  }> => {
+    const normalized = normalizeInstanceConfig({
+      apiBaseUrl,
+      wsBaseUrl
+    });
+    setValidationStatus("正在验证 /health");
+    const apiClient = new ApiClient(normalized.apiBaseUrl);
+    const health = await apiClient.health();
+    setValidationStatus("已通过");
+    setValidationResult(`/health=${health.status}`);
+    return {
+      ...normalized,
+      healthStatus: health.status
+    };
+  };
+
   const submit = async (): Promise<void> => {
     setSaving(true);
     try {
-      const normalized = normalizeInstanceConfig({
-        apiBaseUrl,
-        wsBaseUrl
+      setError(null);
+      const validated = await validateConnection();
+      await saveInstanceConfig({
+        apiBaseUrl: validated.apiBaseUrl,
+        wsBaseUrl: validated.wsBaseUrl
       });
-      await saveInstanceConfig(normalized);
       setError(null);
       router.replace("/");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "实例配置保存失败");
+      setValidationStatus("验证失败");
+      setValidationResult("-");
+      setError(toInstanceConfigErrorMessage(submitError, "实例配置保存失败"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const validateOnly = async (): Promise<void> => {
+    setSaving(true);
+    try {
+      setError(null);
+      await validateConnection();
+      setError(null);
+    } catch (validationError) {
+      setValidationStatus("验证失败");
+      setValidationResult("-");
+      setError(toInstanceConfigErrorMessage(validationError, "实例连通性校验失败"));
     } finally {
       setSaving(false);
     }
@@ -89,6 +143,15 @@ export default function InstanceConfigScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
           预览 WS: {preview?.wsBaseUrl ?? "待输入"}
         </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 12 }}>
+          预检状态: {validationStatus}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+          最近结果: {validationResult}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4, lineHeight: 20 }}>
+          保存前会调用 {preview ? `${preview.apiBaseUrl}/health` : "有效实例的 /health"} 做连通性预检。
+        </Text>
       </InfoCard>
 
       {error ? (
@@ -97,11 +160,14 @@ export default function InstanceConfigScreen() {
 
       <ButtonRow>
         <PrimaryButton
-          label={saving ? "保存中..." : "保存实例"}
+          label={saving ? "处理中..." : "验证并保存实例"}
           onPress={submit}
           disabled={saving}
           testID="instance.save"
         />
+        <SecondaryButton label="仅验证实例" onPress={() => void validateOnly()} disabled={saving} testID="instance.validate" />
+      </ButtonRow>
+      <ButtonRow>
         <SecondaryButton label="返回入口" onPress={() => router.replace("/")} testID="instance.back" />
       </ButtonRow>
     </AppScreen>

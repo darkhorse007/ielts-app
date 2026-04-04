@@ -21,6 +21,7 @@ import { MinorGuardianProvider } from "../src/state/minor-guardian";
 import AccountScreen from "../app/account";
 import DiagnosticScreen from "../app/diagnostic";
 import HomeScreen from "../app/home";
+import InstanceConfigScreen from "../app/instance";
 import ListeningScreen from "../app/listening";
 import ReadingScreen from "../app/reading";
 import MockExamScreen from "../app/mock-exam";
@@ -104,7 +105,9 @@ const createSessionContext = (overrides?: {
   apiClient?: Record<string, (...args: any[]) => Promise<any>>;
   session?: StoredSession | null;
   instanceConfig?: InstanceConfig | null;
+  defaultInstanceConfig?: InstanceConfig | null;
   reminderDevices?: ReminderDeviceRegistrationResponse[];
+  saveInstanceConfig?: ReturnType<typeof vi.fn>;
 }): ReturnType<typeof useAppSession> => {
   const sessionValue = overrides?.session ?? defaultSession;
   const minorGuardianSupportRequests: MinorGuardianSupportRequestResponse[] = [];
@@ -315,10 +318,10 @@ const createSessionContext = (overrides?: {
 
   return {
     ready: true,
-    defaultInstanceConfig,
-    instanceConfig: overrides?.instanceConfig ?? defaultInstanceConfig,
+    defaultInstanceConfig: overrides?.defaultInstanceConfig ?? defaultInstanceConfig,
+    instanceConfig: overrides?.instanceConfig ?? overrides?.defaultInstanceConfig ?? defaultInstanceConfig,
     session: sessionValue,
-    saveInstanceConfig: vi.fn(),
+    saveInstanceConfig: overrides?.saveInstanceConfig ?? vi.fn(),
     saveSession: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
     syncReminderDevice,
@@ -337,6 +340,7 @@ describe("mobile route smoke", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     mockedSecureStore.__resetMockStorage();
     mockedNotifications.__resetMockNotifications();
   });
@@ -353,6 +357,80 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("模考与报告")).toBeTruthy();
     expect(screen.getByText("进入账户中心")).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  test("instance screen validates health before saving configuration", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://127.0.0.1:8787/health");
+      expect(init?.method).toBe("GET");
+
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    });
+    const saveInstanceConfig = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: null,
+        defaultInstanceConfig: null,
+        saveInstanceConfig
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    fireEvent.change(screen.getByTestId("instance.apiBaseUrl"), {
+      target: { value: "http://127.0.0.1:8787" }
+    });
+    fireEvent.change(screen.getByTestId("instance.wsBaseUrl"), {
+      target: { value: "" }
+    });
+    fireEvent.click(screen.getByTestId("instance.save"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(saveInstanceConfig).toHaveBeenCalledWith({
+        apiBaseUrl: "http://127.0.0.1:8787",
+        wsBaseUrl: "ws://127.0.0.1:8787"
+      });
+      expect(router.replace).toHaveBeenCalledWith("/");
+    });
+    expect(screen.getByText((content) => content.includes("预检状态: 已通过"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("最近结果: /health=ok"))).toBeTruthy();
+  });
+
+  test("instance screen blocks saving when health validation fails", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError("Network request failed");
+    });
+    const saveInstanceConfig = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: null,
+        defaultInstanceConfig: null,
+        saveInstanceConfig
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    fireEvent.change(screen.getByTestId("instance.apiBaseUrl"), {
+      target: { value: "http://127.0.0.1:8787" }
+    });
+    fireEvent.click(screen.getByTestId("instance.save"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(saveInstanceConfig).not.toHaveBeenCalled();
+    });
+    expect(screen.getByText((content) => content.includes("Network request failed"))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("预检状态: 验证失败"))).toBeTruthy();
+    expect(router.replace).not.toHaveBeenCalledWith("/");
   });
 
   test("mock exam screen renders report and export controls", async () => {
