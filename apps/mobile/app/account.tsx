@@ -21,10 +21,12 @@ import {
   getNotificationPermissionsStatusAsync,
   getReminderInstallationIdAsync,
   getScheduledReminderSummaryAsync,
+  type NotificationPermissionSnapshot,
   requestNotificationPermissionsAsync,
   scheduleReminderNotificationAsync,
   toNotificationPermissionLabel
 } from "../src/lib/notifications";
+import { openAppSettingsAsync } from "../src/lib/native-settings";
 import {
   formatMinorGuardianAgeBandLabel,
   useMinorGuardian,
@@ -56,6 +58,7 @@ const buildFallbackProfile = (userId: string): UserProfileResponse => {
   const timestamp = new Date().toISOString();
   return {
     id: userId,
+    system_roles: [],
     status: "active",
     created_at: timestamp,
     updated_at: timestamp
@@ -147,6 +150,9 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<
 
 const reminderNotificationHarnessEnabled = process.env.EXPO_PUBLIC_E2E_REMINDER_NOTIFICATION_HARNESS === "true";
 
+const shouldSuggestOpeningNotificationSettings = (permission: NotificationPermissionSnapshot): boolean =>
+  permission.available && !allowsNotifications(permission) && !permission.canAskAgain;
+
 export default function AccountScreen() {
   const { instanceConfig, session, logout, runWithAuthorizedClient, syncReminderDevice } = useAppSession();
   const { ready: minorGuardianReady, state: minorGuardianState, setAgeBand: setMinorGuardianAgeBand } = useMinorGuardian();
@@ -177,6 +183,7 @@ export default function AccountScreen() {
   const [lastAccountAction, setLastAccountAction] = useState("等待操作");
   const [lastAccountResult, setLastAccountResult] = useState("尚未触发请求");
   const [notificationPermissionStatus, setNotificationPermissionStatus] = useState("检查中");
+  const [notificationSettingsRequired, setNotificationSettingsRequired] = useState(false);
   const [localReminderStatus, setLocalReminderStatus] = useState("未安排本地提醒");
   const [localReminderTarget, setLocalReminderTarget] = useState("-");
   const [localReminderId, setLocalReminderId] = useState("-");
@@ -212,11 +219,16 @@ export default function AccountScreen() {
     setStatusMessage((current) => (current === "未加载" ? "使用本地会话兜底" : current));
   }, [session]);
 
+  const applyNotificationPermissionSnapshot = (permission: NotificationPermissionSnapshot): void => {
+    setNotificationPermissionStatus(toNotificationPermissionLabel(permission));
+    setNotificationSettingsRequired(shouldSuggestOpeningNotificationSettings(permission));
+  };
+
   const syncNotificationState = async (): Promise<void> => {
     setSyncingNotifications(true);
     try {
       const permission = await getNotificationPermissionsStatusAsync();
-      setNotificationPermissionStatus(toNotificationPermissionLabel(permission));
+      applyNotificationPermissionSnapshot(permission);
 
       const scheduled = await getScheduledReminderSummaryAsync();
       if (scheduled) {
@@ -230,6 +242,7 @@ export default function AccountScreen() {
       }
     } catch {
       setNotificationPermissionStatus("检查失败");
+      setNotificationSettingsRequired(false);
       setLocalReminderStatus("读取失败");
       setLocalReminderTarget("-");
       setLocalReminderId("-");
@@ -529,7 +542,7 @@ export default function AccountScreen() {
   const authorizeNotifications = async (): Promise<boolean> => {
     const current = await getNotificationPermissionsStatusAsync();
     if (allowsNotifications(current) || !current.available) {
-      setNotificationPermissionStatus(toNotificationPermissionLabel(current));
+      applyNotificationPermissionSnapshot(current);
       await syncReminderDevice();
       if (session) {
         await syncRemoteReminderDeviceState();
@@ -538,12 +551,23 @@ export default function AccountScreen() {
     }
 
     const requested = await requestNotificationPermissionsAsync();
-    setNotificationPermissionStatus(toNotificationPermissionLabel(requested));
+    applyNotificationPermissionSnapshot(requested);
     await syncReminderDevice({ force: true });
     if (session) {
       await syncRemoteReminderDeviceState();
     }
     return allowsNotifications(requested);
+  };
+
+  const openNotificationSettings = async (): Promise<void> => {
+    const opened = await openAppSettingsAsync();
+    if (opened) {
+      setStatusMessage("已打开系统设置");
+      setError(null);
+      return;
+    }
+
+    setError("无法打开系统设置，请手动前往设置开启通知权限");
   };
 
   const scheduleLocalReminder = async (): Promise<void> => {
@@ -1206,6 +1230,21 @@ export default function AccountScreen() {
             testID="account.reminderScheduleLocal"
           />
         </ButtonRow>
+        {notificationSettingsRequired ? (
+          <>
+            <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+              系统已阻止学习提醒通知，请前往系统设置重新开启权限。
+            </Text>
+            <ButtonRow>
+              <SecondaryButton
+                label="打开系统通知设置"
+                onPress={() => void openNotificationSettings()}
+                disabled={reminderBusy}
+                testID="account.reminderOpenSettings"
+              />
+            </ButtonRow>
+          </>
+        ) : null}
         <ButtonRow>
           <PrimaryButton
             label="同步远程设备"

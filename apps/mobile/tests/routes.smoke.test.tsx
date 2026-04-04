@@ -1,8 +1,10 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as Audio from "expo-audio";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
+import { Linking } from "react-native";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type {
   MinorGuardianResponse,
@@ -68,7 +70,19 @@ const mockedNotifications = Notifications as typeof Notifications & {
       date?: Date | number;
     } | null;
   }>;
+  __setMockNotificationPermission: (overrides: {
+    granted?: boolean;
+    canAskAgain?: boolean;
+    expires?: string;
+    status?: string;
+    ios?: {
+      status?: number | null;
+    };
+  }) => void;
   __setMockDevicePushToken: (token: { type: string; data: string }) => void;
+};
+const mockedLinking = Linking as typeof Linking & {
+  openSettings: ReturnType<typeof vi.fn>;
 };
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
@@ -98,6 +112,7 @@ const createSessionContext = (overrides?: {
     id: sessionValue?.userId ?? "user-1",
     email: "learner@example.com",
     phone: "13800000000",
+    system_roles: [],
     status: "active" as const,
     minor_guardian: {
       age_band: "unknown" as const
@@ -595,6 +610,32 @@ describe("mobile route smoke", () => {
     expect(scheduled[0]?.content.data?.deepLink).toBe("/plan");
   });
 
+  test("account screen offers a system settings shortcut after notification permission is denied", async () => {
+    mockedNotifications.__setMockNotificationPermission({
+      granted: false,
+      canAskAgain: false,
+      status: "denied",
+      ios: {
+        status: 1
+      }
+    });
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    renderAccountScreen();
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("notification_permission: 已拒绝"))).toBeTruthy();
+    });
+    expect(screen.getByText("打开系统通知设置")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("account.reminderOpenSettings"));
+
+    await waitFor(() => {
+      expect(mockedLinking.openSettings).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("已打开系统设置")).toBeTruthy();
+    });
+  });
+
   test("account screen can sync and revoke remote reminder device", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
     mockedSecureStore.__setMockItem(buildScopedStorageKey("installation", "id", "v1"), JSON.stringify("installation-ios-1"));
@@ -745,6 +786,30 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("连接实时会话")).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText("已授权")).toBeTruthy();
+    });
+  });
+
+  test("speaking screen offers a system settings shortcut after microphone permission is denied", async () => {
+    vi.mocked(Audio.getRecordingPermissionsAsync).mockResolvedValueOnce({
+      status: "denied" as Awaited<ReturnType<typeof Audio.getRecordingPermissionsAsync>>["status"],
+      granted: false,
+      canAskAgain: false,
+      expires: "never"
+    } as Awaited<ReturnType<typeof Audio.getRecordingPermissionsAsync>>);
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+
+    render(<SpeakingScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("已拒绝")).toBeTruthy();
+    });
+    expect(screen.getByText("打开系统麦克风设置")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("speaking.microphoneOpenSettings"));
+
+    await waitFor(() => {
+      expect(mockedLinking.openSettings).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("已打开系统设置")).toBeTruthy();
     });
   });
 

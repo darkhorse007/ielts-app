@@ -177,6 +177,9 @@ vi.mock("react-native", () => {
     Platform: {
       OS: "ios"
     },
+    Linking: {
+      openSettings: vi.fn().mockResolvedValue(undefined)
+    },
     AppState: appState,
     Share: {
       share: vi.fn().mockResolvedValue({

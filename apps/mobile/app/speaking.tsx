@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AppState, Pressable, Text, View } from "react-native";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { openAppSettingsAsync } from "../src/lib/native-settings";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
@@ -247,6 +248,7 @@ export default function SpeakingScreen() {
   const [pronunciationTasks, setPronunciationTasks] = useState<PronunciationTask[]>([]);
   const [trackedTaskText, setTrackedTaskText] = useState("-");
   const [microphonePermissionStatus, setMicrophonePermissionStatus] = useState("未决定");
+  const [microphoneSettingsRequired, setMicrophoneSettingsRequired] = useState(false);
   const [requestingMicrophonePermission, setRequestingMicrophonePermission] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -398,9 +400,11 @@ export default function SpeakingScreen() {
     try {
       const permission = await getRecordingPermissionsAsync();
       setMicrophonePermissionStatus(toPermissionLabel(permission.status));
+      setMicrophoneSettingsRequired(!permission.granted && permission.canAskAgain === false);
       return permission.granted;
     } catch {
       setMicrophonePermissionStatus("检查失败");
+      setMicrophoneSettingsRequired(false);
       return false;
     }
   };
@@ -429,6 +433,7 @@ export default function SpeakingScreen() {
     try {
       const permission = await requestRecordingPermissionsAsync();
       setMicrophonePermissionStatus(toPermissionLabel(permission.status));
+      setMicrophoneSettingsRequired(!permission.granted && permission.canAskAgain === false);
       if (!permission.granted) {
         setError("麦克风权限未授予，无法进入实时口语会话");
         return false;
@@ -444,6 +449,17 @@ export default function SpeakingScreen() {
     } finally {
       setRequestingMicrophonePermission(false);
     }
+  };
+
+  const openMicrophoneSettings = async (): Promise<void> => {
+    const opened = await openAppSettingsAsync();
+    if (opened) {
+      setStatusMessage("已打开系统设置");
+      setError(null);
+      return;
+    }
+
+    setError("无法打开系统设置，请手动前往设置开启麦克风权限");
   };
 
   useEffect(() => {
@@ -1231,11 +1247,26 @@ export default function SpeakingScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>
           实时口语进入连接前会先校验麦克风权限。应用切到后台后会关闭实时连接，并在恢复前台时尝试同步会话状态。
         </Text>
-        <PrimaryButton
-          label={requestingMicrophonePermission ? "申请中..." : "授权麦克风"}
-          onPress={() => void ensureMicrophonePermission()}
-          disabled={requestingMicrophonePermission}
-        />
+        <ButtonRow>
+          <PrimaryButton
+            label={requestingMicrophonePermission ? "申请中..." : "授权麦克风"}
+            onPress={() => void ensureMicrophonePermission()}
+            disabled={requestingMicrophonePermission}
+          />
+          {microphoneSettingsRequired ? (
+            <SecondaryButton
+              label="打开系统麦克风设置"
+              onPress={() => void openMicrophoneSettings()}
+              disabled={requestingMicrophonePermission}
+              testID="speaking.microphoneOpenSettings"
+            />
+          ) : null}
+        </ButtonRow>
+        {microphoneSettingsRequired ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+            系统已阻止麦克风权限，请前往系统设置开启后再连接实时口语。
+          </Text>
+        ) : null}
       </InfoCard>
 
       <InfoCard>
