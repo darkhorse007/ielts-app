@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Text } from "react-native";
 import { ApiClient, ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
-import { normalizeInstanceConfig } from "../src/lib/runtime-config";
+import { getInstanceConfigRisks, normalizeInstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
@@ -101,6 +101,7 @@ export default function InstanceConfigScreen() {
       return null;
     }
   })();
+  const previewRisks = preview ? getInstanceConfigRisks(preview) : [];
 
   return (
     <AppScreen
@@ -153,6 +154,17 @@ export default function InstanceConfigScreen() {
           保存前会调用 {preview ? `${preview.apiBaseUrl}/health` : "有效实例的 /health"} 做连通性预检。
         </Text>
       </InfoCard>
+
+      {previewRisks.length > 0 ? (
+        <InfoCard tone="accent">
+          <Text style={{ color: colors.textMuted, fontSize: 12 }}>风险提示</Text>
+          {previewRisks.map((risk) => (
+            <Text key={risk.code} style={{ color: colors.textPrimary, fontSize: 13, lineHeight: 20 }}>
+              {risk.message}
+            </Text>
+          ))}
+        </InfoCard>
+      ) : null}
 
       {error ? (
         <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text>

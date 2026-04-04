@@ -433,6 +433,55 @@ describe("mobile route smoke", () => {
     expect(router.replace).not.toHaveBeenCalledWith("/");
   });
 
+  test("instance screen shows loopback and host mismatch warnings", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: null,
+        defaultInstanceConfig: null
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    fireEvent.change(screen.getByTestId("instance.apiBaseUrl"), {
+      target: { value: "http://127.0.0.1:8787" }
+    });
+    fireEvent.change(screen.getByTestId("instance.wsBaseUrl"), {
+      target: { value: "ws://192.168.0.50:8788" }
+    });
+
+    expect(screen.getByText("风险提示")).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("localhost/127.0.0.1 回环地址"))
+    ).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("API 与 WS 指向不同 host/port"))
+    ).toBeTruthy();
+  });
+
+  test("instance screen shows insecure public endpoint warning", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        instanceConfig: null,
+        defaultInstanceConfig: null
+      })
+    );
+
+    render(<InstanceConfigScreen />);
+
+    fireEvent.change(screen.getByTestId("instance.apiBaseUrl"), {
+      target: { value: "http://api.example.com:8787" }
+    });
+
+    expect(screen.getByText("风险提示")).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("HTTP / WS"))
+    ).toBeTruthy();
+    expect(
+      screen.getByText((content) => content.includes("HTTPS / WSS"))
+    ).toBeTruthy();
+  });
+
   test("mock exam screen renders report and export controls", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
 

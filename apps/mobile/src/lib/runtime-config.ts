@@ -3,6 +3,11 @@ export type InstanceConfig = {
   wsBaseUrl: string;
 };
 
+export type InstanceConfigRisk = {
+  code: "loopback" | "public_insecure" | "host_mismatch";
+  message: string;
+};
+
 const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:/;
 
 const trimTrailingSlashes = (value: string): string => value.replace(/\/+$/, "");
@@ -55,6 +60,34 @@ const toWebSocketBaseUrl = (value: string): string => {
   return trimTrailingSlashes(parsed.toString());
 };
 
+const isLoopbackHostname = (hostname: string): boolean => {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+};
+
+const isPrivateIpv4Hostname = (hostname: string): boolean => {
+  const normalized = hostname.trim().toLowerCase();
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(normalized)) {
+    return false;
+  }
+
+  const [firstOctet, secondOctet] = normalized.split(".").map((part) => Number(part));
+  if (Number.isNaN(firstOctet) || Number.isNaN(secondOctet)) {
+    return false;
+  }
+
+  return (
+    firstOctet === 10 ||
+    (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) ||
+    (firstOctet === 192 && secondOctet === 168)
+  );
+};
+
+const isPrivateHostname = (hostname: string): boolean => {
+  const normalized = hostname.trim().toLowerCase();
+  return isLoopbackHostname(normalized) || isPrivateIpv4Hostname(normalized) || normalized.endsWith(".local");
+};
+
 export const normalizeInstanceConfig = (input: {
   apiBaseUrl: string;
   wsBaseUrl?: string;
@@ -71,6 +104,39 @@ export const normalizeInstanceConfig = (input: {
     apiBaseUrl,
     wsBaseUrl: wsInput ? toWebSocketBaseUrl(wsInput) : toWebSocketBaseUrl(apiBaseUrl)
   };
+};
+
+export const getInstanceConfigRisks = (config: InstanceConfig): InstanceConfigRisk[] => {
+  const apiUrl = new URL(config.apiBaseUrl);
+  const wsUrl = new URL(config.wsBaseUrl);
+  const risks: InstanceConfigRisk[] = [];
+
+  if (isLoopbackHostname(apiUrl.hostname) || isLoopbackHostname(wsUrl.hostname)) {
+    risks.push({
+      code: "loopback",
+      message: "检测到 localhost/127.0.0.1 回环地址，仅适合同机调试；真机、模拟器或外部内测通常需要改成可达 IP 或域名。"
+    });
+  }
+
+  const apiTarget = `${apiUrl.hostname}:${apiUrl.port || (apiUrl.protocol === "https:" ? "443" : "80")}`;
+  const wsTarget = `${wsUrl.hostname}:${wsUrl.port || (wsUrl.protocol === "wss:" ? "443" : "80")}`;
+  if (apiTarget !== wsTarget) {
+    risks.push({
+      code: "host_mismatch",
+      message: "API 与 WS 指向不同 host/port，请确认两条链路都已发布并可同时访问，否则登录成功后实时能力仍可能失败。"
+    });
+  }
+
+  const usesPublicInsecureApi = apiUrl.protocol === "http:" && !isPrivateHostname(apiUrl.hostname);
+  const usesPublicInsecureWs = wsUrl.protocol === "ws:" && !isPrivateHostname(wsUrl.hostname);
+  if (usesPublicInsecureApi || usesPublicInsecureWs) {
+    risks.push({
+      code: "public_insecure",
+      message: "检测到外网地址仍使用 HTTP / WS；若用于 preview / production 包，建议切到 HTTPS / WSS 以避免明文流量与系统策略限制。"
+    });
+  }
+
+  return risks;
 };
 
 export const resolveDefaultInstanceConfig = (): InstanceConfig | null => {
