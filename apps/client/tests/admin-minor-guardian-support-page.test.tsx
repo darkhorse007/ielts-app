@@ -11,6 +11,8 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+const SAVED_QUEUE_VIEWS_STORAGE_KEY = "ielts.admin_minor_guardian_support.saved_views";
+
 const buildRequest = (
   overrides: Partial<InternalMinorGuardianSupportRequestResponse> & { request_id: string }
 ): InternalMinorGuardianSupportRequestResponse => ({
@@ -625,7 +627,7 @@ describe("admin minor guardian support page", () => {
     });
   });
 
-  test("saves and reapplies queue views from local storage", async () => {
+  test("saves, renames, and reapplies queue views from local storage", async () => {
     const tokenStorage = createTokenStorage();
 
     const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
@@ -725,10 +727,31 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(screen.getByText("已保存视图: 1")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "应用视图 高风险跟进" })).toBeInTheDocument();
-      expect(localStorage.getItem("ielts.admin_minor_guardian_support.saved_views")).toContain("高风险跟进");
+      expect(localStorage.getItem(SAVED_QUEUE_VIEWS_STORAGE_KEY)).toContain("高风险跟进");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "恢复默认视图" }));
+    fireEvent.click(screen.getByRole("button", { name: "重命名视图 高风险跟进" }));
+    fireEvent.change(screen.getByLabelText("视图名称"), {
+      target: {
+        value: "高风险升级"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认重命名 高风险跟进" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "应用视图 高风险升级" })).toBeInTheDocument();
+      expect(screen.getByText("默认保存视图: 未设置")).toBeInTheDocument();
+      expect(localStorage.getItem(SAVED_QUEUE_VIEWS_STORAGE_KEY)).toContain("高风险升级");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "设为默认视图 高风险升级" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("默认保存视图: 高风险升级")).toBeInTheDocument();
+      expect(localStorage.getItem(SAVED_QUEUE_VIEWS_STORAGE_KEY)).toContain("\"isDefault\":true");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复系统默认视图" }));
     fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
     fireEvent.click(screen.getByRole("button", { name: "清空归属筛选" }));
 
@@ -737,7 +760,7 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("当前归属: 全部工单")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "应用视图 高风险跟进" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用视图 高风险升级" }));
 
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
@@ -755,6 +778,93 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("当前 SLA: 临近超时")).toBeInTheDocument();
       expect(screen.getByText("排序: 等待时长优先")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-saved-view/)).toBeInTheDocument();
+    });
+  });
+
+  test("restores default saved queue view on first load", async () => {
+    const tokenStorage = createTokenStorage();
+
+    localStorage.setItem(
+      SAVED_QUEUE_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          name: "默认高风险队列",
+          statusFilter: "pending_review",
+          assignmentFilter: "handled_by",
+          handledByFilterQuery: "ops-reviewer-9",
+          searchQuery: "guardian-special",
+          slaFilter: "due_soon",
+          orderedBy: "queue_wait_desc",
+          isDefault: true
+        }
+      ])
+    );
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      handledBy?: string;
+      query?: string;
+      orderBy?: "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+      slaState?: "within_sla" | "due_soon" | "breached";
+    }) => {
+      if (
+        params?.handledBy === "ops-reviewer-9" &&
+        params?.query === "guardian-special" &&
+        params?.orderBy === "queue_wait_desc" &&
+        params?.slaState === "due_soon"
+      ) {
+        return buildListResponse({
+          ordered_by: "queue_wait_desc",
+          items: [
+            buildRequest({
+              request_id: "guardian-request-default-view",
+              user_email: "guardian-special@example.com",
+              queue_wait_minutes: 125,
+              handled_by: "ops-reviewer-9",
+              sla_state: "due_soon"
+            })
+          ]
+        });
+      }
+
+      return buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-fallback"
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        handledBy: "ops-reviewer-9",
+        orderBy: "queue_wait_desc",
+        query: "guardian-special",
+        slaState: "due_soon",
+        status: "pending_review",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已恢复默认保存视图 默认高风险队列")).toBeInTheDocument();
+      expect(screen.getByText("默认保存视图: 默认高风险队列")).toBeInTheDocument();
+      expect(screen.getByText("当前搜索: guardian-special")).toBeInTheDocument();
+      expect(screen.getByText("当前归属: 处理人=ops-reviewer-9")).toBeInTheDocument();
+      expect(screen.getByText("当前 SLA: 临近超时")).toBeInTheDocument();
+      expect(screen.getByText("排序: 等待时长优先")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-default-view/)).toBeInTheDocument();
     });
   });
 

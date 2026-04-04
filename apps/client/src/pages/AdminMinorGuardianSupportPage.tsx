@@ -41,6 +41,12 @@ type SavedQueueView = {
   searchQuery: string;
   slaFilter: SlaFilter;
   orderedBy: InternalMinorGuardianSupportRequestOrderBy;
+  isDefault: boolean;
+};
+
+type SavedQueueViewStateSnapshot = {
+  savedViews: SavedQueueView[];
+  defaultView: SavedQueueView | null;
 };
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -222,6 +228,7 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
       return [];
     }
 
+    let hasDefaultView = false;
     return parsed.flatMap((item) => {
       if (!item || typeof item !== "object") {
         return [];
@@ -240,6 +247,11 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
         return [];
       }
 
+      const isDefault = candidate.isDefault === true && !hasDefaultView;
+      if (isDefault) {
+        hasDefaultView = true;
+      }
+
       return [
         {
           name: candidate.name,
@@ -248,7 +260,8 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
           handledByFilterQuery: candidate.handledByFilterQuery,
           searchQuery: candidate.searchQuery,
           slaFilter: candidate.slaFilter,
-          orderedBy: candidate.orderedBy
+          orderedBy: candidate.orderedBy,
+          isDefault
         }
       ];
     });
@@ -257,25 +270,44 @@ const parseSavedQueueViews = (): SavedQueueView[] => {
   }
 };
 
+const getDefaultSavedQueueView = (views: SavedQueueView[]): SavedQueueView | null =>
+  views.find((view) => view.isDefault) ?? null;
+
+const loadSavedQueueViewState = (): SavedQueueViewStateSnapshot => {
+  const savedViews = parseSavedQueueViews();
+  return {
+    savedViews,
+    defaultView: getDefaultSavedQueueView(savedViews)
+  };
+};
+
 const persistSavedQueueViews = (views: SavedQueueView[]): void => {
   localStorage.setItem(SAVED_QUEUE_VIEWS_STORAGE_KEY, JSON.stringify(views));
 };
 
 export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: AdminMinorGuardianSupportPageProps) => {
   const currentOperatorId = tokenStorage.getUserId() ?? "";
-  const [statusFilter, setStatusFilter] = useState<SupportRequestFilter>("pending_review");
-  const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter>("all");
-  const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
-  const [handledByFilterInput, setHandledByFilterInput] = useState("");
-  const [handledByFilterQuery, setHandledByFilterQuery] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const initialSavedQueueViewState = useMemo(() => loadSavedQueueViewState(), []);
+  const initialDefaultSavedView = initialSavedQueueViewState.defaultView;
+  const [statusFilter, setStatusFilter] = useState<SupportRequestFilter>(
+    initialDefaultSavedView?.statusFilter ?? "pending_review"
+  );
+  const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter>(
+    initialDefaultSavedView?.assignmentFilter ?? "all"
+  );
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>(initialDefaultSavedView?.slaFilter ?? "all");
+  const [handledByFilterInput, setHandledByFilterInput] = useState(initialDefaultSavedView?.handledByFilterQuery ?? "");
+  const [handledByFilterQuery, setHandledByFilterQuery] = useState(initialDefaultSavedView?.handledByFilterQuery ?? "");
+  const [searchInput, setSearchInput] = useState(initialDefaultSavedView?.searchQuery ?? "");
+  const [searchQuery, setSearchQuery] = useState(initialDefaultSavedView?.searchQuery ?? "");
   const [currentPage, setCurrentPage] = useState(1);
   const [requests, setRequests] = useState<InternalMinorGuardianSupportRequestResponse[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [hasNextPage, setHasNextPage] = useState(false);
-  const [orderedBy, setOrderedBy] = useState<InternalMinorGuardianSupportRequestOrderBy>("updated_at_desc");
+  const [orderedBy, setOrderedBy] = useState<InternalMinorGuardianSupportRequestOrderBy>(
+    initialDefaultSavedView?.orderedBy ?? "updated_at_desc"
+  );
   const [quickView, setQuickView] = useState<QuickViewFilter>("default");
   const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
   const [slaSummary, setSlaSummary] = useState<MinorGuardianSupportRequestSlaSummary>(EMPTY_SLA_SUMMARY);
@@ -291,10 +323,13 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [bulkOperatorNote, setBulkOperatorNote] = useState("");
   const [bulkNextStatus, setBulkNextStatus] = useState<"keep" | MinorGuardianSupportRequestStatus>("keep");
   const [statusMessage, setStatusMessage] = useState("未加载工单");
-  const [message, setMessage] = useState("未处理");
+  const [message, setMessage] = useState(
+    initialDefaultSavedView ? `已恢复默认保存视图 ${initialDefaultSavedView.name}` : "未处理"
+  );
   const [exportMessage, setExportMessage] = useState("未导出");
   const [savedViewName, setSavedViewName] = useState("");
-  const [savedViews, setSavedViews] = useState<SavedQueueView[]>(() => parseSavedQueueViews());
+  const [savedViewRenameSource, setSavedViewRenameSource] = useState<string | null>(null);
+  const [savedViews, setSavedViews] = useState<SavedQueueView[]>(() => initialSavedQueueViewState.savedViews);
   const [lastExportFilename, setLastExportFilename] = useState<string | null>(null);
   const [lastExportContent, setLastExportContent] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -308,6 +343,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     const selectedIds = new Set(selectedRequestIds);
     return requests.filter((item) => selectedIds.has(item.request_id));
   }, [requests, selectedRequestIds]);
+  const defaultSavedView = useMemo(() => getDefaultSavedQueueView(savedViews), [savedViews]);
 
   const activeHandledByFilter = assignmentFilter === "mine"
     ? currentOperatorId
@@ -715,14 +751,23 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       handledByFilterQuery,
       searchQuery,
       slaFilter,
-      orderedBy
+      orderedBy,
+      isDefault: false
     };
     setSavedViews((current) => {
-      const nextViews = [nextView, ...current.filter((view) => view.name !== normalizedName)].slice(0, 6);
+      const existingView = current.find((view) => view.name === normalizedName);
+      const nextViews = [
+        {
+          ...nextView,
+          isDefault: existingView?.isDefault ?? false
+        },
+        ...current.filter((view) => view.name !== normalizedName)
+      ].slice(0, 6);
       persistSavedQueueViews(nextViews);
       return nextViews;
     });
     setSavedViewName("");
+    setSavedViewRenameSource(null);
     setMessage(`已保存视图 ${normalizedName}`);
     setError(null);
   };
@@ -747,7 +792,84 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       persistSavedQueueViews(nextViews);
       return nextViews;
     });
+    if (savedViewRenameSource === name) {
+      setSavedViewRenameSource(null);
+      setSavedViewName("");
+    }
     setMessage(`已删除视图 ${name}`);
+    setError(null);
+  };
+
+  const startRenamingSavedView = (name: string): void => {
+    setSavedViewRenameSource(name);
+    setSavedViewName(name);
+    setError(null);
+  };
+
+  const cancelRenamingSavedView = (): void => {
+    setSavedViewRenameSource(null);
+    setSavedViewName("");
+    setError(null);
+  };
+
+  const renameSavedView = (): void => {
+    if (!savedViewRenameSource) {
+      saveCurrentView();
+      return;
+    }
+
+    const normalizedName = savedViewName.trim();
+    if (normalizedName.length === 0) {
+      setError("请填写重命名后的视图名称");
+      return;
+    }
+    if (normalizedName !== savedViewRenameSource && savedViews.some((view) => view.name === normalizedName)) {
+      setError("视图名称已存在，请更换名称");
+      return;
+    }
+
+    setSavedViews((current) => {
+      const nextViews = current.map((view) =>
+        view.name === savedViewRenameSource
+          ? {
+              ...view,
+              name: normalizedName
+            }
+          : view
+      );
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
+    setSavedViewRenameSource(null);
+    setSavedViewName("");
+    setMessage(`已将视图 ${savedViewRenameSource} 重命名为 ${normalizedName}`);
+    setError(null);
+  };
+
+  const toggleDefaultSavedView = (name: string): void => {
+    const targetView = savedViews.find((view) => view.name === name);
+    if (!targetView) {
+      setError("未找到要设置的视图");
+      return;
+    }
+
+    const nextDefaultState = !targetView.isDefault;
+    setSavedViews((current) => {
+      const nextViews = current.map((view) =>
+        view.name === name
+          ? {
+              ...view,
+              isDefault: nextDefaultState
+            }
+          : {
+              ...view,
+              isDefault: false
+            }
+      );
+      persistSavedQueueViews(nextViews);
+      return nextViews;
+    });
+    setMessage(nextDefaultState ? `已将视图 ${name} 设为默认保存视图` : `已取消默认保存视图 ${name}`);
     setError(null);
   };
 
@@ -814,7 +936,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         查看临近超时队列
       </button>
       <button type="button" onClick={() => applyQuickView("default")}>
-        恢复默认视图
+        恢复系统默认视图
       </button>
 
       <label htmlFor="guardian-support-sla-filter">SLA 过滤</label>
@@ -930,16 +1052,28 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         onChange={(event) => setSavedViewName(event.target.value)}
         placeholder="例如 我的高风险队列"
       />
-      <button type="button" onClick={saveCurrentView}>
-        保存当前视图
+      <button type="button" onClick={savedViewRenameSource ? renameSavedView : saveCurrentView}>
+        {savedViewRenameSource ? `确认重命名 ${savedViewRenameSource}` : "保存当前视图"}
       </button>
+      {savedViewRenameSource ? (
+        <button type="button" onClick={cancelRenamingSavedView}>
+          取消重命名
+        </button>
+      ) : null}
       <p>已保存视图: {savedViews.length}</p>
+      <p>默认保存视图: {defaultSavedView?.name ?? "未设置"}</p>
       {savedViews.length === 0 ? <p>暂无已保存视图。</p> : null}
       <ul>
         {savedViews.map((view) => (
           <li key={view.name}>
             <button type="button" onClick={() => applySavedView(view)}>
               应用视图 {view.name}
+            </button>
+            <button type="button" onClick={() => startRenamingSavedView(view.name)}>
+              重命名视图 {view.name}
+            </button>
+            <button type="button" onClick={() => toggleDefaultSavedView(view.name)}>
+              {view.isDefault ? `取消默认视图 ${view.name}` : `设为默认视图 ${view.name}`}
             </button>
             <button type="button" onClick={() => deleteSavedView(view.name)}>
               删除视图 {view.name}
