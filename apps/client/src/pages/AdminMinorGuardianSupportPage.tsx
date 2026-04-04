@@ -34,6 +34,7 @@ type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
 type SlaFilter = "all" | "due_soon" | "breached";
 type QuickViewFilter = "default" | "breached" | "due_soon";
 type QueueExportTemplate = "pending_review" | "unassigned" | "mine";
+type BulkActionTemplate = "claim" | "contacted" | "closed";
 type SavedQueueView = {
   name: string;
   statusFilter: SupportRequestFilter;
@@ -145,6 +146,12 @@ const buildCloseTemplate = (request: InternalMinorGuardianSupportRequestResponse
     default:
       return "已完成监护人协助处理并同步结果，工单关闭。";
   }
+};
+
+const BULK_TEMPLATE_NOTES: Record<BulkActionTemplate, string> = {
+  claim: "已批量领取监护人工单，待人工跟进。",
+  contacted: "已批量联系监护人，等待监护人反馈。",
+  closed: "已批量完成监护人跟进并同步结果，工单关闭。"
 };
 
 const canTransitionToStatus = (
@@ -345,6 +352,10 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     return requests.filter((item) => selectedIds.has(item.request_id));
   }, [requests, selectedRequestIds]);
   const defaultSavedView = useMemo(() => getDefaultSavedQueueView(savedViews), [savedViews]);
+  const canApplyBulkContactTemplate =
+    selectedRequests.length > 0 && selectedRequests.every((request) => canTransitionToStatus(request.status, "contacted"));
+  const canApplyBulkCloseTemplate =
+    selectedRequests.length > 0 && selectedRequests.every((request) => canTransitionToStatus(request.status, "closed"));
 
   const activeHandledByFilter = assignmentFilter === "mine"
     ? currentOperatorId
@@ -769,6 +780,40 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setSelectedRequestIds([]);
   };
 
+  const applyBulkActionTemplate = (template: BulkActionTemplate): void => {
+    if (selectedRequests.length === 0) {
+      setError("请先勾选至少一条工单");
+      return;
+    }
+
+    const nextHandledBy = currentOperatorId.trim().length > 0 ? currentOperatorId : bulkHandledBy.trim();
+    if (nextHandledBy.length === 0) {
+      setError("当前账号缺少用户 ID，请手动填写批量处理人");
+      return;
+    }
+
+    if (template === "contacted" && !canApplyBulkContactTemplate) {
+      setError("所选工单无法套用已联系模板");
+      return;
+    }
+    if (template === "closed" && !canApplyBulkCloseTemplate) {
+      setError("所选工单无法套用关闭模板");
+      return;
+    }
+
+    setBulkHandledBy(nextHandledBy);
+    setBulkOperatorNote(BULK_TEMPLATE_NOTES[template]);
+    setBulkNextStatus(template === "claim" ? "keep" : template);
+    setMessage(
+      template === "claim"
+        ? "已套用批量领取模板"
+        : template === "contacted"
+          ? "已套用批量已联系模板"
+          : "已套用批量关闭模板"
+    );
+    setError(null);
+  };
+
   const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
 
   const saveCurrentView = (): void => {
@@ -1133,6 +1178,20 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       </button>
       <button type="button" onClick={clearSelectedRequests} disabled={selectedRequestIds.length === 0}>
         清空勾选
+      </button>
+      <p>批量模板: 领取 / 已联系 / 关闭</p>
+      <button type="button" onClick={() => applyBulkActionTemplate("claim")} disabled={selectedRequestIds.length === 0}>
+        批量领取当前勾选
+      </button>
+      <button
+        type="button"
+        onClick={() => applyBulkActionTemplate("contacted")}
+        disabled={selectedRequestIds.length === 0}
+      >
+        套用批量已联系模板
+      </button>
+      <button type="button" onClick={() => applyBulkActionTemplate("closed")} disabled={selectedRequestIds.length === 0}>
+        套用批量关闭模板
       </button>
 
       <label htmlFor="guardian-support-bulk-handled-by">批量处理人</label>

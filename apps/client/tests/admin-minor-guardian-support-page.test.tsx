@@ -1047,6 +1047,87 @@ describe("admin minor guardian support page", () => {
     });
   });
 
+  test("applies bulk action templates for selected guardian requests", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue(
+      buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-1",
+            user_email: "guardian1@example.com",
+            status: "pending_review"
+          }),
+          buildRequest({
+            request_id: "guardian-request-2",
+            user_email: "guardian2@example.com",
+            status: "contacted",
+            handled_by: "ops-reviewer-2"
+          }),
+          buildRequest({
+            request_id: "guardian-request-3",
+            user_email: "guardian3@example.com",
+            status: "closed",
+            handled_by: "ops-reviewer-3"
+          })
+        ]
+      })
+    );
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("选择工单 guardian-request-1")).toBeInTheDocument();
+      expect(screen.getByLabelText("选择工单 guardian-request-3")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("选择工单 guardian-request-1"));
+    fireEvent.click(screen.getByLabelText("选择工单 guardian-request-2"));
+
+    fireEvent.click(screen.getByRole("button", { name: "批量领取当前勾选" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("批量处理人")).toHaveValue("ops-user-1");
+      expect(screen.getByLabelText("批量状态")).toHaveValue("keep");
+      expect(screen.getByLabelText("批量备注")).toHaveValue("已批量领取监护人工单，待人工跟进。");
+      expect(screen.getByText("消息: 已套用批量领取模板")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "套用批量已联系模板" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("批量状态")).toHaveValue("contacted");
+      expect(screen.getByLabelText("批量备注")).toHaveValue("已批量联系监护人，等待监护人反馈。");
+      expect(screen.getByText("消息: 已套用批量已联系模板")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "套用批量关闭模板" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("批量状态")).toHaveValue("closed");
+      expect(screen.getByLabelText("批量备注")).toHaveValue("已批量完成监护人跟进并同步结果，工单关闭。");
+      expect(screen.getByText("消息: 已套用批量关闭模板")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "清空勾选" }));
+    fireEvent.click(screen.getByLabelText("选择工单 guardian-request-3"));
+    fireEvent.click(screen.getByRole("button", { name: "套用批量已联系模板" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("所选工单无法套用已联系模板");
+    });
+  });
+
   test("supports bulk assignment and status updates for selected requests", async () => {
     const tokenStorage = createTokenStorage();
 
