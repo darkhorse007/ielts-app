@@ -205,6 +205,16 @@ export type MinorGuardianSupportRequestSlaSummary = {
 
 export type InternalMinorGuardianSupportRequestOrderBy = "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
 
+export type InternalMinorGuardianSupportRequestDashboardSummary = {
+  open_count: number;
+  assigned_open_count: number;
+  unassigned_open_count: number;
+  breached_open_count: number;
+  due_soon_open_count: number;
+  oldest_open_wait_minutes: number;
+  average_open_wait_minutes: number;
+};
+
 export type InternalMinorGuardianSupportRequestListResponse = {
   total_count: number;
   page: number;
@@ -213,6 +223,7 @@ export type InternalMinorGuardianSupportRequestListResponse = {
   ordered_by: InternalMinorGuardianSupportRequestOrderBy;
   status_summary: MinorGuardianSupportRequestStatusSummary;
   sla_summary: MinorGuardianSupportRequestSlaSummary;
+  dashboard_summary: InternalMinorGuardianSupportRequestDashboardSummary;
   items: InternalMinorGuardianSupportRequestResponse[];
 };
 

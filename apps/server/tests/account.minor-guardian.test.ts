@@ -242,6 +242,15 @@ describe("account minor guardian routes", () => {
       due_soon: 1,
       breached: 1
     });
+    expect(internalList.json().dashboard_summary).toMatchObject({
+      open_count: 2,
+      assigned_open_count: 0,
+      unassigned_open_count: 2,
+      breached_open_count: 1,
+      due_soon_open_count: 1
+    });
+    expect(internalList.json().dashboard_summary.oldest_open_wait_minutes).toBeGreaterThanOrEqual(130);
+    expect(internalList.json().dashboard_summary.average_open_wait_minutes).toBeGreaterThanOrEqual(112);
     const listedFirstRequest = (internalList.json().items as Array<Record<string, unknown>>).find(
       (item) => item.request_id === firstRequestId
     );

@@ -151,6 +151,15 @@ describe("app route guards", () => {
               due_soon: 0,
               breached: 0
             },
+            dashboard_summary: {
+              open_count: 0,
+              assigned_open_count: 0,
+              unassigned_open_count: 0,
+              breached_open_count: 0,
+              due_soon_open_count: 0,
+              oldest_open_wait_minutes: 0,
+              average_open_wait_minutes: 0
+            },
             items: []
           });
         }

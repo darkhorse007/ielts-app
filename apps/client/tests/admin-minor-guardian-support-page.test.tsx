@@ -46,6 +46,7 @@ const buildListResponse = (input: {
   has_next_page?: boolean;
   ordered_by?: InternalMinorGuardianSupportRequestListResponse["ordered_by"];
   status_summary?: InternalMinorGuardianSupportRequestListResponse["status_summary"];
+  dashboard_summary?: InternalMinorGuardianSupportRequestListResponse["dashboard_summary"];
 }): InternalMinorGuardianSupportRequestListResponse => ({
   total_count: input.total_count ?? input.items.length,
   page: input.page ?? 1,
@@ -61,6 +62,28 @@ const buildListResponse = (input: {
     within_sla: input.items.filter((item) => item.sla_state === "within_sla").length,
     due_soon: input.items.filter((item) => item.sla_state === "due_soon").length,
     breached: input.items.filter((item) => item.sla_state === "breached").length
+  },
+  dashboard_summary: input.dashboard_summary ?? {
+    open_count: input.items.filter((item) => item.status !== "closed").length,
+    assigned_open_count: input.items.filter(
+      (item) => item.status !== "closed" && typeof item.handled_by === "string" && item.handled_by.trim().length > 0
+    ).length,
+    unassigned_open_count: input.items.filter(
+      (item) => item.status !== "closed" && (!item.handled_by || item.handled_by.trim().length === 0)
+    ).length,
+    breached_open_count: input.items.filter((item) => item.status !== "closed" && item.sla_state === "breached").length,
+    due_soon_open_count: input.items.filter((item) => item.status !== "closed" && item.sla_state === "due_soon").length,
+    oldest_open_wait_minutes: input.items.reduce(
+      (maxWait, item) => (item.status !== "closed" && item.queue_wait_minutes > maxWait ? item.queue_wait_minutes : maxWait),
+      0
+    ),
+    average_open_wait_minutes: (() => {
+      const openItems = input.items.filter((item) => item.status !== "closed");
+      if (openItems.length === 0) {
+        return 0;
+      }
+      return Math.floor(openItems.reduce((sum, item) => sum + item.queue_wait_minutes, 0) / openItems.length);
+    })()
   },
   items: input.items
 });
@@ -460,6 +483,9 @@ describe("admin minor guardian support page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("SLA 摘要: 正常 1 / 临近超时 1 / 已超时 1")).toBeInTheDocument();
+      expect(screen.getByText("仪表盘: 待处理 3 / 已分配 0 / 未分配 3")).toBeInTheDocument();
+      expect(screen.getByText("风险概览: 已超时 1 / 临近超时 1")).toBeInTheDocument();
+      expect(screen.getByText("等待概览: 最久 180 分钟 / 平均 100 分钟")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-due/)).toBeInTheDocument();
     });
 

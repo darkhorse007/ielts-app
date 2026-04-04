@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiRequestError, type ApiClient } from "../lib/api-client";
 import type {
+  InternalMinorGuardianSupportRequestDashboardSummary,
   InternalMinorGuardianSupportRequestListResponse,
   InternalMinorGuardianSupportRequestOrderBy,
   InternalMinorGuardianSupportRequestResponse,
@@ -43,6 +44,15 @@ const EMPTY_SLA_SUMMARY: MinorGuardianSupportRequestSlaSummary = {
   within_sla: 0,
   due_soon: 0,
   breached: 0
+};
+const EMPTY_DASHBOARD_SUMMARY: InternalMinorGuardianSupportRequestDashboardSummary = {
+  open_count: 0,
+  assigned_open_count: 0,
+  unassigned_open_count: 0,
+  breached_open_count: 0,
+  due_soon_open_count: 0,
+  oldest_open_wait_minutes: 0,
+  average_open_wait_minutes: 0
 };
 
 const STATUS_LABELS: Record<MinorGuardianSupportRequestStatus, string> = {
@@ -208,6 +218,9 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [quickView, setQuickView] = useState<QuickViewFilter>("default");
   const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
   const [slaSummary, setSlaSummary] = useState<MinorGuardianSupportRequestSlaSummary>(EMPTY_SLA_SUMMARY);
+  const [dashboardSummary, setDashboardSummary] = useState<InternalMinorGuardianSupportRequestDashboardSummary>(
+    EMPTY_DASHBOARD_SUMMARY
+  );
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
   const [handledBy, setHandledBy] = useState("");
@@ -251,6 +264,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setHasNextPage(false);
       setStatusSummary(EMPTY_STATUS_SUMMARY);
       setSlaSummary(EMPTY_SLA_SUMMARY);
+      setDashboardSummary(EMPTY_DASHBOARD_SUMMARY);
       setStatusMessage("工单加载失败");
       return;
     }
@@ -300,6 +314,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         setOrderedBy(response.ordered_by);
         setStatusSummary(response.status_summary);
         setSlaSummary(response.sla_summary);
+        setDashboardSummary(response.dashboard_summary);
         setStatusMessage("当前页已空，正在回退上一页");
         setError(null);
         setCurrentPage(response.page - 1);
@@ -314,6 +329,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setOrderedBy(response.ordered_by);
       setStatusSummary(response.status_summary);
       setSlaSummary(response.sla_summary);
+      setDashboardSummary(response.dashboard_summary);
       setCurrentPage(response.page);
       setStatusMessage(`已加载 ${response.total_count} 条工单，第 ${response.page}/${pageCountForResponse(response)} 页`);
       setError(null);
@@ -334,6 +350,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setQuickView("default");
       setStatusSummary(EMPTY_STATUS_SUMMARY);
       setSlaSummary(EMPTY_SLA_SUMMARY);
+      setDashboardSummary(EMPTY_DASHBOARD_SUMMARY);
       setStatusMessage("工单加载失败");
     }
   };
@@ -740,6 +757,16 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       </p>
       <p>
         SLA 摘要: 正常 {slaSummary.within_sla} / 临近超时 {slaSummary.due_soon} / 已超时 {slaSummary.breached}
+      </p>
+      <p>
+        仪表盘: 待处理 {dashboardSummary.open_count} / 已分配 {dashboardSummary.assigned_open_count} / 未分配{" "}
+        {dashboardSummary.unassigned_open_count}
+      </p>
+      <p>
+        风险概览: 已超时 {dashboardSummary.breached_open_count} / 临近超时 {dashboardSummary.due_soon_open_count}
+      </p>
+      <p>
+        等待概览: 最久 {dashboardSummary.oldest_open_wait_minutes} 分钟 / 平均 {dashboardSummary.average_open_wait_minutes} 分钟
       </p>
       <button type="button" onClick={loadPreviousPage} disabled={currentPage <= 1}>
         上一页

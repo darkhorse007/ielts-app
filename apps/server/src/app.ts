@@ -283,6 +283,59 @@ const buildMinorGuardianSupportRequestSlaSummary = (
     }
   );
 
+const buildMinorGuardianSupportRequestDashboardSummary = (
+  items: Array<{
+    request: {
+      status: "pending_review" | "contacted" | "closed";
+      updatedAt: string;
+      handledBy?: string;
+    };
+  }>,
+  nowMs = Date.now()
+): {
+  open_count: number;
+  assigned_open_count: number;
+  unassigned_open_count: number;
+  breached_open_count: number;
+  due_soon_open_count: number;
+  oldest_open_wait_minutes: number;
+  average_open_wait_minutes: number;
+} => {
+  const openItems = items.filter((item) => item.request.status !== "closed");
+  if (openItems.length === 0) {
+    return {
+      open_count: 0,
+      assigned_open_count: 0,
+      unassigned_open_count: 0,
+      breached_open_count: 0,
+      due_soon_open_count: 0,
+      oldest_open_wait_minutes: 0,
+      average_open_wait_minutes: 0
+    };
+  }
+
+  const queueWaitMinutes = openItems.map((item) => deriveMinorGuardianSupportRequestSla(item.request, nowMs).queueWaitMinutes);
+  const breachedOpenCount = openItems.filter(
+    (item) => deriveMinorGuardianSupportRequestSla(item.request, nowMs).slaState === "breached"
+  ).length;
+  const dueSoonOpenCount = openItems.filter(
+    (item) => deriveMinorGuardianSupportRequestSla(item.request, nowMs).slaState === "due_soon"
+  ).length;
+  const assignedOpenCount = openItems.filter(
+    (item) => typeof item.request.handledBy === "string" && item.request.handledBy.trim().length > 0
+  ).length;
+
+  return {
+    open_count: openItems.length,
+    assigned_open_count: assignedOpenCount,
+    unassigned_open_count: openItems.length - assignedOpenCount,
+    breached_open_count: breachedOpenCount,
+    due_soon_open_count: dueSoonOpenCount,
+    oldest_open_wait_minutes: Math.max(...queueWaitMinutes),
+    average_open_wait_minutes: Math.floor(queueWaitMinutes.reduce((sum, current) => sum + current, 0) / openItems.length)
+  };
+};
+
 const sortMinorGuardianSupportRequestItems = <T extends {
   request: {
     status: "pending_review" | "contacted" | "closed";
@@ -838,6 +891,7 @@ export const buildServer = (options?: BuildServerOptions): {
         ordered_by: orderBy,
         status_summary: buildMinorGuardianSupportRequestStatusSummary(allMatchingItems),
         sla_summary: buildMinorGuardianSupportRequestSlaSummary(allMatchingItems, evaluatedAtMs),
+        dashboard_summary: buildMinorGuardianSupportRequestDashboardSummary(allMatchingItems, evaluatedAtMs),
         items: paginatedItems
       });
     });
