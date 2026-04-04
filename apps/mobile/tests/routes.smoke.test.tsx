@@ -28,6 +28,7 @@ import ReadingScreen from "../app/reading";
 import RegisterScreen from "../app/register";
 import MockExamScreen from "../app/mock-exam";
 import OnboardingScreen from "../app/onboarding";
+import PlanScreen from "../app/plan";
 import SpeakingScreen from "../app/speaking";
 import WritingScreen from "../app/writing";
 
@@ -842,6 +843,133 @@ describe("mobile route smoke", () => {
     expect(screen.getByDisplayValue("diag-restored-1")).toBeTruthy();
     expect(screen.getByDisplayValue("restored diagnostic answer")).toBeTruthy();
     expect(screen.getByText("Restored diagnostic question")).toBeTruthy();
+  });
+
+  test("diagnostic screen surfaces sync failures and allows retry", async () => {
+    const fetchDiagnosticQuestions = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("诊断服务暂时不可用"))
+      .mockResolvedValueOnce({
+        assessment_id: "diag-retry-1",
+        status: "in_progress",
+        answered_count: 2,
+        total_questions: 8,
+        elapsed_seconds: 120,
+        current_question_index: 2,
+        questions: [
+          {
+            question_id: "diagnostic-q-3",
+            skill: "writing",
+            prompt: "Retry diagnostic question"
+          }
+        ]
+      });
+
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          fetchDiagnosticQuestions
+        }
+      })
+    );
+
+    render(<DiagnosticScreen />);
+
+    fireEvent.change(screen.getByTestId("diagnostic.assessmentId"), {
+      target: { value: "diag-retry-1" }
+    });
+    fireEvent.click(screen.getByTestId("diagnostic.loadQuestions"));
+
+    await waitFor(() => {
+      expect(screen.getByText("server_sync_status: 拉取题目失败")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("server_sync_result: 诊断服务暂时不可用"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("diagnostic.retryLastFailedAction"));
+
+    await waitFor(() => {
+      expect(fetchDiagnosticQuestions).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("server_sync_status: 题目已同步")).toBeTruthy();
+    });
+    expect(screen.getByText("Retry diagnostic question")).toBeTruthy();
+  });
+
+  test("plan screen surfaces sync failures and allows retry", async () => {
+    const fetchActivePlan = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("计划服务暂时不可用"))
+      .mockResolvedValueOnce({
+        plan_id: "plan-1",
+        status: "active",
+        horizon_weeks: 8,
+        version: 3,
+        created_at: "2026-03-28T00:00:00.000Z",
+        updated_at: "2026-03-28T00:00:00.000Z",
+        adjustment_history: [
+          {
+            adjustment_id: "adj-1",
+            source_type: "practice_session",
+            source_id: "session-1",
+            skill: "speaking",
+            reason: "最近一次模拟表现偏弱，口语任务增加 20 分钟。",
+            score: 0.5,
+            created_at: "2026-03-28T00:00:00.000Z",
+            changed_tasks: [
+              {
+                task_id: "task-1",
+                skill: "speaking",
+                before_target_minutes: 45,
+                after_target_minutes: 65,
+                before_completion_criteria: "完成 1 次独立口语练习",
+                after_completion_criteria: "完成 1 次独立口语练习"
+              }
+            ]
+          }
+        ],
+        weeks: [
+          {
+            week_id: "week-1",
+            week_no: 1,
+            goals: ["稳定首周口语输出"],
+            tasks: [
+              {
+                task_id: "task-1",
+                skill: "speaking",
+                task_type: "foundation",
+                title: "首周口语打底",
+                target_minutes: 45,
+                completion_criteria: "完成 1 次独立口语练习",
+                day_of_week: 1,
+                status: "todo"
+              }
+            ]
+          }
+        ]
+      });
+
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          fetchActivePlan
+        }
+      })
+    );
+
+    render(<PlanScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("server_sync_status: 拉取计划失败")).toBeTruthy();
+    });
+    expect(screen.getByText((content) => content.includes("server_sync_result: 计划服务暂时不可用"))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("plan.retryLastFailedAction"));
+
+    await waitFor(() => {
+      expect(fetchActivePlan).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("server_sync_status: 计划已加载")).toBeTruthy();
+    });
+    expect(screen.getByText("首周口语打底")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("plan_id: plan-1"))).toBeTruthy();
   });
 
   test("account screen loads profile and export/delete controls", async () => {

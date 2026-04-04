@@ -1,11 +1,12 @@
 import { Redirect, useLocalSearchParams, router } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Text, View } from "react-native";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
-import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, TextField } from "../src/ui/primitives";
+import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
 const pickCurrentQuestion = (response: DiagnosticQuestionsResponse) =>
@@ -41,6 +42,53 @@ const formatCheckpointTime = (value: string): string =>
     hour12: false
   });
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type DiagnosticRetryAction = "load_questions" | "submit_answer" | "pause" | "resume" | "complete";
+
+const formatDiagnosticRetryActionLabel = (value: DiagnosticRetryAction): string => {
+  switch (value) {
+    case "load_questions":
+      return "拉取题目";
+    case "submit_answer":
+      return "提交答案";
+    case "pause":
+      return "暂停诊断";
+    case "resume":
+      return "恢复诊断";
+    case "complete":
+      return "完成诊断";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function DiagnosticScreen() {
   const params = useLocalSearchParams<{ assessmentId?: string | string[] }>();
   const { session, runWithAuthorizedClient } = useAppSession();
@@ -58,6 +106,10 @@ export default function DiagnosticScreen() {
   const [planId, setPlanId] = useState<string | null>(null);
   const [checkpointStatus, setCheckpointStatus] = useState("本地中间态未恢复");
   const [checkpointReady, setCheckpointReady] = useState(false);
+  const [serverSyncStatus, setServerSyncStatus] = useState("尚未同步");
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<DiagnosticRetryAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -77,7 +129,25 @@ export default function DiagnosticScreen() {
     setProgressText("-");
     setSkillBandText("-");
     setPlanId(null);
+    setServerSyncStatus("尚未同步");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setError(null);
+  };
+
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setServerSyncStatus(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (action: DiagnosticRetryAction, detail: string): void => {
+    setServerSyncStatus(`${formatDiagnosticRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(action);
   };
 
   const persistSnapshot = useEffectEvent(async (snapshot: DiagnosticSnapshot) => {
@@ -99,6 +169,8 @@ export default function DiagnosticScreen() {
 
     setLoading(true);
     try {
+      setServerSyncStatus("正在拉取题目");
+      setServerSyncDetail(`assessment ${nextAssessmentId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.fetchDiagnosticQuestions(accessToken, nextAssessmentId)
       );
@@ -109,9 +181,15 @@ export default function DiagnosticScreen() {
       setQuestionId(currentQuestion?.question_id ?? "");
       setQuestionPrompt(currentQuestion?.prompt ?? "当前没有可展示题目");
       setProgressText(`${response.answered_count}/${response.total_questions}`);
+      markSyncSuccess(
+        "题目已同步",
+        `assessment ${response.assessment_id} / status ${response.status} / progress ${response.answered_count}/${response.total_questions}`
+      );
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载题目失败");
+      const message = toRequestErrorMessage(loadError, "加载题目失败");
+      markSyncFailure("load_questions", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -248,15 +326,24 @@ export default function DiagnosticScreen() {
 
     setLoading(true);
     try {
+      setServerSyncStatus("正在提交答案");
+      setServerSyncDetail(`question ${questionId.trim()}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.submitDiagnosticAnswer(accessToken, assessmentId.trim(), questionId.trim(), answer)
       );
       setStatus(response.status);
+      setProgressText(`${response.answered_count}/${response.total_questions}`);
       setAnswer("");
+      markSyncSuccess(
+        "答案已提交",
+        `assessment ${response.assessment_id} / progress ${response.answered_count}/${response.total_questions}`
+      );
       setError(null);
       await loadQuestions(assessmentId.trim());
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "提交答案失败");
+      const message = toRequestErrorMessage(submitError, "提交答案失败");
+      markSyncFailure("submit_answer", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -265,14 +352,19 @@ export default function DiagnosticScreen() {
   const pause = async (): Promise<void> => {
     setLoading(true);
     try {
+      setServerSyncStatus("正在暂停诊断");
+      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.pauseDiagnostic(accessToken, assessmentId.trim())
       );
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
+      markSyncSuccess("暂停状态已同步", `status ${response.status} / elapsed ${response.elapsed_seconds}s`);
       setError(null);
     } catch (pauseError) {
-      setError(pauseError instanceof Error ? pauseError.message : "暂停失败");
+      const message = toRequestErrorMessage(pauseError, "暂停失败");
+      markSyncFailure("pause", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -281,15 +373,20 @@ export default function DiagnosticScreen() {
   const resume = async (): Promise<void> => {
     setLoading(true);
     try {
+      setServerSyncStatus("正在恢复诊断");
+      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.resumeDiagnostic(accessToken, assessmentId.trim())
       );
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
+      markSyncSuccess("恢复状态已同步", `status ${response.status} / elapsed ${response.elapsed_seconds}s`);
       setError(null);
       await loadQuestions(assessmentId.trim());
     } catch (resumeError) {
-      setError(resumeError instanceof Error ? resumeError.message : "恢复失败");
+      const message = toRequestErrorMessage(resumeError, "恢复失败");
+      markSyncFailure("resume", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -298,6 +395,8 @@ export default function DiagnosticScreen() {
   const complete = async (): Promise<void> => {
     setLoading(true);
     try {
+      setServerSyncStatus("正在完成诊断");
+      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.completeDiagnostic(accessToken, assessmentId.trim())
       );
@@ -307,11 +406,39 @@ export default function DiagnosticScreen() {
       setSkillBandText(
         `L${response.skill_bands.listening}/S${response.skill_bands.speaking}/R${response.skill_bands.reading}/W${response.skill_bands.writing}`
       );
+      markSyncSuccess(
+        "诊断已完成",
+        `plan ${response.plan_id} / bands L${response.skill_bands.listening}/S${response.skill_bands.speaking}/R${response.skill_bands.reading}/W${response.skill_bands.writing}`
+      );
       setError(null);
     } catch (completeError) {
-      setError(completeError instanceof Error ? completeError.message : "完成诊断失败");
+      const message = toRequestErrorMessage(completeError, "完成诊断失败");
+      markSyncFailure("complete", message);
+      setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction) {
+      case "load_questions":
+        await loadQuestions();
+        break;
+      case "submit_answer":
+        await submitAnswer();
+        break;
+      case "pause":
+        await pause();
+        break;
+      case "resume":
+        await resume();
+        break;
+      case "complete":
+        await complete();
+        break;
+      default:
+        break;
     }
   };
 
@@ -336,6 +463,7 @@ export default function DiagnosticScreen() {
     >
       <TextField
         label="assessment_id"
+        testID="diagnostic.assessmentId"
         value={assessmentId}
         onChangeText={setAssessmentId}
         placeholder="先提交目标后获得"
@@ -353,6 +481,33 @@ export default function DiagnosticScreen() {
           <PrimaryButton label="加载题目" onPress={() => void loadQuestions()} disabled={loading} />
           <SecondaryButton label="清空本地中间态" onPress={() => void clearLocalCheckpoint()} disabled={loading || !checkpointReady} />
         </ButtonRow>
+      </InfoCard>
+
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={serverSyncStatus}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={lastFailedAction ? `待重试 ${formatDiagnosticRetryActionLabel(lastFailedAction)}` : "链路已就绪"}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {serverSyncStatus}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="diagnostic.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <InfoCard tone="accent">
@@ -376,7 +531,12 @@ export default function DiagnosticScreen() {
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
 
       <ButtonRow>
-        <PrimaryButton label={loading ? "处理中..." : "加载题目"} onPress={() => void loadQuestions()} disabled={loading} />
+        <PrimaryButton
+          label={loading ? "处理中..." : "加载题目"}
+          onPress={() => void loadQuestions()}
+          disabled={loading}
+          testID="diagnostic.loadQuestions"
+        />
         <SecondaryButton label="提交答案" onPress={() => void submitAnswer()} disabled={loading} />
       </ButtonRow>
 
