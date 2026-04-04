@@ -18,6 +18,7 @@ import { buildCurrentRemoteReminderDeviceRegistrationAsync } from "../src/lib/no
 import type { InstanceConfig } from "../src/lib/runtime-config";
 import { useAppSession } from "../src/state/app-session";
 import { MinorGuardianProvider } from "../src/state/minor-guardian";
+import { StudyLoopProvider } from "../src/state/study-loop";
 import AccountScreen from "../app/account";
 import DiagnosticScreen from "../app/diagnostic";
 import HomeScreen from "../app/home";
@@ -29,6 +30,7 @@ import RegisterScreen from "../app/register";
 import MockExamScreen from "../app/mock-exam";
 import OnboardingScreen from "../app/onboarding";
 import PlanScreen from "../app/plan";
+import ProgressScreen from "../app/progress";
 import SpeakingScreen from "../app/speaking";
 import WritingScreen from "../app/writing";
 
@@ -348,6 +350,34 @@ const createSessionContext = (overrides?: {
 };
 
 describe("mobile route smoke", () => {
+  const renderHomeWithStudyLoop = () =>
+    render(
+      <StudyLoopProvider>
+        <HomeScreen />
+      </StudyLoopProvider>
+    );
+
+  const renderPlanWithStudyLoop = () =>
+    render(
+      <StudyLoopProvider>
+        <PlanScreen />
+      </StudyLoopProvider>
+    );
+
+  const renderProgressWithStudyLoop = () =>
+    render(
+      <StudyLoopProvider>
+        <ProgressScreen />
+      </StudyLoopProvider>
+    );
+
+  const renderListeningWithStudyLoop = () =>
+    render(
+      <StudyLoopProvider>
+        <ListeningScreen />
+      </StudyLoopProvider>
+    );
+
   const renderRegisterScreen = () =>
     render(
       <MinorGuardianProvider>
@@ -383,6 +413,39 @@ describe("mobile route smoke", () => {
     expect(screen.getByText("模考与报告")).toBeTruthy();
     expect(screen.getByText("进入账户中心")).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  test("home screen shows pending study loop refreshes", async () => {
+    mockedUseAppSession.mockReturnValue(createSessionContext());
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        activities: [
+          {
+            id: "loop-1",
+            skill: "listening",
+            source: "practice_submission",
+            title: "听力训练已提交",
+            summary: "听力提交 8/10，accuracy 80%",
+            route: "/listening",
+            planPending: true,
+            progressPending: true,
+            createdAt: "2026-04-04T12:00:00.000Z",
+            updatedAt: "2026-04-04T12:00:00.000Z"
+          }
+        ]
+      })
+    );
+
+    renderHomeWithStudyLoop();
+
+    await waitFor(() => {
+      expect(screen.getByText("学习主线闭环")).toBeTruthy();
+    });
+    expect(screen.getByText("计划待刷新 1")).toBeTruthy();
+    expect(screen.getByText("进度待刷新 1")).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("听力 · 听力提交 8/10"))).toBeTruthy();
   });
 
   test("login screen shows instance summary and risk warnings", () => {
@@ -761,6 +824,100 @@ describe("mobile route smoke", () => {
     expect(screen.getByDisplayValue("B")).toBeTruthy();
   });
 
+  test("listening screen records study loop activity after submission", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          createPracticeSession: vi.fn().mockResolvedValue({
+            session_id: "listening-live-1",
+            skill: "listening",
+            task_type: "core_training",
+            training_mode: "training",
+            mode: "core_training",
+            status: "in_progress",
+            created_at: "2026-04-04T00:00:00.000Z",
+            updated_at: "2026-04-04T00:00:00.000Z",
+            questions: [
+              {
+                question_id: "listening-q-1",
+                type: "multiple_choice",
+                prompt: "Pick the right answer",
+                options: ["A", "B", "C"]
+              }
+            ]
+          }),
+          submitPracticeSession: vi.fn().mockResolvedValue({
+            session_id: "listening-live-1",
+            skill: "listening",
+            task_type: "core_training",
+            training_mode: "training",
+            mode: "core_training",
+            status: "completed",
+            created_at: "2026-04-04T00:00:00.000Z",
+            updated_at: "2026-04-04T00:10:00.000Z",
+            questions: [
+              {
+                question_id: "listening-q-1",
+                type: "multiple_choice",
+                prompt: "Pick the right answer",
+                options: ["A", "B", "C"]
+              }
+            ],
+            submission: {
+              submission_id: "submission-1",
+              score_breakdown: {
+                correct_count: 1,
+                total_questions: 1,
+                accuracy: 1,
+                mode: "training",
+                elapsed_seconds: 90
+              },
+              question_results: [
+                {
+                  question_id: "listening-q-1",
+                  is_correct: true,
+                  user_answer: "A",
+                  correct_answer: "A",
+                  explanation: "Looks good",
+                  error_tags: [],
+                  improvement_actions: []
+                }
+              ]
+            }
+          })
+        }
+      })
+    );
+
+    renderListeningWithStudyLoop();
+
+    fireEvent.click(screen.getByText("创建训练"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("session_id: listening-live-1"))).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "A" }
+    });
+    fireEvent.click(screen.getByText("提交答案"));
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("提交完成，正确 1/1"))).toBeTruthy();
+    });
+    await waitFor(() => {
+      const stored = JSON.parse(
+        String(mockedSecureStore.__getMockItem(buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId)))
+      );
+      expect(stored.activities[0]).toMatchObject({
+        skill: "listening",
+        source: "practice_submission",
+        planPending: true,
+        progressPending: true
+      });
+    });
+  });
+
   test("listening screen restores local checkpoint snapshot", async () => {
     mockedUseAppSession.mockReturnValue(createSessionContext());
     mockedSecureStore.__setMockItem(
@@ -970,6 +1127,140 @@ describe("mobile route smoke", () => {
     });
     expect(screen.getByText("首周口语打底")).toBeTruthy();
     expect(screen.getByText((content) => content.includes("plan_id: plan-1"))).toBeTruthy();
+  });
+
+  test("plan screen consumes pending study loop refreshes after successful load", async () => {
+    const fetchActivePlan = vi.fn().mockResolvedValue({
+      plan_id: "plan-2",
+      status: "active",
+      horizon_weeks: 8,
+      version: 4,
+      created_at: "2026-04-04T00:00:00.000Z",
+      updated_at: "2026-04-04T00:00:00.000Z",
+      adjustment_history: [],
+      weeks: [
+        {
+          week_id: "week-1",
+          week_no: 1,
+          goals: ["先稳定阅读节奏"],
+          tasks: [
+            {
+              task_id: "task-1",
+              skill: "reading",
+              task_type: "foundation",
+              title: "首周阅读节奏训练",
+              target_minutes: 50,
+              completion_criteria: "完成 1 次阅读训练",
+              day_of_week: 1,
+              status: "todo"
+            }
+          ]
+        }
+      ]
+    });
+
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          fetchActivePlan
+        }
+      })
+    );
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        activities: [
+          {
+            id: "loop-plan-1",
+            skill: "reading",
+            source: "practice_submission",
+            title: "阅读训练已提交",
+            summary: "阅读提交 7/10，accuracy 70%",
+            route: "/reading",
+            planPending: true,
+            progressPending: true,
+            createdAt: "2026-04-04T12:00:00.000Z",
+            updatedAt: "2026-04-04T12:00:00.000Z"
+          }
+        ]
+      })
+    );
+
+    renderPlanWithStudyLoop();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText((content) => content.includes("server_sync_status: 已按最近 1 条训练结果刷新计划"))
+      ).toBeTruthy();
+    });
+    expect(fetchActivePlan).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("待消化训练 0")).toBeTruthy();
+    await waitFor(() => {
+      const stored = JSON.parse(
+        String(mockedSecureStore.__getMockItem(buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId)))
+      );
+      expect(stored.activities[0]).toMatchObject({
+        planPending: false,
+        progressPending: true
+      });
+    });
+  });
+
+  test("progress screen consumes pending study loop refreshes after successful load", async () => {
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          getProgress: vi.fn().mockResolvedValue({
+            listening_completed: 3,
+            speaking_completed: 2,
+            reading_completed: 4,
+            writing_completed: 1,
+            total_study_minutes: 240,
+            streak_days: 6,
+            server_version: 9,
+            updated_at: "2026-04-04T12:30:00.000Z",
+            last_synced_device_id: "mobile-ios"
+          })
+        }
+      })
+    );
+    mockedSecureStore.__setMockItem(
+      buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId),
+      JSON.stringify({
+        version: 1,
+        activities: [
+          {
+            id: "loop-progress-1",
+            skill: "writing",
+            source: "writing_evaluation",
+            title: "写作批改已完成",
+            summary: "写作批改 overall 6.5，TR6/CC6.5/LR6.5/GRA7",
+            route: "/writing",
+            planPending: false,
+            progressPending: true,
+            createdAt: "2026-04-04T12:00:00.000Z",
+            updatedAt: "2026-04-04T12:00:00.000Z"
+          }
+        ]
+      })
+    );
+
+    renderProgressWithStudyLoop();
+
+    await waitFor(() => {
+      expect(screen.getByText("已按最近 1 条训练结果刷新进度")).toBeTruthy();
+    });
+    expect(screen.getByText("待消化训练 0")).toBeTruthy();
+    await waitFor(() => {
+      const stored = JSON.parse(
+        String(mockedSecureStore.__getMockItem(buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId)))
+      );
+      expect(stored.activities[0]).toMatchObject({
+        planPending: false,
+        progressPending: false
+      });
+    });
   });
 
   test("account screen loads profile and export/delete controls", async () => {

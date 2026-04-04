@@ -5,6 +5,7 @@ import type { PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -71,6 +72,7 @@ const formatTimer = (timer: PracticeSessionResponse["timer"]): string => {
 
 export default function ReadingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
   const [trainingMode, setTrainingMode] = useState<ReadingMode>(defaultReadingMode);
@@ -386,6 +388,13 @@ export default function ReadingScreen() {
       setTimerText(
         `${response.submission?.score_breakdown.mode ?? "-"} / ${response.submission?.score_breakdown.elapsed_seconds ?? 0}s`
       );
+      recordActivity({
+        skill: "reading",
+        source: "practice_submission",
+        title: "阅读训练已提交",
+        summary: `阅读提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
+        route: "/reading"
+      });
       setStatusMessage(
         `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`
       );

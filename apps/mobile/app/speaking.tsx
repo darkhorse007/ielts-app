@@ -7,6 +7,7 @@ import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { openAppSettingsAsync } from "../src/lib/native-settings";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -220,6 +221,7 @@ const formatCheckpointTime = (value: string): string =>
 
 export default function SpeakingScreen() {
   const { instanceConfig, session: authSession, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const socketRef = useRef<WebSocket | null>(null);
   const shouldReconnectRef = useRef(false);
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -590,6 +592,25 @@ export default function SpeakingScreen() {
     }
   };
 
+  const recordSpeakingCompletion = (input: {
+    sessionId: string;
+    summary?: SpeakingSessionResponse["summary"] | SpeakingSocketPayload["summary"] | null;
+    turns?: number;
+  }): void => {
+    if (!input.summary) {
+      return;
+    }
+
+    recordActivity({
+      dedupeKey: `speaking:${input.sessionId}`,
+      skill: "speaking",
+      source: "speaking_session_end",
+      title: "口语会话已完成",
+      summary: `口语完成 ${formatScoreSummary(input.summary)} / turns ${input.turns ?? input.summary.turns ?? 0}`,
+      route: "/speaking"
+    });
+  };
+
   const createSession = async (): Promise<void> => {
     closeSocket();
     shouldReconnectRef.current = false;
@@ -654,6 +675,13 @@ export default function SpeakingScreen() {
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getSpeakingSession(accessToken, sessionState.session_id)
       );
+      if (response.status === "ended" && response.summary) {
+        recordSpeakingCompletion({
+          sessionId: response.session_id,
+          summary: response.summary,
+          turns: response.summary.turns ?? response.turns
+        });
+      }
       applySession({
         ...response,
         resume_token: resumeToken || response.resume_token
@@ -808,6 +836,13 @@ export default function SpeakingScreen() {
                 }
               : current
           );
+          if (sessionState?.session_id) {
+            recordSpeakingCompletion({
+              sessionId: sessionState.session_id,
+              summary: payload.summary,
+              turns: payload.summary?.turns ?? sessionState.summary?.turns ?? sessionState.turns
+            });
+          }
           return;
         }
 
@@ -934,6 +969,11 @@ export default function SpeakingScreen() {
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.endSpeakingSession(accessToken, sessionState.session_id)
       );
+      recordSpeakingCompletion({
+        sessionId: response.session_id,
+        summary: response.summary,
+        turns: response.summary?.turns ?? response.turns
+      });
       applySession({
         ...response,
         current_part: sessionState.current_part,

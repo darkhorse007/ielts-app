@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { WritingArchiveResponse, WritingEvaluationResponse, WritingTemplateListResponse } from "../src/lib/api-types";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -106,6 +107,7 @@ const formatDraftTime = (value: string): string =>
 
 export default function WritingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextDraftPersistRef = useRef(false);
   const [taskType, setTaskType] = useState<WritingTaskType>(defaultTaskType);
@@ -281,6 +283,13 @@ export default function WritingScreen() {
       setTaskType(result.task_type);
       setPrompt(result.prompt);
       setEvaluationId(result.evaluation_id);
+      recordActivity({
+        skill: "writing",
+        source: "writing_evaluation",
+        title: "写作批改已完成",
+        summary: `写作批改 overall ${result.scores.overall}，TR${result.scores.tr}/CC${result.scores.cc}/LR${result.scores.lr}/GRA${result.scores.gra}`,
+        route: "/writing"
+      });
       setStatusMessage(`写作批改完成，overall=${result.scores.overall}`);
       setError(null);
     } catch (evaluateError) {

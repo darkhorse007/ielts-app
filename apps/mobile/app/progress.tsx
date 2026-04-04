@@ -3,6 +3,7 @@ import { Platform, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useState } from "react";
 import type { ProgressResponse } from "../src/lib/api-types";
 import { useAppSession } from "../src/state/app-session";
+import { formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
@@ -17,6 +18,12 @@ const toEditableState = (snapshot: ProgressResponse) => ({
 
 export default function ProgressScreen() {
   const { session, runWithAuthorizedClient } = useAppSession();
+  const {
+    activities,
+    ready: studyLoopReady,
+    pendingProgressRefreshCount,
+    acknowledgeProgressRefresh
+  } = useStudyLoop();
   const [snapshot, setSnapshot] = useState<ProgressResponse | null>(null);
   const [listeningCompleted, setListeningCompleted] = useState("0");
   const [speakingCompleted, setSpeakingCompleted] = useState("0");
@@ -40,6 +47,7 @@ export default function ProgressScreen() {
     setLoading(true);
     try {
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProgress(accessToken));
+      const pendingCount = pendingProgressRefreshCount;
       setSnapshot(response);
       const editable = toEditableState(response);
       setListeningCompleted(editable.listeningCompleted);
@@ -48,7 +56,10 @@ export default function ProgressScreen() {
       setWritingCompleted(editable.writingCompleted);
       setTotalStudyMinutes(editable.totalStudyMinutes);
       setStreakDays(editable.streakDays);
-      setStatusMessage("已加载服务端进度");
+      setStatusMessage(pendingCount > 0 ? `已按最近 ${pendingCount} 条训练结果刷新进度` : "已加载服务端进度");
+      if (pendingCount > 0) {
+        acknowledgeProgressRefresh();
+      }
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
@@ -61,9 +72,18 @@ export default function ProgressScreen() {
     void load();
   }, [session]);
 
+  useEffect(() => {
+    if (!studyLoopReady || pendingProgressRefreshCount === 0) {
+      return;
+    }
+
+    void load();
+  }, [load, pendingProgressRefreshCount, studyLoopReady]);
+
   const sync = async (): Promise<void> => {
     setLoading(true);
     try {
+      const pendingCount = pendingProgressRefreshCount;
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.syncProgress(accessToken, {
           device_id: `mobile-${Platform.OS}`,
@@ -83,7 +103,16 @@ export default function ProgressScreen() {
         apiClient.getProgressConflicts(accessToken)
       );
       setConflictCount(conflicts.items.length);
-      setStatusMessage(response.stale_request ? "同步请求为旧版本，已回退服务端数据" : "同步成功");
+      setStatusMessage(
+        response.stale_request
+          ? "同步请求为旧版本，已回退服务端数据"
+          : pendingCount > 0
+            ? `同步成功，并已消化最近 ${pendingCount} 条训练结果`
+            : "同步成功"
+      );
+      if (pendingCount > 0) {
+        acknowledgeProgressRefresh();
+      }
       setError(null);
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "同步失败");
@@ -112,6 +141,8 @@ export default function ProgressScreen() {
     return <Redirect href="/login" />;
   }
 
+  const pendingActivities = activities.filter((item) => item.progressPending).slice(0, 3);
+
   return (
     <AppScreen
       eyebrow="Progress"
@@ -123,6 +154,10 @@ export default function ProgressScreen() {
         <ButtonRow>
           <StatusPill label={statusMessage} tone={snapshot ? "success" : "neutral"} />
           <StatusPill label={`conflicts ${conflictCount}`} tone={conflictCount > 0 ? "accent" : "success"} />
+          <StatusPill
+            label={`待消化训练 ${pendingProgressRefreshCount}`}
+            tone={pendingProgressRefreshCount > 0 ? "accent" : "success"}
+          />
         </ButtonRow>
         <View style={{ gap: 6, marginTop: 10 }}>
           <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_version: {snapshot?.server_version ?? "-"}</Text>
@@ -131,6 +166,15 @@ export default function ProgressScreen() {
             last_synced_device_id: {snapshot?.last_synced_device_id ?? "-"}
           </Text>
         </View>
+        {pendingActivities.length ? (
+          <View style={{ gap: 6, marginTop: 10 }}>
+            {pendingActivities.map((item) => (
+              <Text key={item.id} style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+                待同步训练: {formatStudyLoopSkillLabel(item.skill)} · {item.summary}
+              </Text>
+            ))}
+          </View>
+        ) : null}
       </InfoCard>
 
       <TextField

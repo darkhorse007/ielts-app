@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { ApiClient, runSpeakingWebSocketSmoke } from "../src/lib/api-client";
 import type { UserProfileResponse } from "../src/lib/api-types";
 import { useAppSession } from "../src/state/app-session";
+import { formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
 import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
 import {
   AppScreen,
@@ -35,10 +36,12 @@ const availableModules = [
 
 export default function HomeScreen() {
   const { defaultInstanceConfig, instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
+  const { activities, pendingPlanRefreshCount, pendingProgressRefreshCount, ready: studyLoopReady } = useStudyLoop();
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [profileStatus, setProfileStatus] = useState("等待拉取");
   const [healthStatus, setHealthStatus] = useState("未检查");
   const [socketStatus, setSocketStatus] = useState("未检查");
+  const recentStudyLoopActivities = activities.slice(0, 3);
 
   const loadProfile = useEffectEvent(async () => {
     if (!session) {
@@ -144,6 +147,40 @@ export default function HomeScreen() {
         instanceConfig={instanceConfig}
         defaultInstanceConfig={defaultInstanceConfig}
       />
+
+      <InfoCard tone={pendingPlanRefreshCount || pendingProgressRefreshCount ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>学习主线闭环</Text>
+        <ButtonRow>
+          <StatusPill
+            label={`计划待刷新 ${pendingPlanRefreshCount}`}
+            tone={pendingPlanRefreshCount > 0 ? "accent" : "success"}
+          />
+          <StatusPill
+            label={`进度待刷新 ${pendingProgressRefreshCount}`}
+            tone={pendingProgressRefreshCount > 0 ? "accent" : "success"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>
+          {studyLoopReady ? `recent_activity_count: ${activities.length}` : "正在恢复最近训练结果..."}
+        </Text>
+        {studyLoopReady && recentStudyLoopActivities.length ? (
+          <View style={{ gap: 8, marginTop: 10 }}>
+            {recentStudyLoopActivities.map((item) => (
+              <Text key={item.id} style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+                {formatStudyLoopSkillLabel(item.skill)} · {item.summary}
+              </Text>
+            ))}
+          </View>
+        ) : studyLoopReady ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+            当前还没有新的训练结果需要回看计划或进度。
+          </Text>
+        ) : null}
+        <ButtonRow>
+          <PrimaryButton label="回看计划" onPress={() => router.push("/plan")} />
+          <SecondaryButton label="回看进度" onPress={() => router.push("/progress")} />
+        </ButtonRow>
+      </InfoCard>
 
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>当前登录状态</Text>

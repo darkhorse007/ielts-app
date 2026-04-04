@@ -5,6 +5,7 @@ import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -86,6 +87,7 @@ const renderQuestionLabel = (question: PracticeSessionResponse["questions"][numb
 
 export default function ListeningScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
   const [taskType, setTaskType] = useState<ListeningTaskType>(defaultTaskType);
@@ -292,6 +294,13 @@ export default function ListeningScreen() {
       );
 
       setSession(response);
+      recordActivity({
+        skill: "listening",
+        source: "practice_submission",
+        title: "听力训练已提交",
+        summary: `听力提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
+        route: "/listening"
+      });
       setStatusMessage(
         `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`
       );

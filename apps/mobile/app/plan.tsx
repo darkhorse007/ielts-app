@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { StudyPlanResponse } from "../src/lib/api-types";
 import { useAppSession } from "../src/state/app-session";
+import { formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors } from "../src/ui/theme";
 
@@ -68,6 +69,12 @@ const toRequestErrorMessage = (error: unknown, fallback: string): string => {
 
 export default function PlanScreen() {
   const { session, runWithAuthorizedClient } = useAppSession();
+  const {
+    activities,
+    ready: studyLoopReady,
+    pendingPlanRefreshCount,
+    acknowledgePlanRefresh
+  } = useStudyLoop();
   const [plan, setPlan] = useState<StudyPlanResponse | null>(null);
   const [statusMessage, setStatusMessage] = useState("未加载");
   const [serverSyncDetail, setServerSyncDetail] = useState("-");
@@ -106,6 +113,7 @@ export default function PlanScreen() {
 
     setLoading(true);
     try {
+      const pendingCount = pendingPlanRefreshCount;
       setStatusMessage("正在拉取计划");
       setServerSyncDetail("active plan");
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.fetchActivePlan(accessToken));
@@ -114,7 +122,13 @@ export default function PlanScreen() {
       setLatestReason(response.adjustment_history[0]?.reason ?? "-");
       setLatestAdjustedAt(response.adjustment_history[0]?.created_at ?? "-");
       setTargetMinutes(String(response.weeks[0]?.tasks[0]?.target_minutes ?? 45));
-      markSyncSuccess("计划已加载", `plan ${response.plan_id} / version ${response.version} / weeks ${response.weeks.length}`);
+      markSyncSuccess(
+        pendingCount > 0 ? `已按最近 ${pendingCount} 条训练结果刷新计划` : "计划已加载",
+        `plan ${response.plan_id} / version ${response.version} / weeks ${response.weeks.length}`
+      );
+      if (pendingCount > 0) {
+        acknowledgePlanRefresh();
+      }
       setError(null);
     } catch (loadError) {
       const message = toRequestErrorMessage(loadError, "加载计划失败");
@@ -128,6 +142,14 @@ export default function PlanScreen() {
   useEffect(() => {
     void loadPlan();
   }, [session]);
+
+  useEffect(() => {
+    if (!studyLoopReady || pendingPlanRefreshCount === 0) {
+      return;
+    }
+
+    void loadPlan();
+  }, [loadPlan, pendingPlanRefreshCount, studyLoopReady]);
 
   const adjust = async (): Promise<void> => {
     const firstTask = describeTask(plan);
@@ -210,6 +232,7 @@ export default function PlanScreen() {
   };
 
   const firstTask = describeTask(plan);
+  const pendingActivities = activities.filter((item) => item.planPending).slice(0, 3);
 
   if (!session) {
     return <Redirect href="/login" />;
@@ -226,6 +249,10 @@ export default function PlanScreen() {
         <ButtonRow>
           <StatusPill label={plan?.status ?? "未加载"} tone={plan ? "success" : "neutral"} />
           <StatusPill label={statusMessage} tone={plan ? "accent" : "neutral"} />
+          <StatusPill
+            label={`待消化训练 ${pendingPlanRefreshCount}`}
+            tone={pendingPlanRefreshCount > 0 ? "accent" : "success"}
+          />
         </ButtonRow>
         <View style={{ gap: 6, marginTop: 10 }}>
           <Text style={{ color: colors.textPrimary, fontSize: 14 }}>plan_id: {plan?.plan_id ?? "-"}</Text>
@@ -233,6 +260,15 @@ export default function PlanScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>week_count: {plan?.weeks.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>adjustment_count: {adjustmentCount}</Text>
         </View>
+        {pendingActivities.length ? (
+          <View style={{ gap: 6, marginTop: 10 }}>
+            {pendingActivities.map((item) => (
+              <Text key={item.id} style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+                待回看训练: {formatStudyLoopSkillLabel(item.skill)} · {item.summary}
+              </Text>
+            ))}
+          </View>
+        ) : null}
       </InfoCard>
 
       <InfoCard tone={lastFailedAction ? "accent" : "default"}>
