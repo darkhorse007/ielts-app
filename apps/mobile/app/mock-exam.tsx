@@ -5,6 +5,7 @@ import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-ty
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
 import { colors, radii, spacing } from "../src/ui/theme";
 
@@ -95,6 +96,7 @@ const formatErrors = (report: MockExamReportResponse | null): string =>
 
 export default function MockExamScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
   const [exam, setExam] = useState<MockExamResponse | null>(null);
@@ -119,6 +121,20 @@ export default function MockExamScreen() {
   }
 
   const snapshotStorageKey = buildScopedStorageKey("mock-exam", "draft", "v1", authSession.userId);
+
+  const syncReportToStudyLoop = (nextReport: MockExamReportResponse, action: "submit" | "load"): void => {
+    const bands = formatBands(nextReport);
+    recordActivity({
+      dedupeKey: `mock-exam:${nextReport.report_id}`,
+      skill: "mock_exam",
+      source: "mock_exam_report",
+      title: action === "submit" ? "模考报告已生成" : "模考报告已加载",
+      summary: `模考 overall ${nextReport.total_estimated_band}，${bands}`,
+      route: "/mock-exam",
+      planPending: Boolean(nextReport.plan_writeback?.applied || nextReport.plan_writeback?.changed_tasks.length),
+      progressPending: true
+    });
+  };
 
   const resetSnapshotState = (): void => {
     setExam(null);
@@ -377,6 +393,7 @@ export default function MockExamScreen() {
       );
       setExam(response.exam);
       setReport(response.report);
+      syncReportToStudyLoop(response.report, "submit");
       setStatusMessage(`模考提交完成，overall=${response.report.total_estimated_band}`);
       setError(null);
     } catch (submitError) {
@@ -398,6 +415,7 @@ export default function MockExamScreen() {
         apiClient.getMockExamReport(accessToken, exam.exam_id)
       );
       setReport(response);
+      syncReportToStudyLoop(response, "load");
       setStatusMessage("已加载模考报告");
       setError(null);
     } catch (reportError) {

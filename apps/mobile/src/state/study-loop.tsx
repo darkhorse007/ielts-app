@@ -2,8 +2,12 @@ import { createContext, useContext, useEffect, useMemo, useState, type PropsWith
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../lib/storage";
 import { useAppSession } from "./app-session";
 
-export type StudyLoopSkill = "listening" | "reading" | "writing" | "speaking";
-export type StudyLoopSource = "practice_submission" | "writing_evaluation" | "speaking_session_end";
+export type StudyLoopSkill = "listening" | "reading" | "writing" | "speaking" | "mock_exam";
+export type StudyLoopSource =
+  | "practice_submission"
+  | "writing_evaluation"
+  | "speaking_session_end"
+  | "mock_exam_report";
 
 export type StudyLoopActivity = {
   id: string;
@@ -72,6 +76,8 @@ export const formatStudyLoopSkillLabel = (skill: StudyLoopSkill): string => {
       return "写作";
     case "speaking":
       return "口语";
+    case "mock_exam":
+      return "模考";
     default:
       return skill;
   }

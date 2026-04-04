@@ -378,6 +378,13 @@ describe("mobile route smoke", () => {
       </StudyLoopProvider>
     );
 
+  const renderMockExamWithStudyLoop = () =>
+    render(
+      <StudyLoopProvider>
+        <MockExamScreen />
+      </StudyLoopProvider>
+    );
+
   const renderRegisterScreen = () =>
     render(
       <MinorGuardianProvider>
@@ -771,6 +778,115 @@ describe("mobile route smoke", () => {
     });
     expect(screen.getByText((content) => content.includes("exam_id: mock-restored-1"))).toBeTruthy();
     expect(screen.getByText((content) => content.includes("filename: restored-report.json"))).toBeTruthy();
+  });
+
+  test("mock exam screen records study loop activity after report submission", async () => {
+    const createMockExam = vi.fn().mockResolvedValue({
+      exam_id: "mock-2",
+      status: "in_progress",
+      time_limit_seconds: 7200,
+      elapsed_seconds: 0,
+      remaining_seconds: 7200,
+      current_skill: "reading",
+      sections: [],
+      created_at: "2026-04-04T12:00:00.000Z",
+      updated_at: "2026-04-04T12:00:00.000Z"
+    });
+    const submitMockExam = vi.fn().mockResolvedValue({
+      exam: {
+        exam_id: "mock-2",
+        status: "submitted",
+        time_limit_seconds: 7200,
+        elapsed_seconds: 3600,
+        remaining_seconds: 0,
+        current_skill: "writing",
+        sections: [],
+        report_id: "mock-report-2",
+        submitted_at: "2026-04-04T13:00:00.000Z",
+        created_at: "2026-04-04T12:00:00.000Z",
+        updated_at: "2026-04-04T13:00:00.000Z"
+      },
+      report: {
+        report_id: "mock-report-2",
+        exam_id: "mock-2",
+        total_estimated_band: 6.5,
+        skill_band_estimates: {
+          listening: 6.5,
+          speaking: 6,
+          reading: 6.5,
+          writing: 6
+        },
+        error_distribution: {
+          listening: 3,
+          speaking: 2,
+          reading: 4,
+          writing: 3
+        },
+        next_actions: ["补强阅读限时节奏"],
+        plan_writeback: {
+          applied: true,
+          undo_available: true,
+          reasons: ["阅读耗时偏高"],
+          changed_tasks: [
+            {
+              task_id: "task-1",
+              target_minutes_before: 45,
+              completion_criteria_before: "完成 1 次阅读训练",
+              target_minutes_after: 60,
+              completion_criteria_after: "完成 1 次阅读训练并记录耗时"
+            }
+          ]
+        },
+        generated_at: "2026-04-04T13:00:00.000Z",
+        created_at: "2026-04-04T13:00:00.000Z",
+        updated_at: "2026-04-04T13:00:00.000Z"
+      }
+    });
+
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          createMockExam,
+          submitMockExam
+        }
+      })
+    );
+
+    renderMockExamWithStudyLoop();
+
+    await waitFor(() => {
+      expect(screen.getByText((content) => content.includes("checkpoint_status: 已启用自动保存"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("mockExam.create"));
+
+    await waitFor(() => {
+      expect(createMockExam).toHaveBeenCalledTimes(1);
+      expect(screen.getByText((content) => content.includes("exam_id: mock-2"))).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("提交整场模考"));
+
+    await waitFor(() => {
+      expect(submitMockExam).toHaveBeenCalledTimes(1);
+      expect(screen.getByText((content) => content.includes("overall: 6.5"))).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        String(mockedSecureStore.__getMockItem(buildScopedStorageKey("study-loop", "activities", "v1", defaultSession.userId)))
+      );
+      expect(stored.activities[0]).toMatchObject({
+        skill: "mock_exam",
+        source: "mock_exam_report",
+        title: "模考报告已生成",
+        route: "/mock-exam",
+        planPending: true,
+        progressPending: true
+      });
+      expect(stored.activities[0].summary).toContain("模考 overall 6.5");
+      expect(stored.activities[0].summary).toContain("L6.5/S6/R6.5/W6");
+    });
   });
 
   test("reading screen restores local checkpoint snapshot", async () => {
