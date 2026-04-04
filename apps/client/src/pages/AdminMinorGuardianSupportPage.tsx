@@ -435,6 +435,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     }
     return null;
   }, [bulkHandledBy, bulkInvalidTransitionRequests, selectedRequestIds.length]);
+  const lastBulkUpdateSingleHandler =
+    lastBulkUpdateSummary?.handledByValues.length === 1 ? lastBulkUpdateSummary.handledByValues[0] : null;
   const canApplyBulkContactTemplate =
     selectedRequests.length > 0 && selectedRequests.every((request) => canTransitionToStatus(request.status, "contacted"));
   const canApplyBulkCloseTemplate =
@@ -895,6 +897,52 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     setError(null);
   };
 
+  const focusLastBulkHandlerQueue = (): void => {
+    if (!lastBulkUpdateSingleHandler) {
+      setError("最近批量结果没有唯一处理人，无法直接切换队列");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter("all");
+    setAssignmentFilter("handled_by");
+    setHandledByFilterInput(lastBulkUpdateSingleHandler);
+    setHandledByFilterQuery(lastBulkUpdateSingleHandler);
+    setSlaFilter("all");
+    setOrderedBy("updated_at_desc");
+    setMessage(`已切换到最近批量处理人队列 ${lastBulkUpdateSingleHandler}`);
+    setError(null);
+  };
+
+  const focusLastBulkClosedQueue = (): void => {
+    if (!lastBulkUpdateSummary || lastBulkUpdateSummary.closedCount === 0) {
+      setError("最近批量结果没有已关闭工单");
+      return;
+    }
+
+    setCurrentPage(1);
+    setStatusFilter("closed");
+    setSlaFilter("all");
+    setOrderedBy("updated_at_desc");
+    if (lastBulkUpdateSingleHandler) {
+      setAssignmentFilter("handled_by");
+      setHandledByFilterInput(lastBulkUpdateSingleHandler);
+      setHandledByFilterQuery(lastBulkUpdateSingleHandler);
+    }
+    setMessage(
+      lastBulkUpdateSingleHandler
+        ? `已切换到最近批量关闭队列 ${lastBulkUpdateSingleHandler}`
+        : "已切换到最近批量关闭队列"
+    );
+    setError(null);
+  };
+
+  const clearLastBulkResultSummary = (): void => {
+    setLastBulkUpdateSummary(null);
+    setMessage("已清除最近批量结果");
+    setError(null);
+  };
+
   const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
 
   const saveCurrentView = (): void => {
@@ -1348,6 +1396,15 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
           </p>
           <p>最近批量处理人: {formatRequestIdList(lastBulkUpdateSummary.handledByValues)}</p>
           <p>最近批量 request_id: {formatRequestIdList(lastBulkUpdateSummary.requestIds)}</p>
+          <button type="button" onClick={focusLastBulkHandlerQueue} disabled={!lastBulkUpdateSingleHandler}>
+            查看最近批量处理人队列
+          </button>
+          <button type="button" onClick={focusLastBulkClosedQueue} disabled={lastBulkUpdateSummary.closedCount === 0}>
+            查看最近批量已关闭队列
+          </button>
+          <button type="button" onClick={clearLastBulkResultSummary}>
+            清除最近批量结果
+          </button>
         </>
       ) : (
         <p>最近批量结果: 暂无</p>

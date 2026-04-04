@@ -1178,6 +1178,35 @@ describe("admin minor guardian support page", () => {
           total_count: 0,
           items: []
         })
+      )
+      .mockResolvedValueOnce(
+        buildListResponse({
+          items: [
+            buildRequest({
+              request_id: "guardian-request-1",
+              user_id: "user-1",
+              user_email: "guardian1@example.com",
+              status: "closed",
+              handled_by: "ops-reviewer-7",
+              operator_note: "批量完成监护人回访。",
+              resolved_at: "2026-04-03T12:30:00.000Z"
+            }),
+            buildRequest({
+              request_id: "guardian-request-2",
+              user_id: "user-2",
+              user_email: "guardian2@example.com",
+              status: "closed",
+              handled_by: "ops-reviewer-7",
+              operator_note: "批量完成监护人回访。",
+              resolved_at: "2026-04-03T12:30:00.000Z"
+            })
+          ],
+          status_summary: {
+            pending_review: 0,
+            contacted: 0,
+            closed: 2
+          }
+        })
       );
     const bulkUpdateInternalMinorGuardianSupportRequests = vi.fn().mockResolvedValue({
       updated_count: 2,
@@ -1255,6 +1284,29 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("最近批量 request_id: guardian-request-1, guardian-request-2")).toBeInTheDocument();
       expect(screen.getByText("当前筛选下暂无工单。")).toBeInTheDocument();
       expect(screen.getByText("已勾选: 0 条")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看最近批量已关闭队列" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        handledBy: "ops-reviewer-7",
+        orderBy: "updated_at_desc",
+        status: "closed",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("消息: 已切换到最近批量关闭队列 ops-reviewer-7")).toBeInTheDocument();
+      expect(screen.getByText(/request_id: guardian-request-1/)).toBeInTheDocument();
+      expect(screen.getByText("当前归属: 处理人=ops-reviewer-7")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "清除最近批量结果" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("消息: 已清除最近批量结果")).toBeInTheDocument();
+      expect(screen.getByText("最近批量结果: 暂无")).toBeInTheDocument();
     });
   });
 
