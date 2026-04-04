@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiRequestError, type ApiClient } from "../lib/api-client";
 import type {
   InternalMinorGuardianSupportRequestListResponse,
+  InternalMinorGuardianSupportRequestOrderBy,
   InternalMinorGuardianSupportRequestResponse,
   MinorGuardianSupportRequestSlaSummary,
   MinorGuardianSupportRequestSlaState,
@@ -30,6 +31,7 @@ type LoadRequestOptions = {
 type SupportRequestFilter = "all" | MinorGuardianSupportRequestStatus;
 type AssignmentFilter = "all" | "mine" | "unassigned" | "handled_by";
 type SlaFilter = "all" | "due_soon" | "breached";
+type QuickViewFilter = "default" | "breached" | "due_soon";
 
 const DEFAULT_PAGE_SIZE = 10;
 const EMPTY_STATUS_SUMMARY: MinorGuardianSupportRequestStatusSummary = {
@@ -81,9 +83,16 @@ const SLA_FILTER_OPTIONS: Array<{ value: SlaFilter; label: string }> = [
 
 const STATUS_OPTIONS: MinorGuardianSupportRequestStatus[] = ["pending_review", "contacted", "closed"];
 
-const ORDER_LABELS: Record<InternalMinorGuardianSupportRequestListResponse["ordered_by"], string> = {
-  updated_at_desc: "最近更新优先"
+const ORDER_LABELS: Record<InternalMinorGuardianSupportRequestOrderBy, string> = {
+  updated_at_desc: "最近更新优先",
+  sla_priority_desc: "SLA 优先",
+  queue_wait_desc: "等待时长优先"
 };
+const ORDER_OPTIONS: Array<{ value: InternalMinorGuardianSupportRequestOrderBy; label: string }> = [
+  { value: "updated_at_desc", label: "最近更新优先" },
+  { value: "sla_priority_desc", label: "SLA 优先" },
+  { value: "queue_wait_desc", label: "等待时长优先" }
+];
 const SLA_LABELS: Record<MinorGuardianSupportRequestSlaState, string> = {
   within_sla: "SLA 正常",
   due_soon: "临近超时",
@@ -195,9 +204,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [hasNextPage, setHasNextPage] = useState(false);
-  const [orderedBy, setOrderedBy] = useState<InternalMinorGuardianSupportRequestListResponse["ordered_by"]>(
-    "updated_at_desc"
-  );
+  const [orderedBy, setOrderedBy] = useState<InternalMinorGuardianSupportRequestOrderBy>("updated_at_desc");
+  const [quickView, setQuickView] = useState<QuickViewFilter>("default");
   const [statusSummary, setStatusSummary] = useState<MinorGuardianSupportRequestStatusSummary>(EMPTY_STATUS_SUMMARY);
   const [slaSummary, setSlaSummary] = useState<MinorGuardianSupportRequestSlaSummary>(EMPTY_SLA_SUMMARY);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -257,10 +265,12 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         handledBy?: string;
         unassigned?: boolean;
         slaState?: "due_soon" | "breached";
+        orderBy: InternalMinorGuardianSupportRequestOrderBy;
         page: number;
         pageSize: number;
       } = {
         accessToken,
+        orderBy: orderedBy,
         page: targetPage,
         pageSize: DEFAULT_PAGE_SIZE
       };
@@ -321,6 +331,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       setHasNextPage(false);
       setPageSize(DEFAULT_PAGE_SIZE);
       setOrderedBy("updated_at_desc");
+      setQuickView("default");
       setStatusSummary(EMPTY_STATUS_SUMMARY);
       setSlaSummary(EMPTY_SLA_SUMMARY);
       setStatusMessage("工单加载失败");
@@ -331,7 +342,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
     void loadRequests({
       targetPage: currentPage
     });
-  }, [statusFilter, searchQuery, activeHandledByFilter, activeUnassignedFilter, activeSlaFilter, currentPage]);
+  }, [statusFilter, searchQuery, activeHandledByFilter, activeUnassignedFilter, activeSlaFilter, orderedBy, currentPage]);
 
   useEffect(() => {
     if (!selectedRequest) {
@@ -353,6 +364,18 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   useEffect(() => {
     setBulkHandledBy((current) => (current.trim().length > 0 ? current : currentOperatorId));
   }, [currentOperatorId]);
+
+  useEffect(() => {
+    if (slaFilter === "breached") {
+      setQuickView("breached");
+      return;
+    }
+    if (slaFilter === "due_soon") {
+      setQuickView("due_soon");
+      return;
+    }
+    setQuickView("default");
+  }, [slaFilter]);
 
   const submitUpdate = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
@@ -475,7 +498,8 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         query: searchQuery.length > 0 ? searchQuery : undefined,
         handledBy: activeHandledByFilter && activeHandledByFilter.trim().length > 0 ? activeHandledByFilter : undefined,
         unassigned: activeUnassignedFilter ? true : undefined,
-        slaState: activeSlaFilter
+        slaState: activeSlaFilter,
+        orderBy: orderedBy
       });
       setLastExportFilename(exported.filename);
       setLastExportContent(exported.content);
@@ -494,6 +518,11 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
   const changeSlaFilter = (value: SlaFilter): void => {
     setCurrentPage(1);
     setSlaFilter(value);
+  };
+
+  const changeOrderBy = (value: InternalMinorGuardianSupportRequestOrderBy): void => {
+    setCurrentPage(1);
+    setOrderedBy(value);
   };
 
   const changeAssignmentFilter = (value: AssignmentFilter): void => {
@@ -567,6 +596,20 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
 
   const allCurrentPageSelected = requests.length > 0 && requests.every((request) => selectedRequestIds.includes(request.request_id));
 
+  const applyQuickView = (view: QuickViewFilter): void => {
+    setCurrentPage(1);
+    if (view === "default") {
+      setStatusFilter("pending_review");
+      setSlaFilter("all");
+      setOrderedBy("updated_at_desc");
+      return;
+    }
+
+    setStatusFilter("all");
+    setSlaFilter(view);
+    setOrderedBy("sla_priority_desc");
+  };
+
   return (
     <section>
       <h1>监护人工单处理台</h1>
@@ -584,6 +627,7 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       <p>当前搜索: {searchQuery || "-"}</p>
       <p>当前归属: {assignmentFilter === "mine" ? `我的工单(${toDisplayText(currentOperatorId)})` : assignmentFilter === "unassigned" ? "未分配" : assignmentFilter === "handled_by" ? `处理人=${handledByFilterQuery || "-"}` : "全部工单"}</p>
       <p>当前 SLA: {slaFilter === "all" ? "全部 SLA" : SLA_LABELS[slaFilter]}</p>
+      <p>当前快捷视图: {quickView === "default" ? "默认待审核视图" : quickView === "breached" ? "已超时工单" : "临近超时工单"}</p>
 
       <label htmlFor="guardian-support-filter">工单状态筛选</label>
       <select
@@ -608,6 +652,15 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
       >
         刷新工单
       </button>
+      <button type="button" onClick={() => applyQuickView("breached")}>
+        查看已超时队列
+      </button>
+      <button type="button" onClick={() => applyQuickView("due_soon")}>
+        查看临近超时队列
+      </button>
+      <button type="button" onClick={() => applyQuickView("default")}>
+        恢复默认视图
+      </button>
 
       <label htmlFor="guardian-support-sla-filter">SLA 过滤</label>
       <select
@@ -616,6 +669,19 @@ export const AdminMinorGuardianSupportPage = ({ apiClient, tokenStorage }: Admin
         onChange={(event) => changeSlaFilter(event.target.value as SlaFilter)}
       >
         {SLA_FILTER_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+
+      <label htmlFor="guardian-support-order-by">队列排序</label>
+      <select
+        id="guardian-support-order-by"
+        value={orderedBy}
+        onChange={(event) => changeOrderBy(event.target.value as InternalMinorGuardianSupportRequestOrderBy)}
+      >
+        {ORDER_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>

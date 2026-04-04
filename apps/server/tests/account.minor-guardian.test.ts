@@ -353,6 +353,27 @@ describe("account minor guardian routes", () => {
       contact_value: "guardian2@example.com"
     });
 
+    const slaPriorityList = await context.app.inject({
+      method: "GET",
+      url: "/internal/minor-guardian/support-requests?order_by=sla_priority_desc",
+      headers: {
+        authorization: `Bearer ${opsUser.accessToken}`
+      }
+    });
+    expect(slaPriorityList.statusCode).toBe(200);
+    expect(slaPriorityList.json()).toMatchObject({
+      total_count: 2,
+      ordered_by: "sla_priority_desc"
+    });
+    expect(slaPriorityList.json().items[0]).toMatchObject({
+      request_id: secondRequestId,
+      sla_state: "breached"
+    });
+    expect(slaPriorityList.json().items[1]).toMatchObject({
+      request_id: firstRequestId,
+      sla_state: "within_sla"
+    });
+
     const paginatedFirstPage = await context.app.inject({
       method: "GET",
       url: "/internal/minor-guardian/support-requests?page=1&page_size=1",

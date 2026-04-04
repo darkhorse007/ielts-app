@@ -203,12 +203,14 @@ export type MinorGuardianSupportRequestSlaSummary = {
   breached: number;
 };
 
+export type InternalMinorGuardianSupportRequestOrderBy = "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+
 export type InternalMinorGuardianSupportRequestListResponse = {
   total_count: number;
   page: number;
   page_size: number;
   has_next_page: boolean;
-  ordered_by: "updated_at_desc";
+  ordered_by: InternalMinorGuardianSupportRequestOrderBy;
   status_summary: MinorGuardianSupportRequestStatusSummary;
   sla_summary: MinorGuardianSupportRequestSlaSummary;
   items: InternalMinorGuardianSupportRequestResponse[];

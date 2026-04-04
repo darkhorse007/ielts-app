@@ -85,7 +85,8 @@ describe("S28 api client content-type defaults", () => {
     const result = await client.exportInternalMinorGuardianSupportRequests({
       accessToken: "token",
       status: "contacted",
-      query: "guardian@example.com"
+      query: "guardian@example.com",
+      orderBy: "sla_priority_desc"
     });
 
     expect(result).toEqual({
@@ -93,7 +94,7 @@ describe("S28 api client content-type defaults", () => {
       content: 'request_id,user_id\n"r-1","u-1"'
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8787/internal/minor-guardian/support-requests/export?status=contacted&q=guardian%40example.com",
+      "http://127.0.0.1:8787/internal/minor-guardian/support-requests/export?status=contacted&q=guardian%40example.com&order_by=sla_priority_desc",
       expect.objectContaining({
         method: "GET",
         headers: expect.any(Headers)

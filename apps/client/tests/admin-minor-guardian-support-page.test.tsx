@@ -44,13 +44,14 @@ const buildListResponse = (input: {
   page?: number;
   page_size?: number;
   has_next_page?: boolean;
+  ordered_by?: InternalMinorGuardianSupportRequestListResponse["ordered_by"];
   status_summary?: InternalMinorGuardianSupportRequestListResponse["status_summary"];
 }): InternalMinorGuardianSupportRequestListResponse => ({
   total_count: input.total_count ?? input.items.length,
   page: input.page ?? 1,
   page_size: input.page_size ?? 10,
   has_next_page: input.has_next_page ?? false,
-  ordered_by: "updated_at_desc",
+  ordered_by: input.ordered_by ?? "updated_at_desc",
   status_summary: input.status_summary ?? {
     pending_review: input.items.filter((item) => item.status === "pending_review").length,
     contacted: input.items.filter((item) => item.status === "contacted").length,
@@ -126,6 +127,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         page: 1,
         pageSize: 10
@@ -226,6 +228,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         page: 1,
         pageSize: 10
@@ -242,6 +245,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         query: "guardian2@example.com",
         page: 1,
@@ -323,6 +327,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         page: 1,
         pageSize: 10
@@ -338,6 +343,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         handledBy: "ops-user-1",
         page: 1,
@@ -356,6 +362,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         unassigned: true,
         page: 1,
@@ -375,6 +382,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         handledBy: "ops-reviewer-9",
         page: 1,
@@ -464,6 +472,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         slaState: "breached",
         page: 1,
@@ -472,6 +481,121 @@ describe("admin minor guardian support page", () => {
       expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
       expect(screen.getByText(/request_id: guardian-request-breached/)).toBeInTheDocument();
       expect(screen.getByText("sla_breached: yes")).toBeInTheDocument();
+    });
+  });
+
+  test("supports sla priority sorting and quick breached view", async () => {
+    const tokenStorage = createTokenStorage();
+
+    const listInternalMinorGuardianSupportRequests = vi.fn(async (params?: {
+      slaState?: "within_sla" | "due_soon" | "breached";
+      orderBy?: "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+    }) => {
+      if (params?.slaState === "breached") {
+        return buildListResponse({
+          ordered_by: "sla_priority_desc",
+          items: [
+            buildRequest({
+              request_id: "guardian-request-breached",
+              queue_wait_minutes: 220,
+              sla_state: "breached",
+              sla_breached: true
+            })
+          ]
+        });
+      }
+
+      if (params?.orderBy === "sla_priority_desc") {
+        return buildListResponse({
+          ordered_by: "sla_priority_desc",
+          items: [
+            buildRequest({
+              request_id: "guardian-request-breached",
+              queue_wait_minutes: 220,
+              sla_state: "breached",
+              sla_breached: true
+            }),
+            buildRequest({
+              request_id: "guardian-request-due",
+              queue_wait_minutes: 100,
+              sla_state: "due_soon"
+            }),
+            buildRequest({
+              request_id: "guardian-request-normal",
+              queue_wait_minutes: 20,
+              sla_state: "within_sla"
+            })
+          ]
+        });
+      }
+
+      return buildListResponse({
+        items: [
+          buildRequest({
+            request_id: "guardian-request-normal",
+            queue_wait_minutes: 20,
+            sla_state: "within_sla"
+          }),
+          buildRequest({
+            request_id: "guardian-request-due",
+            queue_wait_minutes: 100,
+            sla_state: "due_soon"
+          }),
+          buildRequest({
+            request_id: "guardian-request-breached",
+            queue_wait_minutes: 220,
+            sla_state: "breached",
+            sla_breached: true
+          })
+        ]
+      });
+    });
+
+    render(
+      <AdminMinorGuardianSupportPage
+        apiClient={{
+          bulkUpdateInternalMinorGuardianSupportRequests: vi.fn(),
+          listInternalMinorGuardianSupportRequests,
+          updateInternalMinorGuardianSupportRequest: vi.fn(),
+          exportInternalMinorGuardianSupportRequests: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("排序: 最近更新优先")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("队列排序"), {
+      target: {
+        value: "sla_priority_desc"
+      }
+    });
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        status: "pending_review",
+        orderBy: "sla_priority_desc",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("排序: SLA 优先")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看已超时队列" }));
+
+    await waitFor(() => {
+      expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
+        accessToken: "ops-access-token",
+        slaState: "breached",
+        orderBy: "sla_priority_desc",
+        page: 1,
+        pageSize: 10
+      });
+      expect(screen.getByText("当前快捷视图: 已超时工单")).toBeInTheDocument();
+      expect(screen.getByText("当前 SLA: 已超时")).toBeInTheDocument();
     });
   });
 
@@ -640,6 +764,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         page: 2,
         pageSize: 10
@@ -758,6 +883,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(listInternalMinorGuardianSupportRequests).toHaveBeenLastCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         page: 1,
         pageSize: 10
       });
@@ -839,6 +965,7 @@ describe("admin minor guardian support page", () => {
     await waitFor(() => {
       expect(exportInternalMinorGuardianSupportRequests).toHaveBeenCalledWith({
         accessToken: "ops-access-token",
+        orderBy: "updated_at_desc",
         status: "pending_review",
         query: undefined
       });

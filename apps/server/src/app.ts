@@ -131,6 +131,8 @@ type BuildServerOptions = Partial<ServiceConfig> & {
 
 const ACCESS_CONTROL_ALLOW_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
 const DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS = "Authorization, Content-Type, Idempotency-Key, X-Device-Id";
+type InternalMinorGuardianSupportRequestOrderBy = "updated_at_desc" | "sla_priority_desc" | "queue_wait_desc";
+
 const internalMinorGuardianSupportRequestListSchema = z.object({
   status: z.enum(["pending_review", "contacted", "closed"]).optional(),
   q: z.string().trim().max(120).optional(),
@@ -140,6 +142,7 @@ const internalMinorGuardianSupportRequestListSchema = z.object({
     .transform((value) => value === "true")
     .optional(),
   sla_state: z.enum(["within_sla", "due_soon", "breached"]).optional(),
+  order_by: z.enum(["updated_at_desc", "sla_priority_desc", "queue_wait_desc"]).optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional()
 }).refine((value) => !(value.handled_by && value.unassigned), {
@@ -181,6 +184,12 @@ const buildMinorGuardianSupportRequestStatusSummary = (
   );
 
 type MinorGuardianSupportRequestSlaState = "within_sla" | "due_soon" | "breached" | "closed";
+const MINOR_GUARDIAN_SUPPORT_REQUEST_SLA_PRIORITY: Record<MinorGuardianSupportRequestSlaState, number> = {
+  breached: 3,
+  due_soon: 2,
+  within_sla: 1,
+  closed: 0
+};
 
 const MINOR_GUARDIAN_SUPPORT_SLA_TARGET_MINUTES: Record<"pending_review" | "contacted", number> = {
   pending_review: 120,
@@ -273,6 +282,48 @@ const buildMinorGuardianSupportRequestSlaSummary = (
       breached: 0
     }
   );
+
+const sortMinorGuardianSupportRequestItems = <T extends {
+  request: {
+    status: "pending_review" | "contacted" | "closed";
+    updatedAt: string;
+  };
+}>(
+  items: T[],
+  orderBy: InternalMinorGuardianSupportRequestOrderBy,
+  nowMs = Date.now()
+): T[] =>
+  [...items].sort((left, right) => {
+    if (orderBy === "updated_at_desc") {
+      return right.request.updatedAt.localeCompare(left.request.updatedAt);
+    }
+
+    const leftSla = deriveMinorGuardianSupportRequestSla(left.request, nowMs);
+    const rightSla = deriveMinorGuardianSupportRequestSla(right.request, nowMs);
+    if (orderBy === "sla_priority_desc") {
+      const priorityDifference =
+        MINOR_GUARDIAN_SUPPORT_REQUEST_SLA_PRIORITY[rightSla.slaState] -
+        MINOR_GUARDIAN_SUPPORT_REQUEST_SLA_PRIORITY[leftSla.slaState];
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      if (rightSla.queueWaitMinutes !== leftSla.queueWaitMinutes) {
+        return rightSla.queueWaitMinutes - leftSla.queueWaitMinutes;
+      }
+      return right.request.updatedAt.localeCompare(left.request.updatedAt);
+    }
+
+    const leftOpenPriority = left.request.status === "closed" ? 0 : 1;
+    const rightOpenPriority = right.request.status === "closed" ? 0 : 1;
+    if (rightOpenPriority !== leftOpenPriority) {
+      return rightOpenPriority - leftOpenPriority;
+    }
+    if (rightSla.queueWaitMinutes !== leftSla.queueWaitMinutes) {
+      return rightSla.queueWaitMinutes - leftSla.queueWaitMinutes;
+    }
+    return right.request.updatedAt.localeCompare(left.request.updatedAt);
+  });
 
 const escapeCsvCell = (value: unknown): string => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
 
@@ -757,6 +808,7 @@ export const buildServer = (options?: BuildServerOptions): {
 
       const page = parsed.data.page ?? 1;
       const pageSize = parsed.data.page_size ?? 10;
+      const orderBy = parsed.data.order_by ?? "updated_at_desc";
       const evaluatedAtMs = Date.now();
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
         query: parsed.data.q,
@@ -771,9 +823,10 @@ export const buildServer = (options?: BuildServerOptions): {
             matchesMinorGuardianSupportRequestSlaState(item, parsed.data.sla_state, evaluatedAtMs)
           )
         : filteredByStatus;
-      const totalCount = filteredItems.length;
+      const sortedItems = sortMinorGuardianSupportRequestItems(filteredItems, orderBy, evaluatedAtMs);
+      const totalCount = sortedItems.length;
       const pageStartIndex = (page - 1) * pageSize;
-      const paginatedItems = filteredItems
+      const paginatedItems = sortedItems
         .slice(pageStartIndex, pageStartIndex + pageSize)
         .map((item) => serializeInternalMinorGuardianSupportRequest(item, evaluatedAtMs));
 
@@ -782,7 +835,7 @@ export const buildServer = (options?: BuildServerOptions): {
         page,
         page_size: pageSize,
         has_next_page: pageStartIndex + pageSize < totalCount,
-        ordered_by: "updated_at_desc",
+        ordered_by: orderBy,
         status_summary: buildMinorGuardianSupportRequestStatusSummary(allMatchingItems),
         sla_summary: buildMinorGuardianSupportRequestSlaSummary(allMatchingItems, evaluatedAtMs),
         items: paginatedItems
@@ -800,6 +853,7 @@ export const buildServer = (options?: BuildServerOptions): {
       }
 
       const authRequest = request as AuthenticatedRequest;
+      const orderBy = parsed.data.order_by ?? "updated_at_desc";
       const evaluatedAtMs = Date.now();
       const allMatchingItems = accountService.listAllMinorGuardianSupportRequests({
         query: parsed.data.q,
@@ -814,6 +868,7 @@ export const buildServer = (options?: BuildServerOptions): {
             matchesMinorGuardianSupportRequestSlaState(item, parsed.data.sla_state, evaluatedAtMs)
           )
         : filteredByStatus;
+      const sortedItems = sortMinorGuardianSupportRequestItems(filteredItems, orderBy, evaluatedAtMs);
       const timestamp = nowIso().replace(/[:.]/g, "-");
       const filename = `minor-guardian-support-requests-${timestamp}.csv`;
 
@@ -827,7 +882,8 @@ export const buildServer = (options?: BuildServerOptions): {
           handledBy: parsed.data.handled_by ?? "",
           unassigned: parsed.data.unassigned ?? false,
           slaState: parsed.data.sla_state ?? "all",
-          exportedCount: filteredItems.length
+          orderBy,
+          exportedCount: sortedItems.length
         }
       });
 
@@ -835,7 +891,7 @@ export const buildServer = (options?: BuildServerOptions): {
         .code(200)
         .type("text/csv; charset=utf-8")
         .header("content-disposition", `attachment; filename="${filename}"`)
-        .send(serializeInternalMinorGuardianSupportRequestsCsv(filteredItems, evaluatedAtMs));
+        .send(serializeInternalMinorGuardianSupportRequestsCsv(sortedItems, evaluatedAtMs));
     });
 
     app.patch(

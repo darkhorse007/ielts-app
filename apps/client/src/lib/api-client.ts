@@ -11,6 +11,7 @@ import type {
   DiagnosticQuestionsResponse,
   InternalMinorGuardianSupportRequestBulkUpdateResponse,
   InternalMinorGuardianSupportRequestListResponse,
+  InternalMinorGuardianSupportRequestOrderBy,
   InternalMinorGuardianSupportRequestResponse,
   LoginPayload,
   MockExamExportResponse,
@@ -491,6 +492,7 @@ export class ApiClient {
     handledBy?: string;
     unassigned?: boolean;
     slaState?: "within_sla" | "due_soon" | "breached";
+    orderBy?: InternalMinorGuardianSupportRequestOrderBy;
     page?: number;
     pageSize?: number;
   }): Promise<InternalMinorGuardianSupportRequestListResponse> {
@@ -509,6 +511,9 @@ export class ApiClient {
     }
     if (params?.slaState) {
       query.set("sla_state", params.slaState);
+    }
+    if (params?.orderBy) {
+      query.set("order_by", params.orderBy);
     }
     if (typeof params?.page === "number") {
       query.set("page", String(params.page));
@@ -536,6 +541,7 @@ export class ApiClient {
     handledBy?: string;
     unassigned?: boolean;
     slaState?: "within_sla" | "due_soon" | "breached";
+    orderBy?: InternalMinorGuardianSupportRequestOrderBy;
   }): Promise<{
     filename: string;
     content: string;
@@ -555,6 +561,9 @@ export class ApiClient {
     }
     if (params?.slaState) {
       query.set("sla_state", params.slaState);
+    }
+    if (params?.orderBy) {
+      query.set("order_by", params.orderBy);
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
