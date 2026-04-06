@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { loadProgressFollowUp } from "../src/lib/progress-follow-up";
 import { TokenStorage } from "../src/lib/token-storage";
 import { ListeningPracticePage } from "../src/pages/ListeningPracticePage";
 import { ReadingPracticePage } from "../src/pages/ReadingPracticePage";
@@ -163,6 +164,12 @@ describe("S3 practice/speaking pages", () => {
     await waitFor(() => {
       expect(submitPracticeSession).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/提交完成，正确 1\/2/)).toBeInTheDocument();
+    });
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续听力训练",
+      detail: "刚完成一次听力提交，下一步可回到训练页继续复盘或再练一轮。",
+      route: "/practice/listening",
+      actionLabel: "回到听力训练"
     });
 
     fireEvent.change(screen.getByLabelText("播放倍速"), {
@@ -507,6 +514,105 @@ describe("S3 practice/speaking pages", () => {
     });
   });
 
+  test("keeps listening submit success when follow-up cache write fails", async () => {
+    const tokenStorage = new TokenStorage();
+    tokenStorage.save({
+      accessToken: "access",
+      refreshToken: "refresh",
+      expiresIn: 900,
+      userId: "u-1"
+    });
+
+    const createPracticeSession = vi.fn().mockResolvedValue({
+      session_id: "l-cache-fail-1",
+      skill: "listening",
+      task_type: "core_training",
+      mode: "core_training",
+      status: "in_progress",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      questions: [
+        {
+          question_id: "q-1",
+          type: "multiple_choice",
+          prompt: "p1"
+        }
+      ]
+    });
+    const submitPracticeSession = vi.fn().mockResolvedValue({
+      session_id: "l-cache-fail-1",
+      skill: "listening",
+      task_type: "core_training",
+      mode: "core_training",
+      status: "submitted",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      questions: [
+        {
+          question_id: "q-1",
+          type: "multiple_choice",
+          prompt: "p1"
+        }
+      ],
+      submission: {
+        submitted_at: new Date().toISOString(),
+        score_breakdown: {
+          correct_count: 1,
+          total_questions: 1,
+          accuracy: 1
+        },
+        question_results: [],
+        next_actions: ["next"]
+      }
+    });
+
+    const originalSetItem = Storage.prototype.setItem;
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function mockedSetItem(
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (String(key).startsWith("ielts.progress_follow_up.")) {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      }
+
+      return originalSetItem.call(this, key, value);
+    });
+
+    render(
+      <ListeningPracticePage
+        apiClient={{
+          createPracticeSession,
+          submitPracticeSession,
+          updatePlaybackState: vi.fn(),
+          getPlaybackState: vi.fn(),
+          addRetryQueue: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "创建听力训练" }));
+    await waitFor(() => {
+      expect(createPracticeSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(screen.getByLabelText("答案"), {
+      target: {
+        value: "A"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交听力答案" }));
+
+    await waitFor(() => {
+      expect(submitPracticeSession).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/提交完成，正确 1\/1/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(loadProgressFollowUp("u-1")).toBeNull();
+    setItemSpy.mockRestore();
+  });
+
   test("runs speaking realtime page with websocket events", async () => {
     const tokenStorage = new TokenStorage();
     tokenStorage.save({
@@ -619,6 +725,70 @@ describe("S3 practice/speaking pages", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/status: 会话结束/)).toBeInTheDocument();
+    });
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续口语训练",
+      detail: "口语会话已结束，下一步可回到口语页继续复盘或再答一轮。",
+      route: "/speaking-live",
+      actionLabel: "回到口语训练"
+    });
+  });
+
+  test("falls back to api end for speaking and still stores follow-up source", async () => {
+    const tokenStorage = new TokenStorage();
+    tokenStorage.save({
+      accessToken: "access",
+      refreshToken: "refresh",
+      expiresIn: 900,
+      userId: "u-1"
+    });
+
+    const createSpeakingSession = vi.fn().mockResolvedValue({
+      session_id: "s-1",
+      status: "created",
+      resume_token: "resume-token",
+      resume_until: new Date().toISOString()
+    });
+    const endSpeakingSession = vi.fn().mockResolvedValue({
+      session_id: "s-1",
+      status: "ended",
+      resume_until: new Date().toISOString()
+    });
+
+    render(
+      <SpeakingRealtimePage
+        apiClient={{
+          createSpeakingSession,
+          getSpeakingRolePlayScenarios: vi.fn(),
+          getSpeakingSessionEvents: vi.fn(),
+          endSpeakingSession,
+          switchSpeakingPart: vi.fn(),
+          createSpeakingRetrySession: vi.fn(),
+          getSpeakingComparison: vi.fn(),
+          getSpeakingPronunciationFeedback: vi.fn(),
+          trackSpeakingPronunciationTask: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+        wsBaseUrl="ws://localhost:8787"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "创建口语会话" }));
+    await waitFor(() => {
+      expect(createSpeakingSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+    await waitFor(() => {
+      expect(endSpeakingSession).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/status: 会话结束/)).toBeInTheDocument();
+    });
+
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续口语训练",
+      detail: "口语会话已结束，下一步可回到口语页继续复盘或再答一轮。",
+      route: "/speaking-live",
+      actionLabel: "回到口语训练"
     });
   });
 });

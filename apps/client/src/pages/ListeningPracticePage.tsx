@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
 import type { PracticeSessionResponse } from "../lib/api-types";
+import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
 
 type ListeningPracticePageProps = {
@@ -29,6 +30,20 @@ export const ListeningPracticePage = ({ apiClient, tokenStorage }: ListeningPrac
       throw new Error("会话已失效，请重新登录");
     }
     return accessToken;
+  };
+
+  const persistFollowUp = (): void => {
+    const userId = tokenStorage.getUserId();
+    if (!userId) {
+      return;
+    }
+
+    saveProgressFollowUp(userId, {
+      title: "继续听力训练",
+      detail: "刚完成一次听力提交，下一步可回到训练页继续复盘或再练一轮。",
+      route: "/practice/listening",
+      actionLabel: "回到听力训练"
+    });
   };
 
   const createSession = async (): Promise<void> => {
@@ -67,6 +82,7 @@ export const ListeningPracticePage = ({ apiClient, tokenStorage }: ListeningPrac
         }))
       );
       setSession(submitted);
+      persistFollowUp();
       setStatus(
         `提交完成，正确 ${submitted.submission?.score_breakdown.correct_count ?? 0}/${submitted.submission?.score_breakdown.total_questions ?? 0}`
       );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
 import type { WritingEvaluationResponse } from "../lib/api-types";
+import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
 
 type WritingEvaluationPageProps = {
@@ -46,6 +47,20 @@ export const WritingEvaluationPage = ({ apiClient, tokenStorage }: WritingEvalua
     return accessToken;
   };
 
+  const persistFollowUp = (detail: string): void => {
+    const userId = tokenStorage.getUserId();
+    if (!userId) {
+      return;
+    }
+
+    saveProgressFollowUp(userId, {
+      title: "继续写作训练",
+      detail,
+      route: "/writing",
+      actionLabel: "回到写作训练"
+    });
+  };
+
   const evaluate = async (): Promise<void> => {
     try {
       const result = await apiClient.evaluateWriting(withToken(), {
@@ -55,6 +70,7 @@ export const WritingEvaluationPage = ({ apiClient, tokenStorage }: WritingEvalua
       });
       setEvaluation(result);
       setEvaluationId(result.evaluation_id);
+      persistFollowUp("写作结果已生成，下一步可回到写作页继续改写或查看建议。");
       setStatus(`写作批改完成，overall=${result.scores.overall}`);
       setError(null);
     } catch (evaluateError) {
@@ -88,6 +104,7 @@ export const WritingEvaluationPage = ({ apiClient, tokenStorage }: WritingEvalua
       });
       setEvaluation(result.evaluation);
       setEvaluationId(result.evaluation.evaluation_id);
+      persistFollowUp("改写复评已完成，下一步可回到写作页继续查看新建议或再次打磨。");
       setComparisonText(
         `ΔTR${result.comparison.delta.tr} ΔCC${result.comparison.delta.cc} ΔLR${result.comparison.delta.lr} ΔGRA${result.comparison.delta.gra} ΔOverall${result.comparison.delta.overall}`
       );

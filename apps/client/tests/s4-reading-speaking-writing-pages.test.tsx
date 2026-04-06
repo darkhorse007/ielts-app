@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { loadProgressFollowUp } from "../src/lib/progress-follow-up";
 import { TokenStorage } from "../src/lib/token-storage";
 import { ReadingPracticePage } from "../src/pages/ReadingPracticePage";
 import { SpeakingRealtimePage } from "../src/pages/SpeakingRealtimePage";
@@ -227,6 +228,12 @@ describe("S4 reading/speaking/writing pages", () => {
     await waitFor(() => {
       expect(submitPracticeSession).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/timer: exam \/ 52s/)).toBeInTheDocument();
+    });
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续阅读训练",
+      detail: "刚完成一次阅读提交，下一步可回到训练页继续复盘或再练一轮。",
+      route: "/practice/reading",
+      actionLabel: "回到阅读训练"
     });
   });
 
@@ -733,11 +740,96 @@ describe("S4 reading/speaking/writing pages", () => {
       expect(screen.getByText(/overall: 6/)).toBeInTheDocument();
       expect(screen.getByText(/suggestion_count: 3/)).toBeInTheDocument();
     });
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续写作训练",
+      detail: "写作结果已生成，下一步可回到写作页继续改写或查看建议。",
+      route: "/writing",
+      actionLabel: "回到写作训练"
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "加载批改结果" }));
     await waitFor(() => {
       expect(getWritingEvaluation).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/status: 已加载写作评估结果/)).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "改写复评" }));
+    await waitFor(() => {
+      expect(rewriteWriting).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/comparison: ΔTR0.5 ΔCC0.5 ΔLR0.5 ΔGRA0.5 ΔOverall0.5/)).toBeInTheDocument();
+      expect(screen.getByText(/status: 改写复评完成/)).toBeInTheDocument();
+    });
+    expect(loadProgressFollowUp("u-1")).toMatchObject({
+      title: "继续写作训练",
+      detail: "改写复评已完成，下一步可回到写作页继续查看新建议或再次打磨。",
+      route: "/writing",
+      actionLabel: "回到写作训练"
+    });
+  });
+
+  test("keeps writing evaluate success when follow-up cache write fails", async () => {
+    const tokenStorage = new TokenStorage();
+    tokenStorage.save({
+      accessToken: "access",
+      refreshToken: "refresh",
+      expiresIn: 900,
+      userId: "u-1"
+    });
+
+    const evaluateWriting = vi.fn().mockResolvedValue({
+      evaluation_id: "w-cache-fail-1",
+      task_type: "task2",
+      prompt: "p",
+      scores: {
+        tr: 6,
+        cc: 6,
+        lr: 6,
+        gra: 6,
+        overall: 6
+      },
+      suggestions: [],
+      latency_ms: 88,
+      fallback_triggered: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    const originalSetItem = Storage.prototype.setItem;
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function mockedSetItem(
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (String(key).startsWith("ielts.progress_follow_up.")) {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      }
+
+      return originalSetItem.call(this, key, value);
+    });
+
+    render(
+      <WritingEvaluationPage
+        apiClient={{
+          evaluateWriting,
+          getWritingEvaluation: vi.fn(),
+          rewriteWriting: vi.fn(),
+          getWritingArchives: vi.fn(),
+          getWritingTemplates: vi.fn(),
+          insertWritingTemplate: vi.fn(),
+          getWritingTemplateAdoption: vi.fn()
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "提交写作批改" }));
+
+    await waitFor(() => {
+      expect(evaluateWriting).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/status: 写作批改完成，overall=6/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(loadProgressFollowUp("u-1")).toBeNull();
+    setItemSpy.mockRestore();
   });
 });

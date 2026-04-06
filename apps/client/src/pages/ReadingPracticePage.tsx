@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
 import type { PracticeSessionResponse } from "../lib/api-types";
+import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
 
 type ReadingPracticePageProps = {
@@ -33,6 +34,20 @@ export const ReadingPracticePage = ({ apiClient, tokenStorage }: ReadingPractice
       throw new Error("会话已失效，请重新登录");
     }
     return accessToken;
+  };
+
+  const persistFollowUp = (): void => {
+    const userId = tokenStorage.getUserId();
+    if (!userId) {
+      return;
+    }
+
+    saveProgressFollowUp(userId, {
+      title: "继续阅读训练",
+      detail: "刚完成一次阅读提交，下一步可回到训练页继续复盘或再练一轮。",
+      route: "/practice/reading",
+      actionLabel: "回到阅读训练"
+    });
   };
 
   const createSession = async (): Promise<void> => {
@@ -69,6 +84,7 @@ export const ReadingPracticePage = ({ apiClient, tokenStorage }: ReadingPractice
         }))
       );
       setSession(submitted);
+      persistFollowUp();
 
       const wrongWithEvidence =
         submitted.submission?.question_results.filter((item) => !item.is_correct && Boolean(item.evidence)).length ?? 0;

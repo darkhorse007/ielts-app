@@ -9,6 +9,61 @@ beforeEach(() => {
 });
 
 describe("S2 diagnostic/plan pages", () => {
+  test("guards diagnostic actions until assessment id is ready", async () => {
+    const tokenStorage = new TokenStorage();
+    tokenStorage.save({
+      accessToken: "access",
+      refreshToken: "refresh",
+      expiresIn: 900,
+      userId: "u-1"
+    });
+
+    const fetchDiagnosticQuestions = vi.fn();
+    const submitDiagnosticAnswer = vi.fn();
+    const pauseDiagnostic = vi.fn();
+    const resumeDiagnostic = vi.fn();
+    const completeDiagnostic = vi.fn();
+
+    render(
+      <DiagnosticPage
+        apiClient={{
+          fetchDiagnosticQuestions,
+          submitDiagnosticAnswer,
+          pauseDiagnostic,
+          resumeDiagnostic,
+          completeDiagnostic
+        }}
+        tokenStorage={tokenStorage}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "加载题目" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("请先填写 assessment_id");
+    expect(fetchDiagnosticQuestions).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "暂停" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("请先填写 assessment_id");
+    expect(pauseDiagnostic).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("请先填写 assessment_id");
+    expect(resumeDiagnostic).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "完成诊断" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("请先填写 assessment_id");
+    expect(completeDiagnostic).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("assessment_id"), {
+      target: {
+        value: "a-guard-1"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交答案" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("请先加载题目");
+    expect(submitDiagnosticAnswer).not.toHaveBeenCalled();
+  });
+
   test("runs diagnostic actions and displays completion bands", async () => {
     const tokenStorage = new TokenStorage();
     tokenStorage.save({
@@ -66,6 +121,44 @@ describe("S2 diagnostic/plan pages", () => {
         writing: 5.5
       }
     });
+    const fetchActivePlan = vi.fn().mockResolvedValue({
+      plan_id: "p-1",
+      status: "active",
+      horizon_weeks: 8,
+      version: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      adjustment_history: [],
+      weeks: [
+        {
+          week_id: "w-1",
+          week_no: 1,
+          goals: ["g1"],
+          tasks: [
+            {
+              task_id: "t-done-1",
+              skill: "reading",
+              task_type: "foundation",
+              title: "completed task",
+              target_minutes: 30,
+              completion_criteria: "c0",
+              day_of_week: 1,
+              status: "done"
+            },
+            {
+              task_id: "t-2",
+              skill: "speaking",
+              task_type: "foundation",
+              title: "next task after diagnostic",
+              target_minutes: 50,
+              completion_criteria: "c1",
+              day_of_week: 2,
+              status: "todo"
+            }
+          ]
+        }
+      ]
+    });
 
     render(
       <DiagnosticPage
@@ -74,7 +167,8 @@ describe("S2 diagnostic/plan pages", () => {
           submitDiagnosticAnswer,
           pauseDiagnostic,
           resumeDiagnostic,
-          completeDiagnostic
+          completeDiagnostic,
+          fetchActivePlan
         }}
         tokenStorage={tokenStorage}
       />
@@ -108,9 +202,13 @@ describe("S2 diagnostic/plan pages", () => {
       expect(pauseDiagnostic).toHaveBeenCalledTimes(1);
       expect(resumeDiagnostic).toHaveBeenCalledTimes(1);
       expect(completeDiagnostic).toHaveBeenCalledTimes(1);
+      expect(fetchActivePlan).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/status: completed/)).toBeInTheDocument();
       expect(screen.getByText(/skill_bands: L6\/S6.5\/R6\/W5.5/)).toBeInTheDocument();
     });
+    expect(screen.getByText(/plan_id: p-1/)).toBeInTheDocument();
+    expect(screen.getByText(/next_task: next task after diagnostic/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入口语训练" })).toHaveAttribute("href", "/speaking-live");
   });
 
   test("loads plan and adjusts task minutes", async () => {
@@ -140,7 +238,7 @@ describe("S2 diagnostic/plan pages", () => {
           created_at: new Date().toISOString(),
           changed_tasks: [
             {
-              task_id: "t-1",
+              task_id: "t-2",
               skill: "speaking",
               before_target_minutes: 45,
               after_target_minutes: 65,
@@ -157,13 +255,23 @@ describe("S2 diagnostic/plan pages", () => {
           goals: ["g1"],
           tasks: [
             {
-              task_id: "t-1",
+              task_id: "t-done-1",
+              skill: "reading",
+              task_type: "foundation",
+              title: "completed task",
+              target_minutes: 30,
+              completion_criteria: "c0",
+              day_of_week: 1,
+              status: "done"
+            },
+            {
+              task_id: "t-2",
               skill: "speaking",
               task_type: "foundation",
-              title: "task",
-              target_minutes: 45,
+              title: "next task",
+              target_minutes: 55,
               completion_criteria: "c1",
-              day_of_week: 1,
+              day_of_week: 2,
               status: "todo"
             }
           ]
@@ -178,7 +286,27 @@ describe("S2 diagnostic/plan pages", () => {
       version: 2,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      adjustment_history: [],
+      adjustment_history: [
+        {
+          adjustment_id: "adj-2",
+          source_type: "manual",
+          source_id: "manual-1",
+          skill: "speaking",
+          reason: "manual adjust to 90 minutes",
+          score: 0.9,
+          created_at: new Date().toISOString(),
+          changed_tasks: [
+            {
+              task_id: "t-2",
+              skill: "speaking",
+              before_target_minutes: 55,
+              after_target_minutes: 90,
+              before_completion_criteria: "c1",
+              after_completion_criteria: "c1"
+            }
+          ]
+        }
+      ],
       weeks: [
         {
           week_id: "w-1",
@@ -186,13 +314,23 @@ describe("S2 diagnostic/plan pages", () => {
           goals: ["g1"],
           tasks: [
             {
-              task_id: "t-1",
+              task_id: "t-done-1",
+              skill: "reading",
+              task_type: "foundation",
+              title: "completed task",
+              target_minutes: 30,
+              completion_criteria: "c0",
+              day_of_week: 1,
+              status: "done"
+            },
+            {
+              task_id: "t-2",
               skill: "speaking",
               task_type: "foundation",
-              title: "task",
+              title: "next task",
               target_minutes: 90,
               completion_criteria: "c1",
-              day_of_week: 1,
+              day_of_week: 2,
               status: "todo"
             }
           ]
@@ -214,7 +352,7 @@ describe("S2 diagnostic/plan pages", () => {
           created_at: new Date().toISOString(),
           changed_tasks: [
             {
-              task_id: "t-1",
+              task_id: "t-2",
               skill: "speaking",
               before_target_minutes: 45,
               after_target_minutes: 65,
@@ -242,6 +380,10 @@ describe("S2 diagnostic/plan pages", () => {
       expect(fetchActivePlan).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/week_count: 1/)).toBeInTheDocument();
     });
+    expect(screen.getByLabelText("调整分钟数")).toHaveValue("55");
+    expect(screen.getByRole("heading", { level: 2, name: "下一可执行任务" })).toBeInTheDocument();
+    expect(screen.getByText("next task")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入口语训练" })).toHaveAttribute("href", "/speaking-live");
 
     fireEvent.change(screen.getByLabelText("调整分钟数"), {
       target: {
@@ -254,6 +396,12 @@ describe("S2 diagnostic/plan pages", () => {
       expect(adjustPlanTask).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/status: 计划已更新，version=2/)).toBeInTheDocument();
     });
+    expect(adjustPlanTask).toHaveBeenCalledWith("access", "p-1", "t-2", {
+      target_minutes: 90
+    });
+    expect(screen.getByLabelText("调整分钟数")).toHaveValue("90");
+    expect(screen.getByText(/adjustment_count: 1/)).toBeInTheDocument();
+    expect(screen.getByText(/latest_adjustment_reason: manual adjust to 90 minutes/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "加载变更历史" }));
     await waitFor(() => {

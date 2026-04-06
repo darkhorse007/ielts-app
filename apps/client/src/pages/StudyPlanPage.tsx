@@ -1,10 +1,42 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import type { StudyPlanResponse } from "../lib/api-types";
+import { resolveLearningRouteForPlanTask, selectNextActionablePlanTask } from "../lib/learning-routes";
 import { TokenStorage } from "../lib/token-storage";
+
+type PlanTaskSummary = {
+  taskId: string;
+  title: string;
+  skill: StudyPlanResponse["weeks"][number]["tasks"][number]["skill"];
+  taskType: string;
+  targetMinutes: number;
+  completionCriteria: string;
+  learningRoute: {
+    route: string;
+    actionLabel: string;
+  } | null;
+};
 
 type StudyPlanPageProps = {
   apiClient: Pick<ApiClient, "fetchActivePlan" | "adjustPlanTask" | "getPlanAdjustmentHistory">;
   tokenStorage: TokenStorage;
+};
+
+const describeNextTask = (plan: Pick<StudyPlanResponse, "weeks"> | null | undefined): PlanTaskSummary | null => {
+  const nextTask = selectNextActionablePlanTask(plan);
+  if (!nextTask) {
+    return null;
+  }
+
+  return {
+    taskId: nextTask.task_id,
+    title: nextTask.title,
+    skill: nextTask.skill,
+    taskType: nextTask.task_type,
+    targetMinutes: nextTask.target_minutes,
+    completionCriteria: nextTask.completion_criteria,
+    learningRoute: resolveLearningRouteForPlanTask(nextTask)
+  };
 };
 
 export const StudyPlanPage = ({ apiClient, tokenStorage }: StudyPlanPageProps) => {
@@ -16,7 +48,20 @@ export const StudyPlanPage = ({ apiClient, tokenStorage }: StudyPlanPageProps) =
   const [latestAdjustedAt, setLatestAdjustedAt] = useState("-");
   const [targetMinutes, setTargetMinutes] = useState("45");
   const [statusMessage, setStatusMessage] = useState("未加载");
+  const [nextTask, setNextTask] = useState<PlanTaskSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const applyPlanSnapshot = (plan: Pick<StudyPlanResponse, "plan_id" | "weeks" | "adjustment_history">): void => {
+    const nextTaskSummary = describeNextTask(plan);
+    setPlanId(plan.plan_id);
+    setTaskId(nextTaskSummary?.taskId ?? "-");
+    setWeekCount(plan.weeks.length);
+    setAdjustmentCount(plan.adjustment_history.length);
+    setLatestReason(plan.adjustment_history[0]?.reason ?? "-");
+    setLatestAdjustedAt(plan.adjustment_history[0]?.created_at ?? "-");
+    setTargetMinutes(String(nextTaskSummary?.targetMinutes ?? 45));
+    setNextTask(nextTaskSummary);
+  };
 
   const loadPlan = async (): Promise<void> => {
     const accessToken = tokenStorage.getAccessToken();
@@ -27,13 +72,7 @@ export const StudyPlanPage = ({ apiClient, tokenStorage }: StudyPlanPageProps) =
 
     try {
       const plan = await apiClient.fetchActivePlan(accessToken);
-      const firstTask = plan.weeks[0]?.tasks[0];
-      setPlanId(plan.plan_id);
-      setTaskId(firstTask?.task_id ?? "-");
-      setWeekCount(plan.weeks.length);
-      setAdjustmentCount(plan.adjustment_history.length);
-      setLatestReason(plan.adjustment_history[0]?.reason ?? "-");
-      setLatestAdjustedAt(plan.adjustment_history[0]?.created_at ?? "-");
+      applyPlanSnapshot(plan);
       setStatusMessage("计划已加载");
       setError(null);
     } catch (loadError) {
@@ -57,6 +96,7 @@ export const StudyPlanPage = ({ apiClient, tokenStorage }: StudyPlanPageProps) =
       const nextPlan = await apiClient.adjustPlanTask(accessToken, planId, taskId, {
         target_minutes: Number(targetMinutes) || 45
       });
+      applyPlanSnapshot(nextPlan);
       setStatusMessage(`计划已更新，version=${nextPlan.version}`);
       setError(null);
     } catch (adjustError) {
@@ -104,6 +144,29 @@ export const StudyPlanPage = ({ apiClient, tokenStorage }: StudyPlanPageProps) =
       <p>adjustment_count: {adjustmentCount}</p>
       <p>latest_adjustment_reason: {latestReason}</p>
       <p>latest_adjusted_at: {latestAdjustedAt}</p>
+
+      <section>
+        <h2>下一可执行任务</h2>
+        {nextTask ? (
+          <>
+            <p>{nextTask.title}</p>
+            <p>
+              {nextTask.skill} / {nextTask.taskType}
+            </p>
+            <p>
+              {nextTask.targetMinutes} 分钟 · {nextTask.completionCriteria}
+            </p>
+            <p>
+              <a href={nextTask.learningRoute?.route ?? "/plan"}>
+                {nextTask.learningRoute?.actionLabel ?? "查看学习计划"}
+              </a>{" "}
+              | <a href="/progress">查看学习进度</a>
+            </p>
+          </>
+        ) : (
+          <p>当前没有可执行任务，可先返回首页或重新完成首次诊断。</p>
+        )}
+      </section>
 
       <label htmlFor="plan-target-minutes">调整分钟数</label>
       <input

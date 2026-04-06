@@ -12,6 +12,36 @@ const jsonResponse = (body: unknown, status = 200): Response =>
     }
   });
 
+const activePlanResponse = () =>
+  jsonResponse({
+    plan_id: "plan-1",
+    status: "active",
+    horizon_weeks: 8,
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    adjustment_history: [],
+    weeks: [
+      {
+        week_id: "week-1",
+        week_no: 1,
+        goals: ["week goal"],
+        tasks: [
+          {
+            task_id: "task-1",
+            skill: "listening",
+            task_type: "foundation",
+            title: "task 1",
+            target_minutes: 45,
+            completion_criteria: "complete 1 task",
+            day_of_week: 1,
+            status: "todo"
+          }
+        ]
+      }
+    ]
+  });
+
 describe("app route guards", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -57,6 +87,9 @@ describe("app route guards", () => {
           updated_at: new Date().toISOString()
         });
       }
+      if (url.endsWith("/v1/users/plans/active")) {
+        return activePlanResponse();
+      }
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal(
@@ -72,8 +105,9 @@ describe("app route guards", () => {
       expect(window.location.pathname).toBe("/home");
       expect(screen.getByRole("heading", { name: "IELTS 自托管学习首页" })).toBeInTheDocument();
     });
+    expect(screen.getByRole("link", { name: "学习进度" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "监护人工单处理台" })).not.toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   test("shows internal entry on home for ops users", async () => {
@@ -99,6 +133,9 @@ describe("app route guards", () => {
             updated_at: new Date().toISOString()
           });
         }
+        if (url.endsWith("/v1/users/plans/active")) {
+          return activePlanResponse();
+        }
         throw new Error(`Unexpected request: ${url}`);
       }) as typeof fetch
     );
@@ -110,6 +147,7 @@ describe("app route guards", () => {
     await waitFor(() => {
       expect(screen.getByRole("link", { name: "监护人工单处理台" })).toBeInTheDocument();
     });
+    expect(screen.getByRole("link", { name: "学习进度" })).toBeInTheDocument();
   });
 
   test("allows authenticated ops admin visits to open the guardian support console", async () => {
@@ -198,6 +236,9 @@ describe("app route guards", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
+        }
+        if (url.endsWith("/v1/users/plans/active")) {
+          return activePlanResponse();
         }
         throw new Error(`Unexpected request: ${url}`);
       }) as typeof fetch

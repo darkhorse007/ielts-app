@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
 
 type SpeakingRealtimePageProps = {
@@ -59,6 +60,20 @@ export const SpeakingRealtimePage = ({ apiClient, tokenStorage, wsBaseUrl }: Spe
       throw new Error("会话已失效，请重新登录");
     }
     return accessToken;
+  };
+
+  const persistFollowUp = (): void => {
+    const userId = tokenStorage.getUserId();
+    if (!userId) {
+      return;
+    }
+
+    saveProgressFollowUp(userId, {
+      title: "继续口语训练",
+      detail: "口语会话已结束，下一步可回到口语页继续复盘或再答一轮。",
+      route: "/speaking-live",
+      actionLabel: "回到口语训练"
+    });
   };
 
   const createSession = async (): Promise<void> => {
@@ -198,6 +213,7 @@ export const SpeakingRealtimePage = ({ apiClient, tokenStorage, wsBaseUrl }: Spe
           if (eventType === "session_end") {
             setConnectionStatus("已结束");
             setStatus("会话结束");
+            persistFollowUp();
           }
           if (eventType === "error") {
             setError("实时会话返回错误");
@@ -294,6 +310,7 @@ export const SpeakingRealtimePage = ({ apiClient, tokenStorage, wsBaseUrl }: Spe
       await apiClient.endSpeakingSession(withToken(), sessionId);
       setConnectionStatus("已结束");
       setStatus("会话结束");
+      persistFollowUp();
       setError(null);
     } catch (endError) {
       setError(endError instanceof Error ? endError.message : "结束会话失败");
