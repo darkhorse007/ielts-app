@@ -5,11 +5,14 @@
 
 1. 产品范围与阶段边界: `docs/PRD-IELTS-AI-App.md`
 2. 页面、数据模型与接口清单（当前已实现 Web/API）: `docs/PRD-Appendix-IA-Data-API.md`
-3. Mobile 客户端需求附录（下一阶段）: `docs/PRD-Appendix-Mobile-Client.md`
-4. 技术架构（含当前实现与移动端规划）: `docs/architecture/Technical-Architecture.md`
-5. Mobile 技术选型（下一阶段）: `docs/architecture/Mobile-Technology-Selection.md`
-6. 数据存储与 Postgres 表结构: `docs/engineering/Database-Schema-Draft.md`
-7. 自托管部署指南: `docs/engineering/Self-Hosted-Deployment-Guide.md`
+3. QA 与发布验收口径: `docs/PRD-Appendix-QA-Acceptance.md`
+4. Mobile 客户端需求附录（下一阶段）: `docs/PRD-Appendix-Mobile-Client.md`
+5. 技术架构（含当前实现与移动端规划）: `docs/architecture/Technical-Architecture.md`
+6. Mobile 技术选型（下一阶段）: `docs/architecture/Mobile-Technology-Selection.md`
+7. Self-Hosted learner 交付路线图: `docs/engineering/Self-Hosted-Learner-Delivery-Roadmap.md`
+8. 自托管部署指南: `docs/engineering/Self-Hosted-Deployment-Guide.md`
+9. Mobile 交付 runbook: `docs/engineering/Mobile-Delivery-Runbook.md`
+10. 数据存储与 Postgres 表结构: `docs/engineering/Database-Schema-Draft.md`
 
 ## 2. 当前代码范围
 `self-hosted` 分支当前代码实现包含 Web 客户端、Fastify 服务端，以及一个初始的 `apps/mobile` React Native + Expo 骨架。当前可运行代码只保留 IELTS 备考核心能力：
@@ -43,15 +46,16 @@
 
 ## 4. 推荐阅读顺序
 1. 先读 `docs/PRD-IELTS-AI-App.md`
-2. 如需做移动端范围定义，再读 `docs/PRD-Appendix-Mobile-Client.md`
-3. 再读 `docs/PRD-Appendix-IA-Data-API.md`
-4. 然后读 `docs/architecture/Technical-Architecture.md`
-5. 如需推进移动端建设，再读 `docs/architecture/Mobile-Technology-Selection.md`
-6. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
-7. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
-8. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
-9. 如需生成移动端原生构建，可先执行 `npx eas-cli@latest init` 将 `apps/mobile` 关联到 Expo / EAS 项目
-10. 然后运行 `npm run build:mobile:preview:ios` 或 `npm run build:mobile:preview:android` 生成内测构建；如需 Dev Client 或生产构建，可切换到 `development` / `production` 脚本
-11. 如需给安装包预置默认 self-hosted 实例，可在构建前创建 `apps/mobile/.env.local`，填写 `EXPO_PUBLIC_API_BASE_URL`；`EXPO_PUBLIC_WS_BASE_URL` 可省略并由脚本自动推导
-12. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
-13. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
+2. 再读 `docs/PRD-Appendix-QA-Acceptance.md`
+3. 如需做移动端范围定义，再读 `docs/PRD-Appendix-Mobile-Client.md`
+4. 再读 `docs/PRD-Appendix-IA-Data-API.md`
+5. 然后读 `docs/architecture/Technical-Architecture.md`
+6. 如需推进移动端建设，再读 `docs/architecture/Mobile-Technology-Selection.md`
+7. 如需了解剩余落地路径，读 `docs/engineering/Self-Hosted-Learner-Delivery-Roadmap.md`
+8. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
+9. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
+10. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
+11. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
+12. 如需生成移动端原生构建或设备验收，读 `docs/engineering/Mobile-Delivery-Runbook.md`
+13. 如需给安装包预置默认 self-hosted 实例，可在构建前创建 `apps/mobile/.env.local`，填写 `EXPO_PUBLIC_API_BASE_URL`；`EXPO_PUBLIC_WS_BASE_URL` 可省略并由脚本自动推导
+14. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
