@@ -1,12 +1,14 @@
 import { Redirect, router } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type ReadingMode = "training" | "exam";
@@ -70,6 +72,64 @@ const formatTimer = (timer: PracticeSessionResponse["timer"]): string => {
   return `${timer.status} / elapsed ${timer.elapsed_seconds}s / remain ${remaining}`;
 };
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type ReadingRetryAction =
+  | "create_session"
+  | "sync_mode"
+  | "load_timer"
+  | "pause_timer"
+  | "resume_timer"
+  | "recover_timer"
+  | "submit";
+
+const formatReadingRetryActionLabel = (value: ReadingRetryAction): string => {
+  switch (value) {
+    case "create_session":
+      return "创建训练";
+    case "sync_mode":
+      return "同步模式";
+    case "load_timer":
+      return "拉取计时";
+    case "pause_timer":
+      return "暂停计时";
+    case "resume_timer":
+      return "恢复计时";
+    case "recover_timer":
+      return "异常恢复";
+    case "submit":
+      return "提交答案";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function ReadingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
@@ -84,6 +144,9 @@ export default function ReadingScreen() {
   const [checkpointReady, setCheckpointReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<ReadingRetryAction | null>(null);
   const [timerText, setTimerText] = useState("-");
   const [timerRecovered, setTimerRecovered] = useState(false);
   const [evidenceCount, setEvidenceCount] = useState(0);
@@ -94,12 +157,29 @@ export default function ReadingScreen() {
 
   const snapshotStorageKey = buildScopedStorageKey("reading", "draft", "v1", authSession.userId);
 
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setStatusMessage(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (action: ReadingRetryAction, detail: string): void => {
+    setStatusMessage(`${formatReadingRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(action);
+  };
+
   const resetSnapshotState = (): void => {
     setTrainingMode(defaultReadingMode);
     setTimeLimitSeconds(defaultTimeLimitSeconds);
     setSession(null);
     setAnswers({});
     setStatusMessage("未开始");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setError(null);
     setTimerText("-");
     setTimerRecovered(false);
@@ -220,6 +300,8 @@ export default function ReadingScreen() {
   const createSession = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在创建阅读训练");
+      setServerSyncDetail(`training_mode ${trainingMode} / time_limit_seconds ${timeLimitSeconds}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.createPracticeSession(accessToken, {
           skill: "reading",
@@ -233,10 +315,15 @@ export default function ReadingScreen() {
       setEvidenceCount(0);
       setTimerText(formatTimer(response.timer));
       setTimerRecovered(false);
-      setStatusMessage(`已创建阅读训练，题量 ${response.questions.length}`);
+      markSyncSuccess(
+        `已创建阅读训练，题量 ${response.questions.length}`,
+        `session ${response.session_id} / mode ${response.training_mode ?? trainingMode} / question_count ${response.questions.length}`
+      );
       setError(null);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建阅读训练失败");
+      const message = toRequestErrorMessage(createError, "创建阅读训练失败");
+      markSyncFailure("create_session", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -250,6 +337,8 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在同步阅读模式");
+      setServerSyncDetail(`session ${session.session_id} / training_mode ${trainingMode} / time_limit_seconds ${timeLimitSeconds}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.switchReadingMode(accessToken, session.session_id, {
           training_mode: trainingMode,
@@ -260,10 +349,15 @@ export default function ReadingScreen() {
       setSession(response);
       setTimerText(formatTimer(response.timer));
       setTimerRecovered(response.recovered);
-      setStatusMessage(response.recovered ? "模式切换成功，计时器已恢复" : `已切换到${trainingMode === "exam" ? "考试" : "训练"}模式`);
+      markSyncSuccess(
+        response.recovered ? "模式切换成功，计时器已恢复" : `已切换到${trainingMode === "exam" ? "考试" : "训练"}模式`,
+        `session ${response.session_id} / training_mode ${response.training_mode ?? trainingMode} / recovered ${response.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (switchError) {
-      setError(switchError instanceof Error ? switchError.message : "切换阅读模式失败");
+      const message = toRequestErrorMessage(switchError, "切换阅读模式失败");
+      markSyncFailure("sync_mode", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -277,16 +371,24 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在拉取计时器状态");
+      setServerSyncDetail(`session ${session.session_id}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getReadingTimer(accessToken, session.session_id)
       );
 
-      setTimerText(formatTimer(result.timer));
+      const timerLabel = formatTimer(result.timer);
+      setTimerText(timerLabel);
       setTimerRecovered(result.recovered);
-      setStatusMessage(result.recovered ? "计时器状态已恢复" : "已拉取计时器状态");
+      markSyncSuccess(
+        result.recovered ? "计时器状态已恢复" : "已拉取计时器状态",
+        `${timerLabel} / recovered ${result.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (timerError) {
-      setError(timerError instanceof Error ? timerError.message : "拉取计时器失败");
+      const message = toRequestErrorMessage(timerError, "拉取计时器失败");
+      markSyncFailure("load_timer", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -300,16 +402,21 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在暂停计时");
+      setServerSyncDetail(`session ${session.session_id}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.pauseReadingTimer(accessToken, session.session_id)
       );
 
-      setTimerText(formatTimer(result.timer));
+      const timerLabel = formatTimer(result.timer);
+      setTimerText(timerLabel);
       setTimerRecovered(false);
-      setStatusMessage("计时已暂停");
+      markSyncSuccess("计时已暂停", timerLabel);
       setError(null);
     } catch (timerError) {
-      setError(timerError instanceof Error ? timerError.message : "暂停计时失败");
+      const message = toRequestErrorMessage(timerError, "暂停计时失败");
+      markSyncFailure("pause_timer", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -323,16 +430,21 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在恢复计时");
+      setServerSyncDetail(`session ${session.session_id}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.resumeReadingTimer(accessToken, session.session_id)
       );
 
-      setTimerText(formatTimer(result.timer));
+      const timerLabel = formatTimer(result.timer);
+      setTimerText(timerLabel);
       setTimerRecovered(false);
-      setStatusMessage("计时已恢复");
+      markSyncSuccess("计时已恢复", timerLabel);
       setError(null);
     } catch (timerError) {
-      setError(timerError instanceof Error ? timerError.message : "恢复计时失败");
+      const message = toRequestErrorMessage(timerError, "恢复计时失败");
+      markSyncFailure("resume_timer", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -346,16 +458,24 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在恢复异常计时");
+      setServerSyncDetail(`session ${session.session_id}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.recoverReadingTimer(accessToken, session.session_id)
       );
 
-      setTimerText(formatTimer(result.timer));
+      const timerLabel = formatTimer(result.timer);
+      setTimerText(timerLabel);
       setTimerRecovered(result.recovered);
-      setStatusMessage(result.recovered ? "计时器恢复完成" : "计时器无需恢复");
+      markSyncSuccess(
+        result.recovered ? "计时器恢复完成" : "计时器无需恢复",
+        `${timerLabel} / recovered ${result.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (timerError) {
-      setError(timerError instanceof Error ? timerError.message : "恢复异常计时失败");
+      const message = toRequestErrorMessage(timerError, "恢复异常计时失败");
+      markSyncFailure("recover_timer", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -369,6 +489,8 @@ export default function ReadingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在提交阅读答案");
+      setServerSyncDetail(`session ${session.session_id} / answer_count ${session.questions.length}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.submitPracticeSession(
           accessToken,
@@ -395,12 +517,15 @@ export default function ReadingScreen() {
         summary: `阅读提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
         route: "/reading"
       });
-      setStatusMessage(
-        `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`
+      markSyncSuccess(
+        `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`,
+        `session ${response.session_id} / evidence_count ${wrongWithEvidence} / accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`
       );
       setError(null);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "提交阅读答案失败");
+      const message = toRequestErrorMessage(submitError, "提交阅读答案失败");
+      markSyncFailure("submit", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -418,6 +543,34 @@ export default function ReadingScreen() {
     setCheckpointReady(true);
     setCheckpointStatus("本地会话已清空");
     setStatusMessage("已清空本地阅读会话");
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction) {
+      case "create_session":
+        await createSession();
+        break;
+      case "sync_mode":
+        await syncMode();
+        break;
+      case "load_timer":
+        await loadTimer();
+        break;
+      case "pause_timer":
+        await pauseTimer();
+        break;
+      case "resume_timer":
+        await resumeTimer();
+        break;
+      case "recover_timer":
+        await recoverTimer();
+        break;
+      case "submit":
+        await submit();
+        break;
+      default:
+        break;
+    }
   };
 
   useAppForegroundEffect(
@@ -489,6 +642,33 @@ export default function ReadingScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>question_count: {session?.questions.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>evidence_count: {evidenceCount}</Text>
         </View>
+      </InfoCard>
+
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={statusMessage}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={lastFailedAction ? `待重试 ${formatReadingRetryActionLabel(lastFailedAction)}` : "链路已就绪"}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {statusMessage}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="reading.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <InfoCard>
@@ -602,10 +782,13 @@ export default function ReadingScreen() {
         </InfoCard>
       ) : null}
 
-      <ButtonRow>
-        <PrimaryButton label="查看学习计划" onPress={() => router.push("/plan")} disabled={loading} />
-        <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} disabled={loading} />
-      </ButtonRow>
+      <StudyLoopNextStepCard
+        visible={Boolean(session?.submission)}
+        currentRoute="/reading"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="reading.studyLoopNext"
+      />
     </AppScreen>
   );
 }

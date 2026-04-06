@@ -1,26 +1,30 @@
 import { Redirect, router } from "expo-router";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Text, View } from "react-native";
+import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { StudyPlanResponse } from "../src/lib/api-types";
+import { resolveLearningRouteForPlanTask, selectNextActionablePlanTask } from "../src/lib/learning-routes";
 import { useAppSession } from "../src/state/app-session";
-import { formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
+import { buildStudyLoopRecommendation, formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopSummaryBlock } from "../src/ui/study-loop-summary-block";
 import { colors } from "../src/ui/theme";
 
 const describeTask = (plan: StudyPlanResponse | null) => {
-  const firstTask = plan?.weeks[0]?.tasks[0];
-  if (!firstTask) {
+  const nextTask = selectNextActionablePlanTask(plan);
+  if (!nextTask) {
     return null;
   }
 
   return {
-    taskId: firstTask.task_id,
-    title: firstTask.title,
-    skill: firstTask.skill,
-    taskType: firstTask.task_type,
-    targetMinutes: firstTask.target_minutes,
-    completionCriteria: firstTask.completion_criteria
+    taskId: nextTask.task_id,
+    title: nextTask.title,
+    skill: nextTask.skill,
+    taskType: nextTask.task_type,
+    targetMinutes: nextTask.target_minutes,
+    completionCriteria: nextTask.completion_criteria,
+    learningRoute: resolveLearningRouteForPlanTask(nextTask)
   };
 };
 
@@ -73,6 +77,7 @@ export default function PlanScreen() {
     activities,
     ready: studyLoopReady,
     pendingPlanRefreshCount,
+    pendingProgressRefreshCount,
     acknowledgePlanRefresh
   } = useStudyLoop();
   const [plan, setPlan] = useState<StudyPlanResponse | null>(null);
@@ -86,6 +91,7 @@ export default function PlanScreen() {
   const [latestAdjustedAt, setLatestAdjustedAt] = useState("-");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const initialLoadUserIdRef = useRef<string | null>(null);
 
   const markSyncSuccess = (statusText: string, detail: string): void => {
     setStatusMessage(statusText);
@@ -117,11 +123,12 @@ export default function PlanScreen() {
       setStatusMessage("正在拉取计划");
       setServerSyncDetail("active plan");
       const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.fetchActivePlan(accessToken));
+      const nextTask = describeTask(response);
       setPlan(response);
       setAdjustmentCount(response.adjustment_history.length);
       setLatestReason(response.adjustment_history[0]?.reason ?? "-");
       setLatestAdjustedAt(response.adjustment_history[0]?.created_at ?? "-");
-      setTargetMinutes(String(response.weeks[0]?.tasks[0]?.target_minutes ?? 45));
+      setTargetMinutes(String(nextTask?.targetMinutes ?? 45));
       markSyncSuccess(
         pendingCount > 0 ? `已按最近 ${pendingCount} 条训练结果刷新计划` : "计划已加载",
         `plan ${response.plan_id} / version ${response.version} / weeks ${response.weeks.length}`
@@ -140,20 +147,43 @@ export default function PlanScreen() {
   });
 
   useEffect(() => {
-    void loadPlan();
-  }, [session]);
-
-  useEffect(() => {
-    if (!studyLoopReady || pendingPlanRefreshCount === 0) {
+    const userId = session?.userId ?? null;
+    if (!userId) {
+      initialLoadUserIdRef.current = null;
       return;
     }
 
-    void loadPlan();
-  }, [loadPlan, pendingPlanRefreshCount, studyLoopReady]);
+    if (!studyLoopReady) {
+      return;
+    }
+
+    if (initialLoadUserIdRef.current !== userId) {
+      initialLoadUserIdRef.current = userId;
+      void loadPlan();
+      return;
+    }
+
+    if (pendingPlanRefreshCount > 0) {
+      void loadPlan();
+    }
+  }, [loadPlan, pendingPlanRefreshCount, session?.userId, studyLoopReady]);
+
+  useAppForegroundEffect(
+    async () => {
+      if (loading) {
+        return;
+      }
+
+      await loadPlan();
+    },
+    {
+      enabled: Boolean(session?.userId && studyLoopReady)
+    }
+  );
 
   const adjust = async (): Promise<void> => {
-    const firstTask = describeTask(plan);
-    if (!plan || !firstTask) {
+    const nextTask = describeTask(plan);
+    if (!plan || !nextTask) {
       setError("请先加载计划");
       return;
     }
@@ -161,16 +191,18 @@ export default function PlanScreen() {
     setLoading(true);
     try {
       setStatusMessage("正在更新任务");
-      setServerSyncDetail(`plan ${plan.plan_id} / task ${firstTask.taskId}`);
+      setServerSyncDetail(`plan ${plan.plan_id} / task ${nextTask.taskId}`);
       const nextPlan = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.adjustPlanTask(accessToken, plan.plan_id, firstTask.taskId, {
+        apiClient.adjustPlanTask(accessToken, plan.plan_id, nextTask.taskId, {
           target_minutes: Number(targetMinutes) || 45
         })
       );
+      const refreshedTask = describeTask(nextPlan);
       setPlan(nextPlan);
+      setTargetMinutes(String(refreshedTask?.targetMinutes ?? (Number(targetMinutes) || 45)));
       markSyncSuccess(
         `计划已更新，version=${nextPlan.version}`,
-        `plan ${nextPlan.plan_id} / task ${firstTask.taskId} / target_minutes ${nextPlan.weeks[0]?.tasks[0]?.target_minutes ?? "-"}`
+        `plan ${nextPlan.plan_id} / task ${nextTask.taskId} / target_minutes ${refreshedTask?.targetMinutes ?? "-"}`
       );
       setError(null);
       setAdjustmentCount(nextPlan.adjustment_history.length);
@@ -233,6 +265,31 @@ export default function PlanScreen() {
 
   const firstTask = describeTask(plan);
   const pendingActivities = activities.filter((item) => item.planPending).slice(0, 3);
+  const nextStudyLoopAction = buildStudyLoopRecommendation(activities);
+  const followUpAction =
+    pendingPlanRefreshCount > 0
+      ? null
+      : nextStudyLoopAction.route === "/plan"
+        ? firstTask?.learningRoute
+          ? {
+              route: firstTask.learningRoute.route,
+              actionLabel: firstTask.learningRoute.actionLabel
+            }
+          : {
+              route: "/home",
+              actionLabel: "返回首页"
+            }
+        : {
+            route: nextStudyLoopAction.route,
+            actionLabel: nextStudyLoopAction.actionLabel
+          };
+  const actionHint = pendingActivities.length
+    ? `优先根据最近 ${formatStudyLoopSkillLabel(pendingActivities[0].skill)} 结果检查任务调整。`
+    : nextStudyLoopAction.route === "/progress"
+      ? "计划侧已消化，下一步去进度页核对服务端统计。"
+      : nextStudyLoopAction.route === "/diagnostic"
+        ? "当前没有待消化训练，可返回诊断或训练页继续推进。"
+        : `计划侧已消化，可回到${nextStudyLoopAction.title.replace("继续", "")}。`;
 
   if (!session) {
     return <Redirect href="/login" />;
@@ -242,17 +299,13 @@ export default function PlanScreen() {
     <AppScreen
       eyebrow="Plan"
       title="8 周计划已进入移动端"
-      subtitle="这里直接拉取当前激活计划，并允许对首个任务做最小调整，验证移动端已经接上 plan 与 adjustment 历史链路。"
+      subtitle="这里直接拉取当前激活计划，并允许对下一可执行任务做最小调整，验证移动端已经接上 plan 与 adjustment 历史链路。"
     >
       <InfoCard tone="accent">
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>计划状态</Text>
         <ButtonRow>
           <StatusPill label={plan?.status ?? "未加载"} tone={plan ? "success" : "neutral"} />
           <StatusPill label={statusMessage} tone={plan ? "accent" : "neutral"} />
-          <StatusPill
-            label={`待消化训练 ${pendingPlanRefreshCount}`}
-            tone={pendingPlanRefreshCount > 0 ? "accent" : "success"}
-          />
         </ButtonRow>
         <View style={{ gap: 6, marginTop: 10 }}>
           <Text style={{ color: colors.textPrimary, fontSize: 14 }}>plan_id: {plan?.plan_id ?? "-"}</Text>
@@ -260,15 +313,25 @@ export default function PlanScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>week_count: {plan?.weeks.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>adjustment_count: {adjustmentCount}</Text>
         </View>
-        {pendingActivities.length ? (
-          <View style={{ gap: 6, marginTop: 10 }}>
-            {pendingActivities.map((item) => (
-              <Text key={item.id} style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-                待回看训练: {formatStudyLoopSkillLabel(item.skill)} · {item.summary}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+        <StudyLoopSummaryBlock
+          pendingPlanRefreshCount={pendingPlanRefreshCount}
+          pendingProgressRefreshCount={pendingProgressRefreshCount}
+          nextActionTitle={nextStudyLoopAction.title}
+          nextActionDetail={nextStudyLoopAction.detail}
+          activityLines={pendingActivities.map(
+            (item) => `待回看训练: ${formatStudyLoopSkillLabel(item.skill)} · ${item.summary}`
+          )}
+          hintText={actionHint}
+          primaryAction={
+            followUpAction
+              ? {
+                  label: followUpAction.actionLabel,
+                  onPress: () => router.push(followUpAction.route),
+                  testID: "plan.followUpAction"
+                }
+              : undefined
+          }
+        />
       </InfoCard>
 
       <InfoCard tone={lastFailedAction ? "accent" : "default"}>
@@ -299,7 +362,7 @@ export default function PlanScreen() {
       </InfoCard>
 
       <InfoCard>
-        <Text style={{ color: colors.textMuted, fontSize: 12 }}>首个任务</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>下一可执行任务</Text>
         {firstTask ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: "700" }}>{firstTask.title}</Text>
@@ -310,6 +373,15 @@ export default function PlanScreen() {
             <Text style={{ color: colors.textMuted, fontSize: 14 }}>
               {firstTask.targetMinutes} 分钟 · {firstTask.completionCriteria}
             </Text>
+            <ButtonRow>
+              <PrimaryButton
+                label={firstTask.learningRoute?.actionLabel ?? "进入当前训练"}
+                onPress={() => firstTask.learningRoute && router.push(firstTask.learningRoute.route)}
+                disabled={!firstTask.learningRoute}
+                testID="plan.openFirstTask"
+              />
+              <SecondaryButton label="去看进度" onPress={() => router.push("/progress")} />
+            </ButtonRow>
           </View>
         ) : (
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>当前没有任务可展示</Text>
@@ -317,7 +389,7 @@ export default function PlanScreen() {
       </InfoCard>
 
       <TextField
-        label="调整首个任务分钟数"
+        label="调整下一可执行任务分钟数"
         value={targetMinutes}
         onChangeText={setTargetMinutes}
         keyboardType="number-pad"
@@ -337,11 +409,9 @@ export default function PlanScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>adjusted_at: {latestAdjustedAt}</Text>
         <ButtonRow>
           <PrimaryButton label="加载历史" onPress={() => void loadAdjustmentHistory()} disabled={loading} />
-          <SecondaryButton label="去看进度" onPress={() => router.push("/progress")} />
+          <SecondaryButton label="返回首页" onPress={() => router.replace("/home")} />
         </ButtonRow>
       </InfoCard>
-
-      <SecondaryButton label="返回首页" onPress={() => router.replace("/home")} />
     </AppScreen>
   );
 }

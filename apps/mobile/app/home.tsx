@@ -1,131 +1,97 @@
 import { Redirect, router } from "expo-router";
-import { useEffect, useEffectEvent, useState } from "react";
 import { Text, View } from "react-native";
-import { ApiClient, runSpeakingWebSocketSmoke } from "../src/lib/api-client";
-import type { UserProfileResponse } from "../src/lib/api-types";
-import { useAppSession } from "../src/state/app-session";
-import { formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
-import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
+import { useHomeConsoleController } from "../src/hooks/use-home-console-controller";
 import {
-  AppScreen,
-  ButtonRow,
-  InfoCard,
-  PrimaryButton,
-  SecondaryButton,
-  StatusPill
-} from "../src/ui/primitives";
+  homeAvailableModules,
+  homeEntryRows,
+  homePlannedModules,
+  type HomeEntryActionConfig
+} from "../src/lib/home-entry-config";
+import { buildTodayActionList, type HomeActionItem } from "../src/lib/home-actions";
+import { buildStudyLoopRecommendation, formatStudyLoopSkillLabel, useStudyLoop } from "../src/state/study-loop";
+import { ActionListItem } from "../src/ui/action-list-item";
+import { HomeAccountPanel } from "../src/ui/home-account-panel";
+import { HomeConnectionSmokePanel } from "../src/ui/home-connection-smoke-panel";
+import { HomeEntryPanel } from "../src/ui/home-entry-panel";
+import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
+import { AppScreen, ButtonRow, InfoCard, SecondaryButton } from "../src/ui/primitives";
+import { StudyLoopSummaryBlock } from "../src/ui/study-loop-summary-block";
 import { colors } from "../src/ui/theme";
 
-const plannedModules: string[] = [];
-
-const availableModules = [
-  "实例配置",
-  "注册登录",
-  "入门目标",
-  "首次诊断",
-  "学习计划",
-  "学习进度",
-  "听力训练",
-  "阅读训练",
-  "实时口语",
-  "写作批改",
-  "模考与报告",
-  "账户与导出",
-  "API/WS smoke"
-];
-
 export default function HomeScreen() {
-  const { defaultInstanceConfig, instanceConfig, session, logout, runWithAuthorizedClient } = useAppSession();
   const { activities, pendingPlanRefreshCount, pendingProgressRefreshCount, ready: studyLoopReady } = useStudyLoop();
-  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
-  const [profileStatus, setProfileStatus] = useState("等待拉取");
-  const [healthStatus, setHealthStatus] = useState("未检查");
-  const [socketStatus, setSocketStatus] = useState("未检查");
+  const latestStudyLoopUpdatedAt = activities[0]?.updatedAt ?? "";
+  const {
+    defaultInstanceConfig,
+    instanceConfig,
+    session,
+    profile,
+    profileStatus,
+    healthStatus,
+    socketStatus,
+    planTaskAction,
+    resumeCheckpoints,
+    loadProfile,
+    dismissResumeCheckpoint,
+    dismissAllResumeCheckpoints,
+    checkHealth,
+    checkSpeakingSocket,
+    signOut
+  } = useHomeConsoleController({
+    studyLoopReady,
+    latestStudyLoopUpdatedAt
+  });
   const recentStudyLoopActivities = activities.slice(0, 3);
-
-  const loadProfile = useEffectEvent(async () => {
-    if (!session) {
-      setProfile(null);
-      setProfileStatus("未登录");
-      return;
-    }
-
-    setProfileStatus("正在拉取 /v1/users/me/profile");
-    try {
-      const response = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getProfile(accessToken));
-      setProfile(response);
-      setProfileStatus("已同步");
-    } catch (error) {
-      setProfileStatus(error instanceof Error ? error.message : "资料获取失败");
-    }
+  const latestResumeCheckpoint = resumeCheckpoints[0] ?? null;
+  const resumeQueue = resumeCheckpoints.slice(1, 3);
+  const defaultStudyLoopAction = buildStudyLoopRecommendation(activities);
+  const nextStudyLoopAction =
+    studyLoopReady &&
+    pendingPlanRefreshCount === 0 &&
+    pendingProgressRefreshCount === 0 &&
+    activities.length === 0 &&
+    planTaskAction
+      ? planTaskAction
+      : defaultStudyLoopAction;
+  const todayActions = buildTodayActionList({
+    primaryStudyAction: nextStudyLoopAction,
+    resumeCheckpoints
   });
 
-  useEffect(() => {
-    void loadProfile();
-  }, [session]);
-
-  const checkHealth = async (): Promise<void> => {
-    if (!instanceConfig) {
-      setHealthStatus("请先配置实例");
+  const dismissLatestResumeCheckpoint = async (): Promise<void> => {
+    if (!latestResumeCheckpoint) {
       return;
     }
 
-    setHealthStatus("正在检查 /health");
-    try {
-      const apiClient = new ApiClient(instanceConfig.apiBaseUrl);
-      const health = await apiClient.health();
-      setHealthStatus(`API 连通: ${health.status}`);
-    } catch (error) {
-      setHealthStatus(error instanceof Error ? error.message : "API 检查失败");
-    }
+    await dismissResumeCheckpoint(latestResumeCheckpoint.scope);
   };
 
-  const checkSpeakingSocket = async (): Promise<void> => {
-    if (!instanceConfig) {
-      setSocketStatus("请先配置实例");
+  const dismissTodayAction = async (item: HomeActionItem): Promise<void> => {
+    if (item.source !== "resume" || !item.resumeScope) {
       return;
     }
 
-    if (!session) {
-      setSocketStatus("请先登录");
-      return;
-    }
-
-    setSocketStatus("正在创建 session 并连接 WebSocket");
-    try {
-      const result = await runWithAuthorizedClient(async (apiClient, accessToken) => {
-        const sessionResponse = await apiClient.createSpeakingSession(accessToken, {
-          topic: "Mobile smoke connection",
-          task_type: "core_training"
-        });
-        if (!sessionResponse.resume_token) {
-          throw new Error("服务端未返回 resume_token，无法建立口语 WebSocket smoke");
-        }
-
-        try {
-          return await runSpeakingWebSocketSmoke({
-            wsBaseUrl: instanceConfig.wsBaseUrl,
-            sessionId: sessionResponse.session_id,
-            resumeToken: sessionResponse.resume_token
-          });
-        } finally {
-          try {
-            await apiClient.endSpeakingSession(accessToken, sessionResponse.session_id);
-          } catch {
-            // Best-effort cleanup for smoke sessions.
-          }
-        }
-      });
-
-      setSocketStatus(`WS 连通: ${result.type} / part ${result.currentPart}`);
-    } catch (error) {
-      setSocketStatus(error instanceof Error ? error.message : "WS smoke 失败");
-    }
+    await dismissResumeCheckpoint(item.resumeScope);
   };
 
-  const signOut = async (): Promise<void> => {
-    await logout();
+  const handleSignOut = async (): Promise<void> => {
+    await signOut();
     router.replace("/login");
+  };
+
+  const handleHomeEntryAction = (action: HomeEntryActionConfig): void => {
+    if ("route" in action) {
+      router.push(action.route);
+      return;
+    }
+
+    switch (action.handlerId) {
+      case "check_speaking_socket":
+        void checkSpeakingSocket();
+        break;
+      default:
+        break;
+    }
   };
 
   if (!instanceConfig) {
@@ -148,121 +114,135 @@ export default function HomeScreen() {
         defaultInstanceConfig={defaultInstanceConfig}
       />
 
-      <InfoCard tone={pendingPlanRefreshCount || pendingProgressRefreshCount ? "accent" : "default"}>
-        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>学习主线闭环</Text>
-        <ButtonRow>
-          <StatusPill
-            label={`计划待刷新 ${pendingPlanRefreshCount}`}
-            tone={pendingPlanRefreshCount > 0 ? "accent" : "success"}
-          />
-          <StatusPill
-            label={`进度待刷新 ${pendingProgressRefreshCount}`}
-            tone={pendingProgressRefreshCount > 0 ? "accent" : "success"}
-          />
-        </ButtonRow>
-        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>
-          {studyLoopReady ? `recent_activity_count: ${activities.length}` : "正在恢复最近训练结果..."}
-        </Text>
-        {studyLoopReady && recentStudyLoopActivities.length ? (
-          <View style={{ gap: 8, marginTop: 10 }}>
-            {recentStudyLoopActivities.map((item) => (
-              <Text key={item.id} style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-                {formatStudyLoopSkillLabel(item.skill)} · {item.summary}
-              </Text>
-            ))}
-          </View>
-        ) : studyLoopReady ? (
-          <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-            当前还没有新的训练结果需要回看计划或进度。
-          </Text>
-        ) : null}
-        <ButtonRow>
-          <PrimaryButton label="回看计划" onPress={() => router.push("/plan")} />
-          <SecondaryButton label="回看进度" onPress={() => router.push("/progress")} />
-        </ButtonRow>
-      </InfoCard>
-
-      <InfoCard>
-        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>当前登录状态</Text>
-        <ButtonRow>
-          <StatusPill label={profile?.status ?? "未拉取"} tone={profile ? "success" : "neutral"} />
-          <StatusPill label={profileStatus} tone={profile ? "accent" : "neutral"} />
-        </ButtonRow>
-        {profile ? (
-          <View style={{ gap: 6, marginTop: 14 }}>
-            <Text style={{ color: colors.textPrimary, fontSize: 14 }}>user_id: {profile.id}</Text>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>email: {profile.email ?? "-"}</Text>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>phone: {profile.phone ?? "-"}</Text>
-          </View>
-        ) : null}
-      </InfoCard>
-
-      <InfoCard>
-        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>连接 smoke</Text>
-        <View style={{ gap: 10 }}>
-          <StatusPill label={healthStatus} tone={healthStatus.includes("ok") ? "success" : "neutral"} />
-          <StatusPill label={socketStatus} tone={socketStatus.includes("WS 连通") ? "success" : "neutral"} />
-        </View>
-        <ButtonRow>
-          <PrimaryButton label="检查 API" onPress={checkHealth} />
-          <SecondaryButton label="检查 WS" onPress={checkSpeakingSocket} />
-        </ButtonRow>
-      </InfoCard>
-
-      <InfoCard>
-        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>已接入学习域</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {availableModules.map((item) => (
-            <StatusPill key={item} label={item} tone="success" />
+      <InfoCard tone={todayActions.length > 1 ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>今日行动列表</Text>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>today_action_count: {todayActions.length}</Text>
+        <View style={{ gap: 10, marginTop: 10 }}>
+          {todayActions.map((item, index) => (
+            <ActionListItem
+              key={item.id}
+              title={`action_${index + 1}_title: ${item.title}`}
+              detail={`action_${index + 1}_detail: ${item.detail}`}
+              metadataLines={[
+                `action_${index + 1}_source: ${item.sourceLabel}`,
+                `action_${index + 1}_priority: ${item.priorityLabel}`
+              ]}
+              primaryAction={{
+                label: item.actionLabel,
+                onPress: () => router.push(item.route),
+                testID: `home.todayAction.${index}`
+              }}
+              secondaryAction={
+                item.source === "resume"
+                  ? {
+                      label: "忽略恢复项",
+                      onPress: () => void dismissTodayAction(item),
+                      testID: `home.dismissTodayAction.${index}`
+                    }
+                  : undefined
+              }
+            />
           ))}
         </View>
-        <ButtonRow>
-          <PrimaryButton label="进入入门目标" onPress={() => router.push("/onboarding")} />
-          <SecondaryButton label="进入首次诊断" onPress={() => router.push("/diagnostic")} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} />
-          <SecondaryButton label="同步进度" onPress={() => router.push("/progress")} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="开始听力训练" onPress={() => router.push("/listening")} />
-          <SecondaryButton label="开始阅读训练" onPress={() => router.push("/reading")} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="进入实时口语" onPress={() => router.push("/speaking")} />
-          <SecondaryButton label="检查 WS" onPress={checkSpeakingSocket} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="进入写作批改" onPress={() => router.push("/writing")} />
-          <SecondaryButton label="查看计划" onPress={() => router.push("/plan")} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="进入模考" onPress={() => router.push("/mock-exam")} testID="home.mockExam" />
-          <SecondaryButton label="查看进度" onPress={() => router.push("/progress")} />
-        </ButtonRow>
-        <ButtonRow>
-          <PrimaryButton label="进入账户中心" onPress={() => router.push("/account")} testID="home.account" />
-          <SecondaryButton label="导出/删除" onPress={() => router.push("/account")} testID="home.accountQuick" />
-        </ButtonRow>
       </InfoCard>
 
-      {plannedModules.length ? (
+      <InfoCard tone={pendingPlanRefreshCount || pendingProgressRefreshCount ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>学习主线闭环</Text>
+        <StudyLoopSummaryBlock
+          pendingPlanRefreshCount={pendingPlanRefreshCount}
+          pendingProgressRefreshCount={pendingProgressRefreshCount}
+          statusText={studyLoopReady ? `recent_activity_count: ${activities.length}` : "正在恢复最近训练结果..."}
+          nextActionTitle={studyLoopReady ? nextStudyLoopAction.title : "-"}
+          nextActionDetail={studyLoopReady ? nextStudyLoopAction.detail : "正在生成下一步建议..."}
+          activityLines={
+            studyLoopReady
+              ? recentStudyLoopActivities.map((item) => `${formatStudyLoopSkillLabel(item.skill)} · ${item.summary}`)
+              : []
+          }
+          emptyStateText={studyLoopReady ? "当前还没有新的训练结果需要回看计划或进度。" : undefined}
+          primaryAction={{
+            label: studyLoopReady ? nextStudyLoopAction.actionLabel : "正在准备建议",
+            onPress: () => router.push(nextStudyLoopAction.route),
+            disabled: !studyLoopReady
+          }}
+          secondaryAction={{
+            label: "回看进度",
+            onPress: () => router.push("/progress")
+          }}
+        />
+      </InfoCard>
+
+      {latestResumeCheckpoint ? (
         <InfoCard>
-          <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>已规划模块</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {plannedModules.map((item) => (
-              <StatusPill key={item} label={item} tone="accent" />
-            ))}
-          </View>
+          <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>上次中断恢复</Text>
+          <ActionListItem
+            title={`resume_title: ${latestResumeCheckpoint.title}`}
+            detail={`resume_detail: ${latestResumeCheckpoint.detail}`}
+            metadataLines={[
+              `resume_updated_at: ${latestResumeCheckpoint.updatedAt}`,
+              `resume_count: ${resumeCheckpoints.length}`
+            ]}
+            metadataFontSize={13}
+            primaryAction={{
+              label: "继续上次中断",
+              onPress: () => router.push(latestResumeCheckpoint.route),
+              testID: "home.resumeCheckpoint"
+            }}
+            secondaryAction={{
+              label: "忽略这次恢复",
+              onPress: () => void dismissLatestResumeCheckpoint(),
+              testID: "home.dismissResumeCheckpoint"
+            }}
+          />
+          {resumeCheckpoints.length > 1 ? (
+            <ButtonRow>
+              <SecondaryButton
+                label="清空全部恢复项"
+                onPress={() => void dismissAllResumeCheckpoints()}
+                testID="home.dismissAllResumeCheckpoints"
+              />
+            </ButtonRow>
+          ) : null}
+          {resumeQueue.length ? (
+            <View style={{ gap: 8, marginTop: 10 }}>
+              {resumeQueue.map((item) => (
+                <ActionListItem
+                  key={item.scope}
+                  title={item.title}
+                  detail={item.detail}
+                  metadataLines={[`updated_at: ${item.updatedAt}`]}
+                  metadataFontSize={12}
+                  onPress={() => router.push(item.route)}
+                  testID={`home.resumeCheckpointItem.${item.scope}`}
+                />
+              ))}
+            </View>
+          ) : null}
         </InfoCard>
       ) : null}
 
-      <ButtonRow>
-        <PrimaryButton label="刷新资料" onPress={() => void loadProfile()} />
-        <SecondaryButton label="切换实例" onPress={() => router.push("/instance")} />
-      </ButtonRow>
+      <HomeAccountPanel
+        profile={profile}
+        profileStatus={profileStatus}
+        onRefreshProfile={() => void loadProfile()}
+        onSwitchInstance={() => router.push("/instance")}
+        onSignOut={() => void handleSignOut()}
+      />
 
-      <SecondaryButton label="退出登录" onPress={signOut} />
+      <HomeConnectionSmokePanel
+        healthStatus={healthStatus}
+        socketStatus={socketStatus}
+        onCheckHealth={checkHealth}
+        onCheckSpeakingSocket={checkSpeakingSocket}
+      />
+
+      <HomeEntryPanel
+        availableModules={homeAvailableModules}
+        plannedModules={homePlannedModules}
+        rows={homeEntryRows}
+        onAction={handleHomeEntryAction}
+      />
+
     </AppScreen>
   );
 }

@@ -1,12 +1,14 @@
 import { Redirect, router } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type ListeningTaskType = "core_training" | "dictation";
@@ -85,6 +87,58 @@ const renderQuestionLabel = (question: PracticeSessionResponse["questions"][numb
     ? `[${question.type}] ${question.prompt}`
     : `[${question.type}] S${question.audio_segment_index} · ${question.prompt}`;
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type ListeningRetryAction =
+  | "create_session"
+  | "submit"
+  | "save_playback"
+  | "load_playback"
+  | "add_retry_queue";
+
+const formatListeningRetryActionLabel = (value: ListeningRetryAction): string => {
+  switch (value) {
+    case "create_session":
+      return "创建训练";
+    case "submit":
+      return "提交答案";
+    case "save_playback":
+      return "保存播放状态";
+    case "load_playback":
+      return "加载播放状态";
+    case "add_retry_queue":
+      return "加入重练队列";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function ListeningScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
@@ -98,6 +152,9 @@ export default function ListeningScreen() {
   const [checkpointReady, setCheckpointReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<ListeningRetryAction | null>(null);
   const [playbackRate, setPlaybackRate] = useState(defaultPlaybackRate);
   const [segmentIndex, setSegmentIndex] = useState(defaultSegmentIndex);
   const [positionSeconds, setPositionSeconds] = useState(defaultPositionSeconds);
@@ -111,11 +168,28 @@ export default function ListeningScreen() {
 
   const snapshotStorageKey = buildScopedStorageKey("listening", "draft", "v1", authSession.userId);
 
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setStatusMessage(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (action: ListeningRetryAction, detail: string): void => {
+    setStatusMessage(`${formatListeningRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(action);
+  };
+
   const resetSnapshotState = (): void => {
     setTaskType(defaultTaskType);
     setSession(null);
     setAnswers({});
     setStatusMessage("未开始");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setCheckpointStatus("本地会话未恢复");
     setError(null);
     setPlaybackRate(defaultPlaybackRate);
@@ -246,6 +320,8 @@ export default function ListeningScreen() {
   const createSession = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在创建听力训练");
+      setServerSyncDetail(`task_type ${taskType}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.createPracticeSession(accessToken, {
           skill: "listening",
@@ -261,14 +337,17 @@ export default function ListeningScreen() {
       setSegmentIndex("0");
       setPositionSeconds("0");
       setReplayWrongOnly(false);
-      setStatusMessage(
+      markSyncSuccess(
         response.task_type === "dictation"
           ? `已创建听写训练，句量 ${response.questions.length}`
-          : `已创建听力训练，题量 ${response.questions.length}`
+          : `已创建听力训练，题量 ${response.questions.length}`,
+        `session ${response.session_id} / task_type ${response.task_type} / question_count ${response.questions.length}`
       );
       setError(null);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建听力训练失败");
+      const message = toRequestErrorMessage(createError, "创建听力训练失败");
+      markSyncFailure("create_session", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -282,6 +361,8 @@ export default function ListeningScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在提交听力答案");
+      setServerSyncDetail(`session ${session.session_id} / answer_count ${session.questions.length}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.submitPracticeSession(
           accessToken,
@@ -301,12 +382,15 @@ export default function ListeningScreen() {
         summary: `听力提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
         route: "/listening"
       });
-      setStatusMessage(
-        `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`
+      markSyncSuccess(
+        `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`,
+        `session ${response.session_id} / accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`
       );
       setError(null);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "提交听力答案失败");
+      const message = toRequestErrorMessage(submitError, "提交听力答案失败");
+      markSyncFailure("submit", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -320,6 +404,8 @@ export default function ListeningScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在保存播放状态");
+      setServerSyncDetail(`session ${session.session_id} / segment ${segmentIndex} / position ${positionSeconds}s`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.updatePlaybackState(accessToken, session.session_id, {
           playback_rate: asNumber(playbackRate, 1),
@@ -331,10 +417,15 @@ export default function ListeningScreen() {
 
       applyPlaybackState(response, setPlaybackRate, setSegmentIndex, setPositionSeconds, setReplayWrongOnly);
       setLastPlaybackSnapshot(response);
-      setStatusMessage(response.recovered ? "播放状态已恢复到安全值" : "播放状态已保存");
+      markSyncSuccess(
+        response.recovered ? "播放状态已恢复到安全值" : "播放状态已保存",
+        `playback_rate ${response.playback_rate} / segment ${response.segment_index} / recovered ${response.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (playbackError) {
-      setError(playbackError instanceof Error ? playbackError.message : "保存播放状态失败");
+      const message = toRequestErrorMessage(playbackError, "保存播放状态失败");
+      markSyncFailure("save_playback", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -348,16 +439,23 @@ export default function ListeningScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在加载播放状态");
+      setServerSyncDetail(`session ${session.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getPlaybackState(accessToken, session.session_id)
       );
 
       applyPlaybackState(response, setPlaybackRate, setSegmentIndex, setPositionSeconds, setReplayWrongOnly);
       setLastPlaybackSnapshot(response);
-      setStatusMessage(response.recovered ? "已加载并恢复播放状态" : "已加载播放状态");
+      markSyncSuccess(
+        response.recovered ? "已加载并恢复播放状态" : "已加载播放状态",
+        `playback_rate ${response.playback_rate} / segment ${response.segment_index} / recovered ${response.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载播放状态失败");
+      const message = toRequestErrorMessage(loadError, "加载播放状态失败");
+      markSyncFailure("load_playback", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -371,14 +469,21 @@ export default function ListeningScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在加入重练队列");
+      setServerSyncDetail(`session ${session.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.addRetryQueue(accessToken, session.session_id)
       );
       setQueueCount(response.items.length);
-      setStatusMessage(`已加入重练队列 ${response.items.length} 题`);
+      markSyncSuccess(
+        `已加入重练队列 ${response.items.length} 题`,
+        `session ${session.session_id} / retry_items ${response.items.length}`
+      );
       setError(null);
     } catch (queueError) {
-      setError(queueError instanceof Error ? queueError.message : "加入重练队列失败");
+      const message = toRequestErrorMessage(queueError, "加入重练队列失败");
+      markSyncFailure("add_retry_queue", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -396,6 +501,28 @@ export default function ListeningScreen() {
     setCheckpointReady(true);
     setCheckpointStatus("本地会话已清空");
     setStatusMessage("已清空本地听力会话");
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction) {
+      case "create_session":
+        await createSession();
+        break;
+      case "submit":
+        await submit();
+        break;
+      case "save_playback":
+        await savePlayback();
+        break;
+      case "load_playback":
+        await loadPlayback();
+        break;
+      case "add_retry_queue":
+        await addRetryQueue();
+        break;
+      default:
+        break;
+    }
   };
 
   useAppForegroundEffect(
@@ -458,6 +585,33 @@ export default function ListeningScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>question_count: {session?.questions.length ?? 0}</Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>retry_queue_count: {queueCount}</Text>
         </View>
+      </InfoCard>
+
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={statusMessage}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={lastFailedAction ? `待重试 ${formatListeningRetryActionLabel(lastFailedAction)}` : "链路已就绪"}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {statusMessage}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="listening.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <InfoCard>
@@ -633,10 +787,13 @@ export default function ListeningScreen() {
         </InfoCard>
       ) : null}
 
-      <ButtonRow>
-        <PrimaryButton label="查看学习计划" onPress={() => router.push("/plan")} disabled={loading} />
-        <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} disabled={loading} />
-      </ButtonRow>
+      <StudyLoopNextStepCard
+        visible={Boolean(session?.submission)}
+        currentRoute="/listening"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="listening.studyLoopNext"
+      />
     </AppScreen>
   );
 }

@@ -2,12 +2,14 @@ import { createContext, useContext, useEffect, useMemo, useState, type PropsWith
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../lib/storage";
 import { useAppSession } from "./app-session";
 
-export type StudyLoopSkill = "listening" | "reading" | "writing" | "speaking" | "mock_exam";
+export type StudyLoopSkill = "listening" | "reading" | "writing" | "speaking" | "mock_exam" | "diagnostic";
 export type StudyLoopSource =
   | "practice_submission"
   | "writing_evaluation"
+  | "writing_rewrite"
   | "speaking_session_end"
-  | "mock_exam_report";
+  | "mock_exam_report"
+  | "diagnostic_completion";
 
 export type StudyLoopActivity = {
   id: string;
@@ -21,6 +23,13 @@ export type StudyLoopActivity = {
   progressPending: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type StudyLoopRecommendation = {
+  title: string;
+  detail: string;
+  route: string;
+  actionLabel: string;
 };
 
 type StudyLoopSnapshot = {
@@ -78,9 +87,50 @@ export const formatStudyLoopSkillLabel = (skill: StudyLoopSkill): string => {
       return "口语";
     case "mock_exam":
       return "模考";
+    case "diagnostic":
+      return "诊断";
     default:
       return skill;
   }
+};
+
+export const buildStudyLoopRecommendation = (activities: StudyLoopActivity[]): StudyLoopRecommendation => {
+  const latestPlanPending = activities.find((item) => item.planPending);
+  if (latestPlanPending) {
+    return {
+      title: "先回看学习计划",
+      detail: `${formatStudyLoopSkillLabel(latestPlanPending.skill)}结果刚更新，先消化计划侧变化。`,
+      route: "/plan",
+      actionLabel: "前往学习计划"
+    };
+  }
+
+  const latestProgressPending = activities.find((item) => item.progressPending);
+  if (latestProgressPending) {
+    return {
+      title: "继续同步学习进度",
+      detail: `${formatStudyLoopSkillLabel(latestProgressPending.skill)}结果已产出，下一步核对进度统计。`,
+      route: "/progress",
+      actionLabel: "前往学习进度"
+    };
+  }
+
+  const latestActivity = activities[0];
+  if (latestActivity) {
+    return {
+      title: "继续最近训练",
+      detail: `最近完成了${formatStudyLoopSkillLabel(latestActivity.skill)}，可以回到原页面继续。`,
+      route: latestActivity.route,
+      actionLabel: "回到最近训练"
+    };
+  }
+
+  return {
+    title: "开始今天的学习主线",
+    detail: "先做首次诊断，或直接进入当前计划。",
+    route: "/diagnostic",
+    actionLabel: "进入首次诊断"
+  };
 };
 
 export const StudyLoopProvider = ({ children }: PropsWithChildren) => {

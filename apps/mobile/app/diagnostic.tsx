@@ -4,9 +4,12 @@ import { Text, View } from "react-native";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
+import { resolveLearningRouteForPlanTask, selectNextActionablePlanTask } from "../src/lib/learning-routes";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
+import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors } from "../src/ui/theme";
 
 const pickCurrentQuestion = (response: DiagnosticQuestionsResponse) =>
@@ -92,6 +95,7 @@ const toRequestErrorMessage = (error: unknown, fallback: string): string => {
 export default function DiagnosticScreen() {
   const params = useLocalSearchParams<{ assessmentId?: string | string[] }>();
   const { session, runWithAuthorizedClient } = useAppSession();
+  const { recordActivity } = useStudyLoop();
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
   const initialAssessmentId = Array.isArray(params.assessmentId) ? params.assessmentId[0] : params.assessmentId;
@@ -110,6 +114,11 @@ export default function DiagnosticScreen() {
   const [serverSyncDetail, setServerSyncDetail] = useState("-");
   const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
   const [lastFailedAction, setLastFailedAction] = useState<DiagnosticRetryAction | null>(null);
+  const [completionTaskAction, setCompletionTaskAction] = useState<{
+    route: string;
+    actionLabel: string;
+    taskTitle: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -133,6 +142,7 @@ export default function DiagnosticScreen() {
     setServerSyncDetail("-");
     setServerSyncAt(null);
     setLastFailedAction(null);
+    setCompletionTaskAction(null);
     setError(null);
   };
 
@@ -161,21 +171,31 @@ export default function DiagnosticScreen() {
     setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
   });
 
-  const loadQuestions = async (nextAssessmentId = assessmentId.trim()): Promise<void> => {
-    if (!nextAssessmentId) {
+  const resolveAssessmentId = (value = assessmentId): string | null => {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
       setError("请先填写 assessment_id");
+      return null;
+    }
+
+    return trimmedValue;
+  };
+
+  const loadQuestions = async (nextAssessmentId = assessmentId.trim()): Promise<void> => {
+    const resolvedAssessmentId = resolveAssessmentId(nextAssessmentId);
+    if (!resolvedAssessmentId) {
       return;
     }
 
     setLoading(true);
     try {
       setServerSyncStatus("正在拉取题目");
-      setServerSyncDetail(`assessment ${nextAssessmentId}`);
+      setServerSyncDetail(`assessment ${resolvedAssessmentId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.fetchDiagnosticQuestions(accessToken, nextAssessmentId)
+        apiClient.fetchDiagnosticQuestions(accessToken, resolvedAssessmentId)
       );
       const currentQuestion = pickCurrentQuestion(response);
-      setAssessmentId(nextAssessmentId);
+      setAssessmentId(resolvedAssessmentId);
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
       setQuestionId(currentQuestion?.question_id ?? "");
@@ -350,12 +370,17 @@ export default function DiagnosticScreen() {
   };
 
   const pause = async (): Promise<void> => {
+    const resolvedAssessmentId = resolveAssessmentId();
+    if (!resolvedAssessmentId) {
+      return;
+    }
+
     setLoading(true);
     try {
       setServerSyncStatus("正在暂停诊断");
-      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
+      setServerSyncDetail(`assessment ${resolvedAssessmentId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.pauseDiagnostic(accessToken, assessmentId.trim())
+        apiClient.pauseDiagnostic(accessToken, resolvedAssessmentId)
       );
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
@@ -371,18 +396,23 @@ export default function DiagnosticScreen() {
   };
 
   const resume = async (): Promise<void> => {
+    const resolvedAssessmentId = resolveAssessmentId();
+    if (!resolvedAssessmentId) {
+      return;
+    }
+
     setLoading(true);
     try {
       setServerSyncStatus("正在恢复诊断");
-      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
+      setServerSyncDetail(`assessment ${resolvedAssessmentId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.resumeDiagnostic(accessToken, assessmentId.trim())
+        apiClient.resumeDiagnostic(accessToken, resolvedAssessmentId)
       );
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
       markSyncSuccess("恢复状态已同步", `status ${response.status} / elapsed ${response.elapsed_seconds}s`);
       setError(null);
-      await loadQuestions(assessmentId.trim());
+      await loadQuestions(resolvedAssessmentId);
     } catch (resumeError) {
       const message = toRequestErrorMessage(resumeError, "恢复失败");
       markSyncFailure("resume", message);
@@ -393,12 +423,17 @@ export default function DiagnosticScreen() {
   };
 
   const complete = async (): Promise<void> => {
+    const resolvedAssessmentId = resolveAssessmentId();
+    if (!resolvedAssessmentId) {
+      return;
+    }
+
     setLoading(true);
     try {
       setServerSyncStatus("正在完成诊断");
-      setServerSyncDetail(`assessment ${assessmentId.trim()}`);
+      setServerSyncDetail(`assessment ${resolvedAssessmentId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.completeDiagnostic(accessToken, assessmentId.trim())
+        apiClient.completeDiagnostic(accessToken, resolvedAssessmentId)
       );
       setStatus(response.status);
       setElapsedSeconds(response.elapsed_seconds);
@@ -406,6 +441,39 @@ export default function DiagnosticScreen() {
       setSkillBandText(
         `L${response.skill_bands.listening}/S${response.skill_bands.speaking}/R${response.skill_bands.reading}/W${response.skill_bands.writing}`
       );
+      recordActivity({
+        dedupeKey: `diagnostic:${response.assessment_id}`,
+        skill: "diagnostic",
+        source: "diagnostic_completion",
+        title: "首次诊断已完成",
+        summary: `诊断生成计划 ${response.plan_id}，L${response.skill_bands.listening}/S${response.skill_bands.speaking}/R${response.skill_bands.reading}/W${response.skill_bands.writing}`,
+        route: "/plan",
+        planPending: true,
+        progressPending: false
+      });
+      const nextTaskAction = await runWithAuthorizedClient(async (apiClient, accessToken) => {
+        try {
+          const activePlan = await apiClient.fetchActivePlan(accessToken);
+          if (activePlan.plan_id !== response.plan_id) {
+            return null;
+          }
+
+          const nextTask = selectNextActionablePlanTask(activePlan);
+          const learningRoute = resolveLearningRouteForPlanTask(nextTask);
+          if (!nextTask || !learningRoute) {
+            return null;
+          }
+
+          return {
+            route: learningRoute.route,
+            actionLabel: learningRoute.actionLabel,
+            taskTitle: nextTask.title
+          };
+        } catch {
+          return null;
+        }
+      });
+      setCompletionTaskAction(nextTaskAction);
       markSyncSuccess(
         "诊断已完成",
         `plan ${response.plan_id} / bands L${response.skill_bands.listening}/S${response.skill_bands.speaking}/R${response.skill_bands.reading}/W${response.skill_bands.writing}`
@@ -557,10 +625,30 @@ export default function DiagnosticScreen() {
         </View>
       </InfoCard>
 
-      <ButtonRow>
-        <PrimaryButton label="查看计划" onPress={() => router.push("/plan")} />
-        <SecondaryButton label="去看进度" onPress={() => router.push("/progress")} />
-      </ButtonRow>
+      <StudyLoopNextStepCard
+        visible={Boolean(planId)}
+        currentRoute="/diagnostic"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="diagnostic.studyLoopNext"
+      />
+
+      {completionTaskAction ? (
+        <>
+          <ButtonRow>
+            <PrimaryButton
+              label={completionTaskAction.actionLabel}
+              onPress={() => router.push(completionTaskAction.route)}
+              testID="diagnostic.nextLearningAction"
+            />
+            <SecondaryButton label="去看进度" onPress={() => router.push("/progress")} />
+          </ButtonRow>
+
+          <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+            next_task: {completionTaskAction.taskTitle}
+          </Text>
+        </>
+      ) : null}
 
       <ButtonRow>
         <PrimaryButton label="返回首页" onPress={() => router.replace("/home")} />

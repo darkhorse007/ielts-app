@@ -1,6 +1,7 @@
 import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
 import { validateBandScore } from "../src/lib/validators";
 import { useAppSession } from "../src/state/app-session";
 import { InstanceConnectionCard } from "../src/ui/instance-connection-card";
@@ -10,6 +11,9 @@ import { colors, radii, spacing } from "../src/ui/theme";
 type WeakSkill = "listening" | "speaking" | "reading" | "writing";
 
 const weakSkillOptions: WeakSkill[] = ["listening", "speaking", "reading", "writing"];
+
+const pickCurrentQuestion = (response: DiagnosticQuestionsResponse) =>
+  response.questions[response.current_question_index] ?? response.questions[0] ?? null;
 
 const todayDate = (): string => {
   const now = new Date();
@@ -28,6 +32,11 @@ export default function OnboardingScreen() {
   const [statusMessage, setStatusMessage] = useState("未提交");
   const [assessmentId, setAssessmentId] = useState<string | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [diagnosticPreview, setDiagnosticPreview] = useState<{
+    questionId: string;
+    prompt: string;
+    progressText: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -68,6 +77,8 @@ export default function OnboardingScreen() {
 
   const submit = async (): Promise<void> => {
     setSubmitting(true);
+    setDiagnosticPreview(null);
+    setError(null);
     try {
       const { targetBandValue, weeklyHoursValue } = validate();
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
@@ -86,12 +97,42 @@ export default function OnboardingScreen() {
       setAssessmentId(response.assessment_id);
       setPlanId(response.plan_id);
       setStatusMessage(response.status);
+      let statusRefreshFailed = false;
 
-      const status = await runWithAuthorizedClient((apiClient, accessToken) =>
-        apiClient.fetchOnboardingStatus(accessToken, response.assessment_id)
-      );
-      setStatusMessage(status.status);
-      setError(null);
+      try {
+        const status = await runWithAuthorizedClient((apiClient, accessToken) =>
+          apiClient.fetchOnboardingStatus(accessToken, response.assessment_id)
+        );
+        setStatusMessage(status.status);
+      } catch (statusError) {
+        statusRefreshFailed = true;
+        // Submit already succeeded. Keep submit status and only surface a refresh warning.
+        setError(
+          `目标已提交，诊断状态刷新失败：${statusError instanceof Error ? statusError.message : "请稍后重试"}`
+        );
+      }
+
+      const firstQuestion = await runWithAuthorizedClient(async (apiClient, accessToken) => {
+        try {
+          const questions = await apiClient.fetchDiagnosticQuestions(accessToken, response.assessment_id);
+          const currentQuestion = pickCurrentQuestion(questions);
+          if (!currentQuestion) {
+            return null;
+          }
+
+          return {
+            questionId: currentQuestion.question_id,
+            prompt: currentQuestion.prompt,
+            progressText: `${questions.answered_count}/${questions.total_questions}`
+          };
+        } catch {
+          return null;
+        }
+      });
+      setDiagnosticPreview(firstQuestion);
+      if (!statusRefreshFailed) {
+        setError(null);
+      }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "提交失败");
       setStatusMessage("failed");
@@ -125,6 +166,7 @@ export default function OnboardingScreen() {
         value={targetExamDate}
         onChangeText={setTargetExamDate}
         placeholder="YYYY-MM-DD"
+        testID="onboarding.targetExamDate"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -165,7 +207,12 @@ export default function OnboardingScreen() {
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
 
       <ButtonRow>
-        <PrimaryButton label={submitting ? "提交中..." : "提交目标"} onPress={submit} disabled={submitting} />
+        <PrimaryButton
+          label={submitting ? "提交中..." : "提交目标"}
+          onPress={submit}
+          disabled={submitting}
+          testID="onboarding.submit"
+        />
         <SecondaryButton label="返回首页" onPress={() => router.replace("/home")} />
       </ButtonRow>
 
@@ -174,9 +221,18 @@ export default function OnboardingScreen() {
         <Text style={{ color: colors.textPrimary, fontSize: 15, fontWeight: "700" }}>status: {statusMessage}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>assessment_id: {assessmentId ?? "-"}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>plan_id: {planId ?? "-"}</Text>
+        {diagnosticPreview ? (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>first_question_id: {diagnosticPreview.questionId}</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>diagnostic_progress: {diagnosticPreview.progressText}</Text>
+            <Text style={{ color: colors.textPrimary, fontSize: 14, lineHeight: 20 }}>
+              first_question_prompt: {diagnosticPreview.prompt}
+            </Text>
+          </View>
+        ) : null}
         <ButtonRow>
           <PrimaryButton
-            label="继续做诊断"
+            label={diagnosticPreview ? "进入第一题" : "继续做诊断"}
             onPress={() =>
               router.push({
                 pathname: "/diagnostic",
@@ -184,6 +240,7 @@ export default function OnboardingScreen() {
               })
             }
             disabled={!assessmentId}
+            testID="onboarding.continueDiagnostic"
           />
           <SecondaryButton label="稍后再做" onPress={() => router.replace("/home")} />
         </ButtonRow>

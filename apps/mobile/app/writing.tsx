@@ -1,11 +1,13 @@
 import { Redirect, router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { WritingArchiveResponse, WritingEvaluationResponse, WritingTemplateListResponse } from "../src/lib/api-types";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type WritingTaskType = "task1" | "task2";
@@ -105,6 +107,64 @@ const formatDraftTime = (value: string): string =>
     hour12: false
   });
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type WritingRetryAction =
+  | "evaluate"
+  | "reload"
+  | "rewrite"
+  | "load_archives"
+  | "load_templates"
+  | "insert_template"
+  | "load_template_adoption";
+
+const formatWritingRetryActionLabel = (value: WritingRetryAction): string => {
+  switch (value) {
+    case "evaluate":
+      return "写作批改";
+    case "reload":
+      return "加载评估";
+    case "rewrite":
+      return "改写复评";
+    case "load_archives":
+      return "加载档案";
+    case "load_templates":
+      return "加载模板";
+    case "insert_template":
+      return "插入模板";
+    case "load_template_adoption":
+      return "加载采纳率";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function WritingScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
@@ -127,6 +187,9 @@ export default function WritingScreen() {
   const [draftStatus, setDraftStatus] = useState(defaultDraftStatus);
   const [draftReady, setDraftReady] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<WritingRetryAction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!authSession) {
@@ -135,6 +198,20 @@ export default function WritingScreen() {
 
   const selectedTemplate = templates.find((item) => item.template_id === selectedTemplateId) ?? null;
   const draftStorageKey = buildScopedStorageKey("writing", "draft", "v1", authSession.userId);
+
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setStatusMessage(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (action: WritingRetryAction, detail: string): void => {
+    setStatusMessage(`${formatWritingRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(action);
+  };
 
   const resetDraftState = (): void => {
     setTaskType(defaultTaskType);
@@ -151,6 +228,9 @@ export default function WritingScreen() {
     setTemplatePreservedOriginal(false);
     setTemplateAdoptionText("-");
     setStatusMessage("未开始");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setError(null);
   };
 
@@ -272,6 +352,8 @@ export default function WritingScreen() {
   const evaluate = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在提交写作批改");
+      setServerSyncDetail(`task_type ${taskType}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.evaluateWriting(accessToken, {
           task_type: taskType,
@@ -290,10 +372,15 @@ export default function WritingScreen() {
         summary: `写作批改 overall ${result.scores.overall}，TR${result.scores.tr}/CC${result.scores.cc}/LR${result.scores.lr}/GRA${result.scores.gra}`,
         route: "/writing"
       });
-      setStatusMessage(`写作批改完成，overall=${result.scores.overall}`);
+      markSyncSuccess(
+        `写作批改完成，overall=${result.scores.overall}`,
+        `evaluation ${result.evaluation_id} / overall ${result.scores.overall}`
+      );
       setError(null);
     } catch (evaluateError) {
-      setError(evaluateError instanceof Error ? evaluateError.message : "写作批改失败");
+      const message = toRequestErrorMessage(evaluateError, "写作批改失败");
+      markSyncFailure("evaluate", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -307,16 +394,23 @@ export default function WritingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在加载写作评估结果");
+      setServerSyncDetail(`evaluation ${evaluationId.trim()}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getWritingEvaluation(accessToken, evaluationId.trim())
       );
       setEvaluation(result);
       setTaskType(result.task_type);
       setPrompt(result.prompt);
-      setStatusMessage("已加载写作评估结果");
+      markSyncSuccess(
+        "已加载写作评估结果",
+        `evaluation ${result.evaluation_id} / overall ${result.scores.overall}`
+      );
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载评估结果失败");
+      const message = toRequestErrorMessage(loadError, "加载评估结果失败");
+      markSyncFailure("reload", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -330,6 +424,8 @@ export default function WritingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在执行改写复评");
+      setServerSyncDetail(`evaluation ${evaluationId.trim()}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.rewriteWriting(accessToken, evaluationId.trim(), {
           essay: rewriteEssay
@@ -340,10 +436,23 @@ export default function WritingScreen() {
       setPrompt(result.evaluation.prompt);
       setEvaluationId(result.evaluation.evaluation_id);
       setComparisonDelta(result.comparison.delta);
-      setStatusMessage("改写复评完成");
+      recordActivity({
+        dedupeKey: `writing-rewrite:${result.archive.archive_id}`,
+        skill: "writing",
+        source: "writing_rewrite",
+        title: "写作改写复评已完成",
+        summary: `写作改写 overall ${result.evaluation.scores.overall}，ΔOverall${result.comparison.delta.overall}`,
+        route: "/writing"
+      });
+      markSyncSuccess(
+        "改写复评完成",
+        `evaluation ${result.evaluation.evaluation_id} / delta ${result.comparison.delta.overall}`
+      );
       setError(null);
     } catch (rewriteError) {
-      setError(rewriteError instanceof Error ? rewriteError.message : "改写复评失败");
+      const message = toRequestErrorMessage(rewriteError, "改写复评失败");
+      markSyncFailure("rewrite", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -366,12 +475,16 @@ export default function WritingScreen() {
   const loadArchives = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在加载改写档案");
+      setServerSyncDetail("writing archives");
       const result = await runWithAuthorizedClient((apiClient, accessToken) => apiClient.getWritingArchives(accessToken));
       setArchives(result.items);
-      setStatusMessage("已加载改写档案");
+      markSyncSuccess("已加载改写档案", `archives ${result.items.length}`);
       setError(null);
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "加载改写档案失败");
+      const message = toRequestErrorMessage(archiveError, "加载改写档案失败");
+      markSyncFailure("load_archives", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -380,6 +493,8 @@ export default function WritingScreen() {
   const loadTemplates = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在加载写作模板库");
+      setServerSyncDetail(`task_type ${taskType}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getWritingTemplates(accessToken, {
           task_type: taskType
@@ -392,10 +507,12 @@ export default function WritingScreen() {
           setSelectedTemplateId(result.items[0].template_id);
         }
       }
-      setStatusMessage("已加载写作模板库");
+      markSyncSuccess("已加载写作模板库", `templates ${result.items.length} / task_type ${taskType}`);
       setError(null);
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : "加载模板失败");
+      const message = toRequestErrorMessage(templateError, "加载模板失败");
+      markSyncFailure("load_templates", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -409,6 +526,8 @@ export default function WritingScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在插入模板框架");
+      setServerSyncDetail(`template ${selectedTemplateId} / insertion_mode ${templateInsertionMode}`);
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.insertWritingTemplate(accessToken, selectedTemplateId, {
           essay,
@@ -417,10 +536,15 @@ export default function WritingScreen() {
       );
       setEssay(result.merged_essay);
       setTemplatePreservedOriginal(result.preserved_original);
-      setStatusMessage(`模板已插入：${result.template.title}`);
+      markSyncSuccess(
+        `模板已插入：${result.template.title}`,
+        `template ${result.template.template_id} / preserved ${result.preserved_original ? "yes" : "no"}`
+      );
       setError(null);
     } catch (insertError) {
-      setError(insertError instanceof Error ? insertError.message : "插入模板失败");
+      const message = toRequestErrorMessage(insertError, "插入模板失败");
+      markSyncFailure("insert_template", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -429,6 +553,8 @@ export default function WritingScreen() {
   const loadTemplateAdoption = async (): Promise<void> => {
     setLoading(true);
     try {
+      setStatusMessage("正在加载模板采纳率");
+      setServerSyncDetail("template adoption");
       const result = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getWritingTemplateAdoption(accessToken)
       );
@@ -438,12 +564,45 @@ export default function WritingScreen() {
           ? `total=${result.total_insertions}, top=${top.template_id}, rate=${top.adoption_rate}`
           : `total=${result.total_insertions}, top=-, rate=0`
       );
-      setStatusMessage("已加载模板采纳率");
+      markSyncSuccess(
+        "已加载模板采纳率",
+        `total_insertions ${result.total_insertions} / top ${top?.template_id ?? "-"}`
+      );
       setError(null);
     } catch (adoptionError) {
-      setError(adoptionError instanceof Error ? adoptionError.message : "加载模板采纳率失败");
+      const message = toRequestErrorMessage(adoptionError, "加载模板采纳率失败");
+      markSyncFailure("load_template_adoption", message);
+      setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction) {
+      case "evaluate":
+        await evaluate();
+        break;
+      case "reload":
+        await reload();
+        break;
+      case "rewrite":
+        await rewrite();
+        break;
+      case "load_archives":
+        await loadArchives();
+        break;
+      case "load_templates":
+        await loadTemplates();
+        break;
+      case "insert_template":
+        await insertTemplate();
+        break;
+      case "load_template_adoption":
+        await loadTemplateAdoption();
+        break;
+      default:
+        break;
     }
   };
 
@@ -489,6 +648,33 @@ export default function WritingScreen() {
           <SecondaryButton label="清空本地草稿" onPress={() => void clearLocalDraft()} disabled={loading || !draftReady} />
           <PrimaryButton label="加载批改结果" onPress={() => void reload()} disabled={loading || !evaluationId.trim()} />
         </ButtonRow>
+      </InfoCard>
+
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={statusMessage}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={lastFailedAction ? `待重试 ${formatWritingRetryActionLabel(lastFailedAction)}` : "链路已就绪"}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {statusMessage}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="writing.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <TextField
@@ -681,12 +867,15 @@ export default function WritingScreen() {
         ))}
       </InfoCard>
 
-      {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
+      <StudyLoopNextStepCard
+        visible={Boolean(evaluation || comparisonDelta)}
+        currentRoute="/writing"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="writing.studyLoopNext"
+      />
 
-      <ButtonRow>
-        <PrimaryButton label="查看学习进度" onPress={() => router.push("/progress")} />
-        <SecondaryButton label="返回首页" onPress={() => router.replace("/home")} />
-      </ButtonRow>
+      {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
     </AppScreen>
   );
 }

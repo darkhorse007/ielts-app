@@ -1,12 +1,14 @@
 import { Redirect, router } from "expo-router";
 import { Pressable, Share, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type MockSkill = "listening" | "speaking" | "reading" | "writing";
@@ -94,6 +96,70 @@ const formatErrors = (report: MockExamReportResponse | null): string =>
     ? `L${report.error_distribution.listening}/S${report.error_distribution.speaking}/R${report.error_distribution.reading}/W${report.error_distribution.writing}`
     : "-";
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type MockExamRetryAction =
+  | "create_exam"
+  | "load_exam"
+  | "save_progress"
+  | "submit_skill"
+  | "recover_exam"
+  | "submit_exam"
+  | "load_report"
+  | "undo_writeback"
+  | "export_report";
+
+const formatMockExamRetryActionLabel = (value: MockExamRetryAction): string => {
+  switch (value) {
+    case "create_exam":
+      return "创建模考";
+    case "load_exam":
+      return "拉取模考";
+    case "save_progress":
+      return "保存进度";
+    case "submit_skill":
+      return "提交科目";
+    case "recover_exam":
+      return "恢复模考";
+    case "submit_exam":
+      return "提交整场";
+    case "load_report":
+      return "加载报告";
+    case "undo_writeback":
+      return "撤销回写";
+    case "export_report":
+      return "导出报告";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function MockExamScreen() {
   const { session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
@@ -112,6 +178,9 @@ export default function MockExamScreen() {
   const [checkpointStatus, setCheckpointStatus] = useState("本地中间态未恢复");
   const [checkpointReady, setCheckpointReady] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<MockExamRetryAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportPreview, setExportPreview] = useState("-");
   const [exportFilename, setExportFilename] = useState("-");
@@ -136,6 +205,20 @@ export default function MockExamScreen() {
     });
   };
 
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setStatusMessage(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (action: MockExamRetryAction, detail: string): void => {
+    setStatusMessage(`${formatMockExamRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(action);
+  };
+
   const resetSnapshotState = (): void => {
     setExam(null);
     setReport(null);
@@ -147,6 +230,9 @@ export default function MockExamScreen() {
     setReadingBand(defaultReadingBand);
     setWritingBand(defaultWritingBand);
     setStatusMessage("未开始");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setError(null);
     setExportPreview("-");
     setExportFilename("-");
@@ -281,29 +367,36 @@ export default function MockExamScreen() {
       updated_at: new Date().toISOString()
     };
 
-    setExam(optimisticExam);
-    setReport(null);
-    setExportPreview("-");
-    setExportFilename("-");
-    setStatusMessage(`模考创建成功，当前科目=${optimisticExam.current_skill}`);
-    setError(null);
-
-    const createPromise = runWithAuthorizedClient((apiClient, accessToken) =>
-      apiClient.createMockExam(accessToken, {
-        time_limit_seconds: asNumber(timeLimitSeconds, 7200)
-      })
-    );
-
-    void createPromise
-      .then((response) => {
-        setExam(response);
-        setStatusMessage(`模考创建成功，当前科目=${response.current_skill}`);
-      })
-      .catch((createError) => {
-        setExam(null);
-        setStatusMessage("未开始");
-        setError(createError instanceof Error ? createError.message : "创建模考失败");
-      });
+    setLoading(true);
+    try {
+      setExam(optimisticExam);
+      setReport(null);
+      setExportPreview("-");
+      setExportFilename("-");
+      setStatusMessage("正在创建模考");
+      setServerSyncDetail(`time_limit_seconds ${optimisticExam.time_limit_seconds}`);
+      const response = await runWithAuthorizedClient((apiClient, accessToken) =>
+        apiClient.createMockExam(accessToken, {
+          time_limit_seconds: asNumber(timeLimitSeconds, 7200)
+        })
+      );
+      setExam(response);
+      markSyncSuccess(
+        `模考创建成功，当前科目=${response.current_skill}`,
+        `exam ${response.exam_id} / time_limit_seconds ${response.time_limit_seconds}`
+      );
+      setError(null);
+    } catch (createError) {
+      const message = toRequestErrorMessage(createError, "创建模考失败");
+      setExam(null);
+      setReport(null);
+      setExportPreview("-");
+      setExportFilename("-");
+      markSyncFailure("create_exam", message);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadExam = async (): Promise<void> => {
@@ -314,14 +407,21 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在拉取模考");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getMockExam(accessToken, exam.exam_id)
       );
       setExam(response);
-      setStatusMessage(`模考状态=${response.status}，剩余=${response.remaining_seconds}s`);
+      markSyncSuccess(
+        `模考状态=${response.status}，剩余=${response.remaining_seconds}s`,
+        `exam ${response.exam_id} / status ${response.status} / remaining ${response.remaining_seconds}s`
+      );
       setError(null);
     } catch (examError) {
-      setError(examError instanceof Error ? examError.message : "加载模考失败");
+      const message = toRequestErrorMessage(examError, "加载模考失败");
+      markSyncFailure("load_exam", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -335,6 +435,8 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage(completed ? `正在提交 ${skill} 科目` : `正在保存 ${skill} 进度`);
+      setServerSyncDetail(`exam ${exam.exam_id} / skill ${skill} / answered_count ${answeredCount}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.saveMockExamProgress(accessToken, exam.exam_id, {
           skill,
@@ -343,10 +445,15 @@ export default function MockExamScreen() {
         })
       );
       setExam(response);
-      setStatusMessage(completed ? `已提交 ${skill} 科目` : `已保存 ${skill} 进度`);
+      markSyncSuccess(
+        completed ? `已提交 ${skill} 科目` : `已保存 ${skill} 进度`,
+        `exam ${response.exam_id} / skill ${skill} / status ${response.status}`
+      );
       setError(null);
     } catch (progressError) {
-      setError(progressError instanceof Error ? progressError.message : "保存进度失败");
+      const message = toRequestErrorMessage(progressError, completed ? "提交科目失败" : "保存进度失败");
+      markSyncFailure(completed ? "submit_skill" : "save_progress", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -360,14 +467,21 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在恢复模考");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.recoverMockExam(accessToken, exam.exam_id)
       );
       setExam(response);
-      setStatusMessage(response.recovered ? "模考恢复成功" : "模考无需恢复");
+      markSyncSuccess(
+        response.recovered ? "模考恢复成功" : "模考无需恢复",
+        `exam ${response.exam_id} / recovered ${response.recovered ? "yes" : "no"}`
+      );
       setError(null);
     } catch (recoverError) {
-      setError(recoverError instanceof Error ? recoverError.message : "恢复模考失败");
+      const message = toRequestErrorMessage(recoverError, "恢复模考失败");
+      markSyncFailure("recover_exam", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -381,6 +495,8 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在提交整场模考");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.submitMockExam(accessToken, exam.exam_id, {
           skill_bands: {
@@ -394,10 +510,15 @@ export default function MockExamScreen() {
       setExam(response.exam);
       setReport(response.report);
       syncReportToStudyLoop(response.report, "submit");
-      setStatusMessage(`模考提交完成，overall=${response.report.total_estimated_band}`);
+      markSyncSuccess(
+        `模考提交完成，overall=${response.report.total_estimated_band}`,
+        `exam ${response.exam.exam_id} / report ${response.report.report_id} / overall ${response.report.total_estimated_band}`
+      );
       setError(null);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "提交模考失败");
+      const message = toRequestErrorMessage(submitError, "提交模考失败");
+      markSyncFailure("submit_exam", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -411,15 +532,22 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在加载模考报告");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getMockExamReport(accessToken, exam.exam_id)
       );
       setReport(response);
       syncReportToStudyLoop(response, "load");
-      setStatusMessage("已加载模考报告");
+      markSyncSuccess(
+        "已加载模考报告",
+        `report ${response.report_id} / overall ${response.total_estimated_band}`
+      );
       setError(null);
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "加载报告失败");
+      const message = toRequestErrorMessage(reportError, "加载报告失败");
+      markSyncFailure("load_report", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -433,14 +561,21 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在撤销计划回写");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.undoMockExamWriteback(accessToken, exam.exam_id)
       );
       setReport(response);
-      setStatusMessage("已撤销计划回写");
+      markSyncSuccess(
+        "已撤销计划回写",
+        `report ${response.report_id} / undo_available ${response.plan_writeback?.undo_available ? "yes" : "no"}`
+      );
       setError(null);
     } catch (undoError) {
-      setError(undoError instanceof Error ? undoError.message : "撤销计划回写失败");
+      const message = toRequestErrorMessage(undoError, "撤销计划回写失败");
+      markSyncFailure("undo_writeback", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -454,6 +589,8 @@ export default function MockExamScreen() {
 
     setLoading(true);
     try {
+      setStatusMessage("正在导出模考报告");
+      setServerSyncDetail(`exam ${exam.exam_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.exportMockExamReport(accessToken, exam.exam_id)
       );
@@ -463,10 +600,15 @@ export default function MockExamScreen() {
         title: response.filename,
         message: response.content
       });
-      setStatusMessage(`已导出并分享报告 ${response.filename}`);
+      markSyncSuccess(
+        `已导出并分享报告 ${response.filename}`,
+        `filename ${response.filename} / content_length ${response.content.length}`
+      );
       setError(null);
     } catch (exportError) {
-      setError(exportError instanceof Error ? exportError.message : "导出报告失败");
+      const message = toRequestErrorMessage(exportError, "导出报告失败");
+      markSyncFailure("export_report", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -484,6 +626,40 @@ export default function MockExamScreen() {
     setCheckpointReady(true);
     setCheckpointStatus("本地中间态已清空");
     setStatusMessage("已清空本地模考中间态");
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction) {
+      case "create_exam":
+        await createExam();
+        break;
+      case "load_exam":
+        await loadExam();
+        break;
+      case "save_progress":
+        await saveProgress(false);
+        break;
+      case "submit_skill":
+        await saveProgress(true);
+        break;
+      case "recover_exam":
+        await recoverExam();
+        break;
+      case "submit_exam":
+        await submitExam();
+        break;
+      case "load_report":
+        await loadReport();
+        break;
+      case "undo_writeback":
+        await undoWriteback();
+        break;
+      case "export_report":
+        await exportReport();
+        break;
+      default:
+        break;
+    }
   };
 
   useAppForegroundEffect(
@@ -554,6 +730,33 @@ export default function MockExamScreen() {
           <PrimaryButton label="返回首页" onPress={() => router.replace("/home")} testID="mockExam.backHome" />
           <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} />
         </ButtonRow>
+      </InfoCard>
+
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={statusMessage}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={lastFailedAction ? `待重试 ${formatMockExamRetryActionLabel(lastFailedAction)}` : "链路已就绪"}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {statusMessage}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="mockExam.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
       </InfoCard>
 
       <InfoCard>
@@ -703,6 +906,14 @@ export default function MockExamScreen() {
         <Text style={{ color: colors.textPrimary, fontSize: 14 }}>filename: {exportFilename}</Text>
         <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>preview: {exportPreview}</Text>
       </InfoCard>
+
+      <StudyLoopNextStepCard
+        visible={Boolean(report)}
+        currentRoute="/mock-exam"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="mockExam.studyLoopNext"
+      />
 
       {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
     </AppScreen>

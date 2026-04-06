@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AppState, Pressable, Text, View } from "react-native";
+import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { openAppSettingsAsync } from "../src/lib/native-settings";
@@ -9,6 +10,7 @@ import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson 
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
 import { AppScreen, ButtonRow, InfoCard, PrimaryButton, SecondaryButton, StatusPill, TextField } from "../src/ui/primitives";
+import { StudyLoopNextStepCard } from "../src/ui/study-loop-next-step-card";
 import { colors, radii, spacing } from "../src/ui/theme";
 
 type SpeakingTaskType = "core_training" | "role_play";
@@ -219,6 +221,81 @@ const formatCheckpointTime = (value: string): string =>
     hour12: false
   });
 
+const formatIsoDateTime = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false
+  });
+};
+
+type SpeakingRetryAction =
+  | "create_session"
+  | "load_role_play_scenarios"
+  | "load_session_status"
+  | "connect_session"
+  | "switch_part"
+  | "end_session"
+  | "create_retry_session"
+  | "load_comparison"
+  | "load_events"
+  | "load_pronunciation_feedback"
+  | "track_pronunciation_task";
+
+type LastFailedSpeakingAction = {
+  action: SpeakingRetryAction;
+  switchPartTarget?: 1 | 2 | 3;
+};
+
+const formatSpeakingRetryActionLabel = (value: SpeakingRetryAction): string => {
+  switch (value) {
+    case "create_session":
+      return "创建会话";
+    case "load_role_play_scenarios":
+      return "拉取场景";
+    case "load_session_status":
+      return "拉取状态";
+    case "connect_session":
+      return "连接会话";
+    case "switch_part":
+      return "切换 Part";
+    case "end_session":
+      return "结束会话";
+    case "create_retry_session":
+      return "同题再答";
+    case "load_comparison":
+      return "拉取对比";
+    case "load_events":
+      return "拉取日志";
+    case "load_pronunciation_feedback":
+      return "拉取发音反馈";
+    case "track_pronunciation_task":
+      return "追踪纠音任务";
+    default:
+      return value;
+  }
+};
+
+const toRequestErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiNetworkError) {
+    return error.message;
+  }
+
+  if (error instanceof ApiRequestError) {
+    const requestLine = error.method && error.url ? ` (${error.method} ${error.url})` : "";
+    return `${error.message}${requestLine}`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+};
+
 export default function SpeakingScreen() {
   const { instanceConfig, session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
@@ -253,11 +330,37 @@ export default function SpeakingScreen() {
   const [microphoneSettingsRequired, setMicrophoneSettingsRequired] = useState(false);
   const [requestingMicrophonePermission, setRequestingMicrophonePermission] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [serverSyncDetail, setServerSyncDetail] = useState("-");
+  const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<LastFailedSpeakingAction | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const snapshotStorageKey = authSession
     ? buildScopedStorageKey("speaking", "draft", "v1", authSession.userId)
     : null;
+
+  const markSyncSuccess = (statusText: string, detail: string): void => {
+    setStatusMessage(statusText);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+  };
+
+  const markSyncFailure = (
+    action: SpeakingRetryAction,
+    detail: string,
+    options?: {
+      switchPartTarget?: 1 | 2 | 3;
+    }
+  ): void => {
+    setStatusMessage(`${formatSpeakingRetryActionLabel(action)}失败`);
+    setServerSyncDetail(detail);
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction({
+      action,
+      switchPartTarget: action === "switch_part" ? options?.switchPartTarget : undefined
+    });
+  };
 
   const closeSocket = (): void => {
     const existing = socketRef.current;
@@ -281,6 +384,9 @@ export default function SpeakingScreen() {
     setScenarioItems([]);
     setConnectionStatus("未连接");
     setStatusMessage("未开始");
+    setServerSyncDetail("-");
+    setServerSyncAt(null);
+    setLastFailedAction(null);
     setCurrentPart(1);
     setSuggestions([]);
     setLatencyMs(0);
@@ -617,6 +723,8 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在创建口语会话");
+      setServerSyncDetail(`task_type ${taskType} / scenario_type ${taskType === "role_play" ? scenarioType : "-"}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.createSpeakingSession(accessToken, {
           topic,
@@ -629,10 +737,15 @@ export default function SpeakingScreen() {
       setResumeToken(response.resume_token ?? "");
       resetLiveFeedback();
       setTranscript("");
-      setStatusMessage("已创建实时口语会话");
+      markSyncSuccess(
+        "已创建实时口语会话",
+        `session ${response.session_id} / task_type ${response.task_type} / current_part ${response.current_part ?? 1}`
+      );
       setError(null);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建口语会话失败");
+      const message = toRequestErrorMessage(createError, "创建口语会话失败");
+      markSyncFailure("create_session", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -642,6 +755,8 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在拉取角色场景");
+      setServerSyncDetail("role_play scenarios");
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getSpeakingRolePlayScenarios(accessToken)
       );
@@ -652,10 +767,12 @@ export default function SpeakingScreen() {
           setScenarioType(response.items[0].scenario_type);
         }
       }
-      setStatusMessage("已拉取角色场景");
+      markSyncSuccess("已拉取角色场景", `scenario_count ${response.items.length}`);
       setError(null);
     } catch (scenarioError) {
-      setError(scenarioError instanceof Error ? scenarioError.message : "拉取角色场景失败");
+      const message = toRequestErrorMessage(scenarioError, "拉取角色场景失败");
+      markSyncFailure("load_role_play_scenarios", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -689,11 +806,16 @@ export default function SpeakingScreen() {
       if (response.resume_token) {
         setResumeToken(response.resume_token);
       }
-      setStatusMessage(options?.restoreForeground ? "前台恢复后已同步口语会话状态" : "已拉取服务端会话状态");
+      markSyncSuccess(
+        options?.restoreForeground ? "前台恢复后已同步口语会话状态" : "已拉取服务端会话状态",
+        `session ${response.session_id} / status ${response.status} / current_part ${response.current_part ?? currentPart}`
+      );
       setError(null);
       return response;
     } catch (sessionError) {
-      setError(sessionError instanceof Error ? sessionError.message : "拉取会话状态失败");
+      const message = toRequestErrorMessage(sessionError, "拉取会话状态失败");
+      markSyncFailure("load_session_status", message);
+      setError(message);
       return null;
     } finally {
       if (!options?.skipLoading) {
@@ -724,6 +846,8 @@ export default function SpeakingScreen() {
 
     closeSocket();
     setConnectionStatus("连接中");
+    setStatusMessage("正在连接实时会话");
+    setServerSyncDetail(`session ${sessionState.session_id}`);
 
     try {
       const query = new URLSearchParams({
@@ -740,7 +864,7 @@ export default function SpeakingScreen() {
         }
         shouldReconnectRef.current = true;
         setConnectionStatus("已连接");
-        setStatusMessage("实时连接已建立");
+        markSyncSuccess("实时连接已建立", `session ${sessionState.session_id} / websocket connected`);
       };
 
       ws.onmessage = (event) => {
@@ -763,7 +887,10 @@ export default function SpeakingScreen() {
         if ((payload.type === "session_start" || payload.type === "session_resume") && payload.current_part) {
           setCurrentPart(payload.current_part);
           setConnectionStatus("已连接");
-          setStatusMessage(payload.type === "session_resume" ? "会话已恢复" : "会话已开始");
+          markSyncSuccess(
+            payload.type === "session_resume" ? "会话已恢复" : "会话已开始",
+            `session ${sessionState.session_id} / current_part ${payload.current_part}`
+          );
           return;
         }
 
@@ -810,14 +937,17 @@ export default function SpeakingScreen() {
 
         if (payload.type === "session_timeout") {
           setConnectionStatus("已断开");
-          setStatusMessage("会话因心跳超时断开");
+          markSyncFailure("connect_session", "会话因心跳超时断开");
           return;
         }
 
         if (payload.type === "session_end") {
           shouldReconnectRef.current = false;
           setConnectionStatus("已结束");
-          setStatusMessage("会话结束");
+          markSyncSuccess(
+            "会话结束",
+            `session ${sessionState.session_id ?? "-"} / turns ${payload.summary?.turns ?? sessionState?.summary?.turns ?? sessionState?.turns ?? 0}`
+          );
           setScoreText(formatScoreSummary(payload.summary));
           setSessionState((current) =>
             current
@@ -847,7 +977,9 @@ export default function SpeakingScreen() {
         }
 
         if (payload.type === "error") {
-          setError(payload.message ?? "实时会话返回错误");
+          const message = payload.message ?? "实时会话返回错误";
+          markSyncFailure("connect_session", message);
+          setError(message);
         }
       };
 
@@ -855,6 +987,7 @@ export default function SpeakingScreen() {
         if (socketRef.current !== ws) {
           return;
         }
+        markSyncFailure("connect_session", "实时连接异常");
         setError("实时连接异常");
       };
 
@@ -868,7 +1001,9 @@ export default function SpeakingScreen() {
     } catch (connectError) {
       shouldReconnectRef.current = false;
       setConnectionStatus("未连接");
-      setError(connectError instanceof Error ? connectError.message : "连接实时会话失败");
+      const message = toRequestErrorMessage(connectError, "连接实时会话失败");
+      markSyncFailure("connect_session", message);
+      setError(message);
     }
   };
 
@@ -902,10 +1037,14 @@ export default function SpeakingScreen() {
             }
           : current
       );
-      setStatusMessage(`已切换到 Part ${partNo}`);
+      markSyncSuccess(`已切换到 Part ${partNo}`, `session ${sessionState.session_id} / current_part ${partNo}`);
       setError(null);
     } catch (partError) {
-      setError(partError instanceof Error ? partError.message : "切换 Part 失败");
+      const message = toRequestErrorMessage(partError, "切换 Part 失败");
+      markSyncFailure("switch_part", message, {
+        switchPartTarget: partNo
+      });
+      setError(message);
     }
   };
 
@@ -953,6 +1092,7 @@ export default function SpeakingScreen() {
         })
       );
       setStatusMessage("正在结束会话");
+      setServerSyncDetail(`session ${sessionState?.session_id ?? "-"}`);
       setError(null);
       return;
     }
@@ -966,6 +1106,7 @@ export default function SpeakingScreen() {
     shouldReconnectRef.current = false;
 
     try {
+      setServerSyncDetail(`session ${sessionState.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.endSpeakingSession(accessToken, sessionState.session_id)
       );
@@ -984,10 +1125,15 @@ export default function SpeakingScreen() {
         resume_until: sessionState.resume_until
       });
       setConnectionStatus("已结束");
-      setStatusMessage("会话结束");
+      markSyncSuccess(
+        "会话结束",
+        `session ${response.session_id} / turns ${response.summary?.turns ?? response.turns ?? 0}`
+      );
       setError(null);
     } catch (endError) {
-      setError(endError instanceof Error ? endError.message : "结束会话失败");
+      const message = toRequestErrorMessage(endError, "结束会话失败");
+      markSyncFailure("end_session", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1004,6 +1150,8 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在创建同题再答会话");
+      setServerSyncDetail(`session ${sessionState.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.createSpeakingRetrySession(accessToken, sessionState.session_id)
       );
@@ -1011,10 +1159,15 @@ export default function SpeakingScreen() {
       setResumeToken(response.resume_token ?? "");
       resetLiveFeedback();
       setTranscript("");
-      setStatusMessage("已创建同题再答会话");
+      markSyncSuccess(
+        "已创建同题再答会话",
+        `session ${response.session_id} / source_session_id ${response.source_session_id ?? sessionState.session_id}`
+      );
       setError(null);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "创建同题再答失败");
+      const message = toRequestErrorMessage(retryError, "创建同题再答失败");
+      markSyncFailure("create_retry_session", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1029,16 +1182,20 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在拉取前后对比");
+      setServerSyncDetail(`session ${sessionState.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getSpeakingComparison(accessToken, sessionState.session_id)
       );
       setComparisonText(
         `ΔF${response.delta.fluency} ΔL${response.delta.lexical} ΔG${response.delta.grammar} ΔP${response.delta.pronunciation}`
       );
-      setStatusMessage("已拉取前后对比");
+      markSyncSuccess("已拉取前后对比", comparisonText === "-" ? "comparison loaded" : comparisonText);
       setError(null);
     } catch (compareError) {
-      setError(compareError instanceof Error ? compareError.message : "拉取前后对比失败");
+      const message = toRequestErrorMessage(compareError, "拉取前后对比失败");
+      markSyncFailure("load_comparison", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1053,15 +1210,19 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在拉取会话日志");
+      setServerSyncDetail(`session ${sessionState.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getSpeakingSessionEvents(accessToken, sessionState.session_id)
       );
       setTraceCount(response.items.length);
       setRecentEvents(response.items.slice(-8).map((item) => item.type));
-      setStatusMessage("已拉取会话日志");
+      markSyncSuccess("已拉取会话日志", `event_count ${response.items.length}`);
       setError(null);
     } catch (eventsError) {
-      setError(eventsError instanceof Error ? eventsError.message : "拉取会话日志失败");
+      const message = toRequestErrorMessage(eventsError, "拉取会话日志失败");
+      markSyncFailure("load_events", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1076,6 +1237,8 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在拉取发音热力图反馈");
+      setServerSyncDetail(`session ${sessionState.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getSpeakingPronunciationFeedback(accessToken, sessionState.session_id)
       );
@@ -1096,10 +1259,15 @@ export default function SpeakingScreen() {
           linkedTurnNos: item.linked_turn_nos
         }))
       );
-      setStatusMessage("已拉取发音热力图反馈");
+      markSyncSuccess(
+        "已拉取发音热力图反馈",
+        `tasks ${response.tasks.length} / replay_segments ${response.turns.reduce((sum, turn) => sum + turn.replay_segments.length, 0)}`
+      );
       setError(null);
     } catch (feedbackError) {
-      setError(feedbackError instanceof Error ? feedbackError.message : "拉取发音反馈失败");
+      const message = toRequestErrorMessage(feedbackError, "拉取发音反馈失败");
+      markSyncFailure("load_pronunciation_feedback", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1120,6 +1288,8 @@ export default function SpeakingScreen() {
     setLoading(true);
 
     try {
+      setStatusMessage("正在追踪纠音任务");
+      setServerSyncDetail(`session ${sessionState.session_id} / task ${firstTask.taskId}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.trackSpeakingPronunciationTask(accessToken, sessionState.session_id, firstTask.taskId, "done")
       );
@@ -1127,10 +1297,12 @@ export default function SpeakingScreen() {
         current.map((item) => (item.taskId === response.task_id ? { ...item, status: response.status } : item))
       );
       setTrackedTaskText(`${response.task_id}:${response.status}`);
-      setStatusMessage("已标记首个纠音任务完成");
+      markSyncSuccess("已标记首个纠音任务完成", `task ${response.task_id}:${response.status}`);
       setError(null);
     } catch (trackError) {
-      setError(trackError instanceof Error ? trackError.message : "追踪纠音任务失败");
+      const message = toRequestErrorMessage(trackError, "追踪纠音任务失败");
+      markSyncFailure("track_pronunciation_task", message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -1153,6 +1325,46 @@ export default function SpeakingScreen() {
     setCheckpointReady(true);
     setCheckpointStatus("本地会话已清空");
     setStatusMessage("已清空本地口语会话");
+  };
+
+  const retryLastFailedAction = async (): Promise<void> => {
+    switch (lastFailedAction?.action) {
+      case "create_session":
+        await createSession();
+        break;
+      case "load_role_play_scenarios":
+        await loadRolePlayScenarios();
+        break;
+      case "load_session_status":
+        await loadSessionStatus();
+        break;
+      case "connect_session":
+        await connect();
+        break;
+      case "switch_part":
+        await switchPart(lastFailedAction.switchPartTarget ?? currentPart);
+        break;
+      case "end_session":
+        await endSession();
+        break;
+      case "create_retry_session":
+        await createRetrySession();
+        break;
+      case "load_comparison":
+        await loadComparison();
+        break;
+      case "load_events":
+        await loadEvents();
+        break;
+      case "load_pronunciation_feedback":
+        await loadPronunciationFeedback();
+        break;
+      case "track_pronunciation_task":
+        await trackFirstPronunciationTask();
+        break;
+      default:
+        break;
+    }
   };
 
   useAppForegroundEffect(
@@ -1351,6 +1563,35 @@ export default function SpeakingScreen() {
         </ButtonRow>
       </InfoCard>
 
+      <InfoCard tone={lastFailedAction ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>服务端同步</Text>
+        <ButtonRow>
+          <StatusPill
+            label={statusMessage}
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+          <StatusPill
+            label={
+              lastFailedAction ? `待重试 ${formatSpeakingRetryActionLabel(lastFailedAction.action)}` : "链路已就绪"
+            }
+            tone={lastFailedAction ? "accent" : serverSyncAt ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>server_sync_status: {statusMessage}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>server_sync_at: {formatIsoDateTime(serverSyncAt)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>server_sync_result: {serverSyncDetail}</Text>
+        {lastFailedAction ? (
+          <ButtonRow>
+            <PrimaryButton
+              label="重试上次失败操作"
+              onPress={() => void retryLastFailedAction()}
+              disabled={loading}
+              testID="speaking.retryLastFailedAction"
+            />
+          </ButtonRow>
+        ) : null}
+      </InfoCard>
+
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>Part 控制</Text>
         <ButtonRow>
@@ -1449,12 +1690,15 @@ export default function SpeakingScreen() {
         </Text>
       </InfoCard>
 
-      {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
+      <StudyLoopNextStepCard
+        visible={sessionState?.status === "ended"}
+        currentRoute="/speaking"
+        secondaryRoute="/home"
+        secondaryLabel="返回首页"
+        testIDPrefix="speaking.studyLoopNext"
+      />
 
-      <ButtonRow>
-        <PrimaryButton label="返回首页" onPress={() => router.replace("/home")} />
-        <SecondaryButton label="查看学习进度" onPress={() => router.push("/progress")} />
-      </ButtonRow>
+      {error ? <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20 }}>{error}</Text> : null}
     </AppScreen>
   );
 }
