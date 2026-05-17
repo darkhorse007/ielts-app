@@ -700,6 +700,12 @@ describe("S4 reading/speaking/writing pages", () => {
         }
       ]
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 60,
+      field_completeness_percent: 100
+    });
 
     render(
       <WritingEvaluationPage
@@ -710,7 +716,8 @@ describe("S4 reading/speaking/writing pages", () => {
           getWritingArchives,
           getWritingTemplates,
           insertWritingTemplate,
-          getWritingTemplateAdoption
+          getWritingTemplateAdoption,
+          analyticsBatch
         }}
         tokenStorage={tokenStorage}
       />
@@ -739,6 +746,20 @@ describe("S4 reading/speaking/writing pages", () => {
       expect(evaluateWriting).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/overall: 6/)).toBeInTheDocument();
       expect(screen.getByText(/suggestion_count: 3/)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              skill: "writing",
+              event_type: "writing_evaluated"
+            })
+          ]
+        })
+      );
     });
     expect(loadProgressFollowUp("u-1")).toMatchObject({
       title: "继续写作训练",

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import type { PracticeSessionResponse } from "../lib/api-types";
 import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
@@ -8,7 +9,8 @@ type ListeningPracticePageProps = {
   apiClient: Pick<
     ApiClient,
     "createPracticeSession" | "submitPracticeSession" | "getPlaybackState" | "updatePlaybackState" | "addRetryQueue"
-  >;
+  > &
+    Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -83,6 +85,19 @@ export const ListeningPracticePage = ({ apiClient, tokenStorage }: ListeningPrac
       );
       setSession(submitted);
       persistFollowUp();
+      void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+        eventType: "practice_submitted",
+        skill: "listening",
+        createdAt: submitted.submission?.submitted_at,
+        metadata: {
+          sessionId: submitted.session_id,
+          taskType: submitted.task_type,
+          questionCount: submitted.questions.length,
+          correctCount: submitted.submission?.score_breakdown.correct_count ?? 0,
+          totalQuestions: submitted.submission?.score_breakdown.total_questions ?? 0,
+          accuracy: submitted.submission?.score_breakdown.accuracy ?? 0
+        }
+      });
       setStatus(
         `提交完成，正确 ${submitted.submission?.score_breakdown.correct_count ?? 0}/${submitted.submission?.score_breakdown.total_questions ?? 0}`
       );

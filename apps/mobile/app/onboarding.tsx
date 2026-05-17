@@ -1,6 +1,7 @@
 import { Redirect, router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { trackMobileAnalyticsEvent } from "../src/lib/analytics";
 import type { DiagnosticQuestionsResponse } from "../src/lib/api-types";
 import { validateBandScore } from "../src/lib/validators";
 import { useAppSession } from "../src/state/app-session";
@@ -97,6 +98,17 @@ export default function OnboardingScreen() {
       setAssessmentId(response.assessment_id);
       setPlanId(response.plan_id);
       setStatusMessage(response.status);
+      void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+        eventType: "onboarding_submitted",
+        metadata: {
+          assessmentId: response.assessment_id,
+          planId: response.plan_id,
+          targetOverallBand: targetBandValue,
+          targetExamDate,
+          weeklyStudyHours: weeklyHoursValue,
+          weakSkills
+        }
+      });
       let statusRefreshFailed = false;
 
       try {

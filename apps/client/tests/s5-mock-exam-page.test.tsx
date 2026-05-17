@@ -140,6 +140,12 @@ describe("S5 mock exam page", () => {
       filename: "report.txt",
       content: "mock report content"
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 80,
+      field_completeness_percent: 100
+    });
 
     render(
       <MockExamPage
@@ -151,7 +157,8 @@ describe("S5 mock exam page", () => {
           submitMockExam,
           getMockExamReport,
           undoMockExamWriteback,
-          exportMockExamReport
+          exportMockExamReport,
+          analyticsBatch
         }}
         tokenStorage={tokenStorage}
       />
@@ -181,6 +188,19 @@ describe("S5 mock exam page", () => {
     fireEvent.click(screen.getByRole("button", { name: "提交整场模考" }));
     await waitFor(() => {
       expect(submitMockExam).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              event_type: "mock_exam_submitted"
+            })
+          ]
+        })
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: "加载复盘报告" }));

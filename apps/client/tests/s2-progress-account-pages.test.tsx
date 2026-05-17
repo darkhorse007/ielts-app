@@ -382,6 +382,12 @@ describe("S2 progress/account pages", () => {
       deep_link: "/plan?from=reminder&task_id=t-99",
       clicked_at: new Date().toISOString()
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 100,
+      field_completeness_percent: 100
+    });
 
     render(
       <AccountPage
@@ -392,7 +398,8 @@ describe("S2 progress/account pages", () => {
           getReminderPreference,
           updateReminderPreference,
           getReminderRecommendation,
-          clickReminder
+          clickReminder,
+          analyticsBatch
         }}
         tokenStorage={tokenStorage}
       />
@@ -407,6 +414,19 @@ describe("S2 progress/account pages", () => {
     await waitFor(() => {
       expect(clickReminder).toHaveBeenCalledTimes(1);
       expect(screen.getByText("直达任务页")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              event_type: "reminder_clicked"
+            })
+          ]
+        })
+      );
     });
 
     fireEvent.click(screen.getByRole("checkbox", { name: "接收个性化学习提醒" }));

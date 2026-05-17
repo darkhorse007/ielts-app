@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
+import { trackMobileAnalyticsEvent } from "../src/lib/analytics";
 import type { PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
@@ -516,6 +517,20 @@ export default function ReadingScreen() {
         title: "阅读训练已提交",
         summary: `阅读提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
         route: "/reading"
+      });
+      void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+        eventType: "practice_submitted",
+        skill: "reading",
+        createdAt: response.submission?.submitted_at,
+        metadata: {
+          sessionId: response.session_id,
+          trainingMode: response.training_mode ?? trainingMode,
+          questionCount: response.questions.length,
+          evidenceCount: wrongWithEvidence,
+          correctCount: response.submission?.score_breakdown.correct_count ?? 0,
+          totalQuestions: response.submission?.score_breakdown.total_questions ?? 0,
+          accuracy: response.submission?.score_breakdown.accuracy ?? 0
+        }
       });
       markSyncSuccess(
         `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`,

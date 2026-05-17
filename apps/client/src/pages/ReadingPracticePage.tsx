@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import type { PracticeSessionResponse } from "../lib/api-types";
 import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
@@ -14,7 +15,8 @@ type ReadingPracticePageProps = {
     | "pauseReadingTimer"
     | "resumeReadingTimer"
     | "recoverReadingTimer"
-  >;
+  > &
+    Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -90,6 +92,20 @@ export const ReadingPracticePage = ({ apiClient, tokenStorage }: ReadingPractice
         submitted.submission?.question_results.filter((item) => !item.is_correct && Boolean(item.evidence)).length ?? 0;
 
       setEvidenceCount(wrongWithEvidence);
+      void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+        eventType: "practice_submitted",
+        skill: "reading",
+        createdAt: submitted.submission?.submitted_at,
+        metadata: {
+          sessionId: submitted.session_id,
+          trainingMode: submitted.training_mode ?? trainingMode,
+          questionCount: submitted.questions.length,
+          evidenceCount: wrongWithEvidence,
+          correctCount: submitted.submission?.score_breakdown.correct_count ?? 0,
+          totalQuestions: submitted.submission?.score_breakdown.total_questions ?? 0,
+          accuracy: submitted.submission?.score_breakdown.accuracy ?? 0
+        }
+      });
       setStatus(
         `提交完成，正确 ${submitted.submission?.score_breakdown.correct_count ?? 0}/${submitted.submission?.score_breakdown.total_questions ?? 0}`
       );

@@ -8,6 +8,7 @@ import {
   subscribeToNotificationRouteTargetsAsync,
   type ReminderNotificationRouteTarget
 } from "../lib/notifications";
+import { trackMobileAnalyticsEvent } from "../lib/analytics";
 import { useAppSession } from "./app-session";
 
 type PendingReminderClick = ReminderNotificationRouteTarget & {
@@ -49,7 +50,18 @@ export const ReminderNotificationBridge = () => {
       return;
     }
 
-    await runWithAuthorizedClient((apiClient, accessToken) => apiClient.clickReminder(accessToken, target.reminderId!));
+    const result = await runWithAuthorizedClient((apiClient, accessToken) =>
+      apiClient.clickReminder(accessToken, target.reminderId!)
+    );
+    void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+      eventType: "reminder_clicked",
+      createdAt: result.clicked_at,
+      metadata: {
+        reminderId: result.reminder_id,
+        deepLink: result.deep_link,
+        route: target.route
+      }
+    });
   });
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
+import { trackMobileAnalyticsEvent } from "../src/lib/analytics";
 import type { WritingArchiveResponse, WritingEvaluationResponse, WritingTemplateListResponse } from "../src/lib/api-types";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
@@ -371,6 +372,19 @@ export default function WritingScreen() {
         title: "写作批改已完成",
         summary: `写作批改 overall ${result.scores.overall}，TR${result.scores.tr}/CC${result.scores.cc}/LR${result.scores.lr}/GRA${result.scores.gra}`,
         route: "/writing"
+      });
+      void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+        eventType: "writing_evaluated",
+        skill: "writing",
+        createdAt: result.created_at,
+        latencyMs: result.latency_ms,
+        fallbackTriggered: result.fallback_triggered,
+        metadata: {
+          evaluationId: result.evaluation_id,
+          taskType: result.task_type,
+          overall: result.scores.overall,
+          suggestionCount: result.suggestions.length
+        }
       });
       markSyncSuccess(
         `写作批改完成，overall=${result.scores.overall}`,

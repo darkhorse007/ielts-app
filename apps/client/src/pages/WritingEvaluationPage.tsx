@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import type { WritingEvaluationResponse } from "../lib/api-types";
 import { saveProgressFollowUp } from "../lib/progress-follow-up";
 import { TokenStorage } from "../lib/token-storage";
@@ -14,7 +15,8 @@ type WritingEvaluationPageProps = {
     | "getWritingTemplates"
     | "insertWritingTemplate"
     | "getWritingTemplateAdoption"
-  >;
+  > &
+    Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -71,6 +73,19 @@ export const WritingEvaluationPage = ({ apiClient, tokenStorage }: WritingEvalua
       setEvaluation(result);
       setEvaluationId(result.evaluation_id);
       persistFollowUp("写作结果已生成，下一步可回到写作页继续改写或查看建议。");
+      void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+        eventType: "writing_evaluated",
+        skill: "writing",
+        createdAt: result.created_at,
+        latencyMs: result.latency_ms,
+        fallbackTriggered: result.fallback_triggered,
+        metadata: {
+          evaluationId: result.evaluation_id,
+          taskType: result.task_type,
+          overall: result.scores.overall,
+          suggestionCount: result.suggestions.length
+        }
+      });
       setStatus(`写作批改完成，overall=${result.scores.overall}`);
       setError(null);
     } catch (evaluateError) {

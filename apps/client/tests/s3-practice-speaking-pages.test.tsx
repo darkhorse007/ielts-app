@@ -136,6 +136,12 @@ describe("S3 practice/speaking pages", () => {
         }
       ]
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 40,
+      field_completeness_percent: 100
+    });
 
     render(
       <ListeningPracticePage
@@ -144,7 +150,8 @@ describe("S3 practice/speaking pages", () => {
           submitPracticeSession,
           updatePlaybackState,
           getPlaybackState,
-          addRetryQueue
+          addRetryQueue,
+          analyticsBatch
         }}
         tokenStorage={tokenStorage}
       />
@@ -164,6 +171,20 @@ describe("S3 practice/speaking pages", () => {
     await waitFor(() => {
       expect(submitPracticeSession).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/提交完成，正确 1\/2/)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              skill: "listening",
+              event_type: "practice_submitted"
+            })
+          ]
+        })
+      );
     });
     expect(loadProgressFollowUp("u-1")).toMatchObject({
       title: "继续听力训练",
@@ -476,12 +497,19 @@ describe("S3 practice/speaking pages", () => {
         limit_seconds: 1200
       }
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 40,
+      field_completeness_percent: 100
+    });
 
     render(
       <ReadingPracticePage
         apiClient={{
           createPracticeSession,
           submitPracticeSession,
+          analyticsBatch,
           switchReadingMode,
           getReadingTimer,
           pauseReadingTimer,
@@ -511,6 +539,20 @@ describe("S3 practice/speaking pages", () => {
       expect(submitPracticeSession).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/evidence_count: 1/)).toBeInTheDocument();
       expect(screen.getByText(/证据定位: P2 - e1/)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              skill: "reading",
+              event_type: "practice_submitted"
+            })
+          ]
+        })
+      );
     });
   });
 

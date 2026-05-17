@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import { TokenStorage } from "../lib/token-storage";
 
 type MockExamPageProps = {
@@ -13,7 +14,8 @@ type MockExamPageProps = {
     | "getMockExamReport"
     | "undoMockExamWriteback"
     | "exportMockExamReport"
-  >;
+  > &
+    Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -94,6 +96,16 @@ export const MockExamPage = ({ apiClient, tokenStorage }: MockExamPageProps) => 
       setReportText(
         `L${result.report.skill_band_estimates.listening}/S${result.report.skill_band_estimates.speaking}/R${result.report.skill_band_estimates.reading}/W${result.report.skill_band_estimates.writing}`
       );
+      void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+        eventType: "mock_exam_submitted",
+        createdAt: result.report.generated_at,
+        metadata: {
+          examId: result.exam.exam_id,
+          reportId: result.report.report_id,
+          overall: result.report.total_estimated_band,
+          skillBandEstimates: result.report.skill_band_estimates
+        }
+      });
       setError(null);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "提交模考失败");

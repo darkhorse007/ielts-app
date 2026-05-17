@@ -46,7 +46,14 @@ describe("reminder notification bridge", () => {
   test("restores the deep link and tracks reminder click from the last notification response", async () => {
     const clickReminder = vi.fn().mockResolvedValue({
       reminder_id: "rem-1",
-      deep_link: "/plan?task_id=task-1"
+      deep_link: "/plan?task_id=task-1",
+      clicked_at: "2026-04-10T00:00:00.000Z"
+    });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 100,
+      field_completeness_percent: 100
     });
 
     mockedUseAppSession.mockReturnValue({
@@ -61,7 +68,8 @@ describe("reminder notification bridge", () => {
       runWithAuthorizedClient: async <T,>(execute: (apiClient: any, accessToken: string) => Promise<T>): Promise<T> =>
         execute(
           {
-            clickReminder
+            clickReminder,
+            analyticsBatch
           },
           session.accessToken
         )
@@ -89,12 +97,32 @@ describe("reminder notification bridge", () => {
     await waitFor(() => {
       expect(clickReminder).toHaveBeenCalledWith(session.accessToken, "rem-1");
     });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        session.accessToken,
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "reminder_clicked",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
+    });
   });
 
   test("restores the deep link and tracks reminder click from the debug notification harness", async () => {
     const clickReminder = vi.fn().mockResolvedValue({
       reminder_id: "rem-2",
-      deep_link: "/plan?from=reminder"
+      deep_link: "/plan?from=reminder",
+      clicked_at: "2026-04-10T00:05:00.000Z"
+    });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 100,
+      field_completeness_percent: 100
     });
 
     mockedUseAppSession.mockReturnValue({
@@ -109,7 +137,8 @@ describe("reminder notification bridge", () => {
       runWithAuthorizedClient: async <T,>(execute: (apiClient: any, accessToken: string) => Promise<T>): Promise<T> =>
         execute(
           {
-            clickReminder
+            clickReminder,
+            analyticsBatch
           },
           session.accessToken
         )
@@ -128,6 +157,19 @@ describe("reminder notification bridge", () => {
     });
     await waitFor(() => {
       expect(clickReminder).toHaveBeenCalledWith(session.accessToken, "rem-2");
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        session.accessToken,
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "reminder_clicked",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
   });
 });

@@ -26,6 +26,8 @@ const originalConsoleWarn = console.warn;
 const appStateListeners = new Set<(state: "active" | "background" | "inactive") => void>();
 const secureStoreValues = new Map<string, string>();
 const notificationResponseListeners = new Set<(response: any) => void>();
+const audioStatusListeners = new Set<(status: any) => void>();
+const speechRecognitionListeners = new Map<string, Set<(event: any) => void>>();
 const scheduledNotifications: Array<{
   identifier: string;
   content: Record<string, unknown>;
@@ -53,6 +55,33 @@ let mockDevicePushToken = {
   type: "ios",
   data: "native-token-1234567890"
 };
+const createMockAudioStatus = () => ({
+  id: "mock-audio-player",
+  currentTime: 0,
+  playbackState: "idle",
+  timeControlStatus: "paused",
+  reasonForWaitingToPlay: "",
+  mute: false,
+  duration: 68,
+  playing: false,
+  loop: false,
+  didJustFinish: false,
+  isBuffering: false,
+  isLoaded: true,
+  playbackRate: 1,
+  shouldCorrectPitch: true,
+  mediaServicesDidReset: false
+});
+let mockAudioSource: unknown = null;
+let mockAudioStatus = createMockAudioStatus();
+let speechRecognitionPermissionState = {
+  status: "granted",
+  granted: true,
+  canAskAgain: true,
+  expires: "never",
+  restricted: false
+};
+let speechRecognitionAvailable = true;
 let notificationPermissionState = {
   granted: true,
   canAskAgain: true,
@@ -60,6 +89,109 @@ let notificationPermissionState = {
   status: "granted",
   ios: {
     status: 2
+  }
+};
+
+const addSpeechRecognitionListener = (eventName: string, listener: (event: any) => void) => {
+  const existing = speechRecognitionListeners.get(eventName) ?? new Set<(event: any) => void>();
+  existing.add(listener);
+  speechRecognitionListeners.set(eventName, existing);
+
+  return {
+    remove: () => {
+      existing.delete(listener);
+      if (existing.size === 0) {
+        speechRecognitionListeners.delete(eventName);
+      }
+    }
+  };
+};
+
+const emitSpeechRecognitionEvent = (eventName: string, payload: any) => {
+  const listeners = speechRecognitionListeners.get(eventName);
+  if (!listeners) {
+    return;
+  }
+
+  listeners.forEach((listener) => listener(payload));
+};
+
+const useMockSpeechRecognitionEvent = (eventName: string, listener: (event: any) => void) => {
+  React.useEffect(() => {
+    const subscription = addSpeechRecognitionListener(eventName, listener);
+    return () => {
+      subscription.remove();
+    };
+  }, [eventName, listener]);
+};
+
+const speechRecognitionModule = {
+  addListener: vi.fn(addSpeechRecognitionListener),
+  start: vi.fn(),
+  stop: vi.fn(),
+  abort: vi.fn(),
+  requestPermissionsAsync: vi.fn(async () => speechRecognitionPermissionState),
+  getPermissionsAsync: vi.fn(async () => speechRecognitionPermissionState),
+  getMicrophonePermissionsAsync: vi.fn(async () => ({
+    status: speechRecognitionPermissionState.status,
+    granted: speechRecognitionPermissionState.granted,
+    canAskAgain: speechRecognitionPermissionState.canAskAgain,
+    expires: speechRecognitionPermissionState.expires
+  })),
+  requestMicrophonePermissionsAsync: vi.fn(async () => ({
+    status: speechRecognitionPermissionState.status,
+    granted: speechRecognitionPermissionState.granted,
+    canAskAgain: speechRecognitionPermissionState.canAskAgain,
+    expires: speechRecognitionPermissionState.expires
+  })),
+  getSpeechRecognizerPermissionsAsync: vi.fn(async () => speechRecognitionPermissionState),
+  requestSpeechRecognizerPermissionsAsync: vi.fn(async () => speechRecognitionPermissionState),
+  isRecognitionAvailable: vi.fn(() => speechRecognitionAvailable),
+  supportsRecording: vi.fn(() => true),
+  supportsOnDeviceRecognition: vi.fn(() => true),
+  getStateAsync: vi.fn(async () => "inactive"),
+  __emitMockEvent: emitSpeechRecognitionEvent,
+  __resetMockSpeechRecognition: () => {
+    speechRecognitionListeners.clear();
+    speechRecognitionPermissionState = {
+      status: "granted",
+      granted: true,
+      canAskAgain: true,
+      expires: "never",
+      restricted: false
+    };
+    speechRecognitionAvailable = true;
+    speechRecognitionModule.addListener.mockClear();
+    speechRecognitionModule.start.mockClear();
+    speechRecognitionModule.stop.mockClear();
+    speechRecognitionModule.abort.mockClear();
+    speechRecognitionModule.requestPermissionsAsync.mockClear();
+    speechRecognitionModule.getPermissionsAsync.mockClear();
+    speechRecognitionModule.getMicrophonePermissionsAsync.mockClear();
+    speechRecognitionModule.requestMicrophonePermissionsAsync.mockClear();
+    speechRecognitionModule.getSpeechRecognizerPermissionsAsync.mockClear();
+    speechRecognitionModule.requestSpeechRecognizerPermissionsAsync.mockClear();
+    speechRecognitionModule.isRecognitionAvailable.mockClear();
+    speechRecognitionModule.supportsRecording.mockClear();
+    speechRecognitionModule.supportsOnDeviceRecognition.mockClear();
+    speechRecognitionModule.getStateAsync.mockClear();
+  },
+  __setMockPermissionState: (
+    overrides: Partial<{
+      status: string;
+      granted: boolean;
+      canAskAgain: boolean;
+      expires: string;
+      restricted: boolean;
+    }>
+  ) => {
+    speechRecognitionPermissionState = {
+      ...speechRecognitionPermissionState,
+      ...overrides
+    };
+  },
+  __setMockRecognitionAvailable: (value: boolean) => {
+    speechRecognitionAvailable = value;
   }
 };
 
@@ -202,22 +334,157 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>
 }));
 
-vi.mock("expo-audio", () => ({
-  getRecordingPermissionsAsync: vi.fn().mockResolvedValue({
-    status: "granted",
-    granted: true,
-    canAskAgain: true,
-    expires: "never"
-  }),
-  requestRecordingPermissionsAsync: vi.fn().mockResolvedValue({
-    status: "granted",
-    granted: true,
-    canAskAgain: true,
-    expires: "never"
-  }),
-  setAudioModeAsync: vi.fn().mockResolvedValue(undefined),
-  setIsAudioActiveAsync: vi.fn().mockResolvedValue(undefined)
+vi.mock("expo-audio", () => {
+  const syncMockAudioPlayerState = () => {
+    mockAudioPlayer.currentStatus = mockAudioStatus;
+    mockAudioPlayer.playing = mockAudioStatus.playing;
+    mockAudioPlayer.paused = !mockAudioStatus.playing;
+    mockAudioPlayer.isLoaded = mockAudioStatus.isLoaded;
+    mockAudioPlayer.isBuffering = mockAudioStatus.isBuffering;
+    mockAudioPlayer.currentTime = mockAudioStatus.currentTime;
+    mockAudioPlayer.duration = mockAudioStatus.duration;
+    mockAudioPlayer.playbackRate = mockAudioStatus.playbackRate;
+  };
+
+  const emitAudioStatus = () => {
+    syncMockAudioPlayerState();
+    audioStatusListeners.forEach((listener) => listener(mockAudioStatus));
+  };
+
+  const setMockAudioStatus = (overrides: Partial<typeof mockAudioStatus>) => {
+    mockAudioStatus = {
+      ...mockAudioStatus,
+      ...overrides
+    };
+    emitAudioStatus();
+  };
+
+  const mockAudioPlayer = {
+    id: "mock-audio-player",
+    currentStatus: mockAudioStatus,
+    playing: false,
+    muted: false,
+    loop: false,
+    paused: true,
+    isLoaded: true,
+    isAudioSamplingSupported: false,
+    isBuffering: false,
+    currentTime: 0,
+    duration: 68,
+    volume: 1,
+    playbackRate: 1,
+    shouldCorrectPitch: true,
+    play: vi.fn(() => {
+      setMockAudioStatus({
+        playing: true,
+        playbackState: "ready",
+        timeControlStatus: "playing",
+        didJustFinish: false
+      });
+    }),
+    pause: vi.fn(() => {
+      setMockAudioStatus({
+        playing: false,
+        timeControlStatus: "paused"
+      });
+    }),
+    replace: vi.fn((source: unknown) => {
+      mockAudioSource = source;
+      setMockAudioStatus({
+        currentTime: 0,
+        duration: 68,
+        playing: false,
+        didJustFinish: false,
+        isLoaded: source !== null,
+        playbackState: source !== null ? "ready" : "idle",
+        timeControlStatus: "paused"
+      });
+    }),
+    seekTo: vi.fn(async (seconds: number) => {
+      setMockAudioStatus({
+        currentTime: seconds,
+        didJustFinish: false
+      });
+    }),
+    setPlaybackRate: vi.fn((rate: number) => {
+      setMockAudioStatus({
+        playbackRate: rate
+      });
+    }),
+    setActiveForLockScreen: vi.fn(),
+    updateLockScreenMetadata: vi.fn(),
+    removeFromLockScreen: vi.fn()
+  };
+
+  syncMockAudioPlayerState();
+
+  return {
+    getRecordingPermissionsAsync: vi.fn().mockResolvedValue({
+      status: "granted",
+      granted: true,
+      canAskAgain: true,
+      expires: "never"
+    }),
+    requestRecordingPermissionsAsync: vi.fn().mockResolvedValue({
+      status: "granted",
+      granted: true,
+      canAskAgain: true,
+      expires: "never"
+    }),
+    setAudioModeAsync: vi.fn().mockResolvedValue(undefined),
+    setIsAudioActiveAsync: vi.fn().mockResolvedValue(undefined),
+    useAudioPlayer: (source: unknown) => {
+      React.useEffect(() => {
+        if (source === undefined) {
+          return;
+        }
+
+        mockAudioPlayer.replace(source);
+      }, [source]);
+
+      return mockAudioPlayer;
+    },
+    useAudioPlayerStatus: () => {
+      const [status, setStatus] = React.useState(mockAudioStatus);
+
+      React.useEffect(() => {
+        audioStatusListeners.add(setStatus);
+        return () => {
+          audioStatusListeners.delete(setStatus);
+        };
+      }, []);
+
+      return status;
+    },
+    __getMockAudioPlayer: () => mockAudioPlayer,
+    __getMockAudioSource: () => mockAudioSource,
+    __setMockAudioStatus: setMockAudioStatus,
+    __resetMockAudioPlayer: () => {
+      audioStatusListeners.clear();
+      mockAudioSource = null;
+      mockAudioStatus = createMockAudioStatus();
+      mockAudioPlayer.play.mockClear();
+      mockAudioPlayer.pause.mockClear();
+      mockAudioPlayer.replace.mockClear();
+      mockAudioPlayer.seekTo.mockClear();
+      mockAudioPlayer.setPlaybackRate.mockClear();
+      mockAudioPlayer.setActiveForLockScreen.mockClear();
+      mockAudioPlayer.updateLockScreenMetadata.mockClear();
+      mockAudioPlayer.removeFromLockScreen.mockClear();
+      syncMockAudioPlayerState();
+    }
+  };
+});
+
+vi.mock("expo-speech-recognition", () => ({
+  ExpoSpeechRecognitionModule: speechRecognitionModule,
+  useSpeechRecognitionEvent: useMockSpeechRecognitionEvent
 }));
+
+globalThis.__IELTS_EXPO_SPEECH_RECOGNITION_RUNTIME__ = {
+  module: speechRecognitionModule,
+  useSpeechRecognitionEvent: useMockSpeechRecognitionEvent
+};
 
 vi.mock("expo-constants", () => ({
   default: mockConstants,

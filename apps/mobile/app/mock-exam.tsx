@@ -2,6 +2,7 @@ import { Redirect, router } from "expo-router";
 import { Pressable, Share, Text, View } from "react-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
+import { trackMobileAnalyticsEvent } from "../src/lib/analytics";
 import type { MockExamReportResponse, MockExamResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
@@ -510,6 +511,16 @@ export default function MockExamScreen() {
       setExam(response.exam);
       setReport(response.report);
       syncReportToStudyLoop(response.report, "submit");
+      void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+        eventType: "mock_exam_submitted",
+        createdAt: response.report.generated_at,
+        metadata: {
+          examId: response.exam.exam_id,
+          reportId: response.report.report_id,
+          overall: response.report.total_estimated_band,
+          skillBandEstimates: response.report.skill_band_estimates
+        }
+      });
       markSyncSuccess(
         `模考提交完成，overall=${response.report.total_estimated_band}`,
         `exam ${response.exam.exam_id} / report ${response.report.report_id} / overall ${response.report.total_estimated_band}`

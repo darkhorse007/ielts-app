@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import { TokenStorage } from "../lib/token-storage";
 
 type AccountPageProps = {
@@ -12,7 +13,8 @@ type AccountPageProps = {
     | "updateReminderPreference"
     | "getReminderRecommendation"
     | "clickReminder"
-  >;
+  > &
+    Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -176,6 +178,14 @@ export const AccountPage = ({ apiClient, tokenStorage }: AccountPageProps) => {
       setDeepLink(result.deep_link);
       setReminderStatus("已记录提醒点击");
       setMessage("提醒点击已追踪，可直达任务页");
+      void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+        eventType: "reminder_clicked",
+        createdAt: result.clicked_at,
+        metadata: {
+          reminderId: result.reminder_id,
+          deepLink: result.deep_link
+        }
+      });
       setError(null);
     } catch (clickError) {
       setError(clickError instanceof Error ? clickError.message : "记录提醒点击失败");

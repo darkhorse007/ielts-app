@@ -32,12 +32,19 @@ describe("S1 onboarding page", () => {
       status: "completed",
       updated_at: new Date().toISOString()
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 20,
+      field_completeness_percent: 100
+    });
 
     render(
       <OnboardingPage
         apiClient={{
           submitOnboarding,
-          fetchOnboardingStatus
+          fetchOnboardingStatus,
+          analyticsBatch
         }}
         tokenStorage={tokenStorage}
       />
@@ -78,6 +85,19 @@ describe("S1 onboarding page", () => {
       expect(submitOnboarding).toHaveBeenCalledTimes(2);
       expect(fetchOnboardingStatus).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/status: completed/)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              platform: "web",
+              event_type: "onboarding_submitted"
+            })
+          ]
+        })
+      );
     });
   });
 });

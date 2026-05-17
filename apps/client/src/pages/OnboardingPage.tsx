@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { ApiClient } from "../lib/api-client";
+import { trackWebAnalyticsEvent } from "../lib/analytics";
 import { validateBandScore } from "../lib/validators";
 import { TokenStorage } from "../lib/token-storage";
 
 type OnboardingPageProps = {
-  apiClient: Pick<ApiClient, "submitOnboarding" | "fetchOnboardingStatus">;
+  apiClient: Pick<ApiClient, "submitOnboarding" | "fetchOnboardingStatus"> & Partial<Pick<ApiClient, "analyticsBatch">>;
   tokenStorage: TokenStorage;
 };
 
@@ -97,6 +98,17 @@ export const OnboardingPage = ({ apiClient, tokenStorage }: OnboardingPageProps)
     setAssessmentId(response.assessment_id);
     setPlanId(response.plan_id);
     setStatusMessage(response.status);
+    void trackWebAnalyticsEvent(apiClient, tokenStorage, {
+      eventType: "onboarding_submitted",
+      metadata: {
+        assessmentId: response.assessment_id,
+        planId: response.plan_id,
+        targetOverallBand: payload.targetBand,
+        targetExamDate: payload.targetExamDate,
+        weeklyStudyHours: payload.weeklyHours,
+        weakSkills: payload.weakSkills
+      }
+    });
 
     const status = await apiClient.fetchOnboardingStatus(accessToken, response.assessment_id);
     setStatusMessage(status.status);

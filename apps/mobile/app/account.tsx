@@ -1153,6 +1153,9 @@ export default function AccountScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             deep_link: {formatValue(recommendation?.deep_link)}
           </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }} testID="account.reminderRecommendationState">
+            {recommendation?.reminder_id ? "reminder_recommendation_ready" : "reminder_recommendation_missing"}
+          </Text>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>
             notification_permission: {notificationPermissionStatus}
           </Text>

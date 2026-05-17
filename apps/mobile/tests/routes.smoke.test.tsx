@@ -1,6 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as Audio from "expo-audio";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { router, useLocalSearchParams } from "expo-router";
@@ -99,6 +100,39 @@ const mockedLinking = Linking as typeof Linking & {
 };
 const mockedShare = Share as typeof Share & {
   share: ReturnType<typeof vi.fn>;
+};
+const mockedSpeechRecognition = ExpoSpeechRecognitionModule as typeof ExpoSpeechRecognitionModule & {
+  __emitMockEvent: (eventName: string, payload: any) => void;
+  __resetMockSpeechRecognition: () => void;
+  __setMockPermissionState: (overrides: {
+    status?: string;
+    granted?: boolean;
+    canAskAgain?: boolean;
+    expires?: string;
+    restricted?: boolean;
+  }) => void;
+  __setMockRecognitionAvailable: (value: boolean) => void;
+};
+const mockedAudio = Audio as typeof Audio & {
+  __getMockAudioPlayer: () => {
+    play: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+    replace: ReturnType<typeof vi.fn>;
+    seekTo: ReturnType<typeof vi.fn>;
+    setPlaybackRate: ReturnType<typeof vi.fn>;
+  };
+  __getMockAudioSource: () => unknown;
+  __setMockAudioStatus: (overrides: {
+    currentTime?: number;
+    duration?: number;
+    playing?: boolean;
+    didJustFinish?: boolean;
+    isBuffering?: boolean;
+    isLoaded?: boolean;
+    playbackRate?: number;
+    mediaServicesDidReset?: boolean;
+  }) => void;
+  __resetMockAudioPlayer: () => void;
 };
 
 const toPushTokenPreview = (pushToken?: string): string | undefined => {
@@ -352,6 +386,12 @@ const createSessionContext = (overrides?: {
         }
       ]
     }),
+    analyticsBatch: vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 100,
+      field_completeness_percent: 100
+    }),
     ...overrides?.apiClient
   };
   const syncReminderDevice = vi.fn(async () => {
@@ -464,6 +504,8 @@ describe("mobile route smoke", () => {
     vi.unstubAllGlobals();
     mockedSecureStore.__resetMockStorage();
     mockedNotifications.__resetMockNotifications();
+    mockedAudio.__resetMockAudioPlayer();
+    mockedSpeechRecognition.__resetMockSpeechRecognition();
     mockedUseLocalSearchParams.mockReturnValue({});
     mockedAppState.__emitMockStateChange("active");
   });
@@ -1329,13 +1371,20 @@ describe("mobile route smoke", () => {
         }
       ]
     });
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 20,
+      field_completeness_percent: 100
+    });
 
     mockedUseAppSession.mockReturnValue(
       createSessionContext({
         apiClient: {
           submitOnboarding,
           fetchOnboardingStatus,
-          fetchDiagnosticQuestions
+          fetchDiagnosticQuestions,
+          analyticsBatch
         }
       })
     );
@@ -1352,6 +1401,19 @@ describe("mobile route smoke", () => {
       expect(fetchOnboardingStatus).toHaveBeenCalledTimes(1);
       expect(fetchDiagnosticQuestions).toHaveBeenCalledTimes(1);
       expect(screen.getByText("进入第一题")).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "onboarding_submitted",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
     expect(screen.getByText((content) => content.includes("assessment_id: onboarding-assessment-1"))).toBeTruthy();
     expect(screen.getByText((content) => content.includes("first_question_id: diagnostic-q-1"))).toBeTruthy();
@@ -1696,6 +1758,12 @@ describe("mobile route smoke", () => {
   });
 
   test("mock exam screen records study loop activity after report submission", async () => {
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 80,
+      field_completeness_percent: 100
+    });
     const createMockExam = vi.fn().mockResolvedValue({
       exam_id: "mock-2",
       status: "in_progress",
@@ -1762,7 +1830,8 @@ describe("mobile route smoke", () => {
       createSessionContext({
         apiClient: {
           createMockExam,
-          submitMockExam
+          submitMockExam,
+          analyticsBatch
         }
       })
     );
@@ -1785,6 +1854,19 @@ describe("mobile route smoke", () => {
     await waitFor(() => {
       expect(submitMockExam).toHaveBeenCalledTimes(1);
       expect(screen.getByText((content) => content.includes("overall: 6.5"))).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "mock_exam_submitted",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
     expect(screen.getByText((content) => content.includes("next_action: 先回看学习计划"))).toBeTruthy();
 
@@ -1952,6 +2034,12 @@ describe("mobile route smoke", () => {
   });
 
   test("reading screen records study loop activity after submission", async () => {
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 40,
+      field_completeness_percent: 100
+    });
     mockedUseAppSession.mockReturnValue(
       createSessionContext({
         apiClient: {
@@ -2015,7 +2103,8 @@ describe("mobile route smoke", () => {
                 }
               ]
             }
-          })
+          }),
+          analyticsBatch
         }
       })
     );
@@ -2036,6 +2125,20 @@ describe("mobile route smoke", () => {
     await waitFor(() => {
       expect(screen.getByText("server_sync_status: 提交完成，正确 0/1")).toBeTruthy();
       expect(screen.getByText((content) => content.includes("next_action: 先回看学习计划"))).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "practice_submitted",
+              skill: "reading",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
     fireEvent.click(screen.getByTestId("reading.studyLoopNext.primary"));
     expect(router.push).toHaveBeenCalledWith("/plan");
@@ -2411,6 +2514,12 @@ describe("mobile route smoke", () => {
   });
 
   test("listening screen records study loop activity after submission", async () => {
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 40,
+      field_completeness_percent: 100
+    });
     mockedUseAppSession.mockReturnValue(
       createSessionContext({
         apiClient: {
@@ -2470,7 +2579,8 @@ describe("mobile route smoke", () => {
                 }
               ]
             }
-          })
+          }),
+          analyticsBatch
         }
       })
     );
@@ -2491,6 +2601,20 @@ describe("mobile route smoke", () => {
     await waitFor(() => {
       expect(screen.getByText("server_sync_status: 提交完成，正确 1/1")).toBeTruthy();
       expect(screen.getByText("next_action: 先回看学习计划")).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "practice_submitted",
+              skill: "listening",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
     fireEvent.click(screen.getByTestId("listening.studyLoopNext.primary"));
     expect(router.push).toHaveBeenCalledWith("/plan");
@@ -2711,6 +2835,114 @@ describe("mobile route smoke", () => {
     expect(screen.getByText((content) => content.includes("last_replayed_question_id: listening-playback-q-1"))).toBeTruthy();
   });
 
+  test("listening screen can control native audio playback and sync progress", async () => {
+    const createPracticeSession = vi.fn().mockResolvedValue({
+      session_id: "listening-native-player-1",
+      skill: "listening",
+      task_type: "core_training",
+      training_mode: "training",
+      mode: "core_training",
+      status: "in_progress",
+      created_at: "2026-04-05T00:00:00.000Z",
+      updated_at: "2026-04-05T00:00:00.000Z",
+      questions: [
+        {
+          question_id: "listening-native-player-q-1",
+          type: "multiple_choice",
+          prompt: "Native player listening question",
+          options: ["A", "B", "C"],
+          audio_segment_index: 0
+        }
+      ]
+    });
+
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          createPracticeSession
+        }
+      })
+    );
+
+    render(<ListeningScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "创建训练" }));
+    });
+
+    await waitFor(() => {
+      expect(createPracticeSession).toHaveBeenCalledTimes(1);
+      expect(screen.getByText((content) => content.includes("session_id: listening-native-player-1"))).toBeTruthy();
+      expect(mockedAudio.__getMockAudioSource()).toBeTruthy();
+    });
+
+    const mockAudioPlayer = mockedAudio.__getMockAudioPlayer();
+
+    fireEvent.change(screen.getByDisplayValue("1"), {
+      target: { value: "1.6" }
+    });
+
+    await waitFor(() => {
+      expect(mockAudioPlayer.setPlaybackRate).toHaveBeenLastCalledWith(1.6);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "播放当前段" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockAudioPlayer.seekTo).toHaveBeenCalledWith(0);
+      expect(mockAudioPlayer.play).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("播放中")).toBeTruthy();
+    });
+
+    act(() => {
+      mockedAudio.__setMockAudioStatus({
+        currentTime: 12.5,
+        duration: 68,
+        playing: true,
+        playbackRate: 1.6
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步当前进度" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("12.5")).toBeTruthy();
+      expect(screen.getByText("native_current_time: 12.5s")).toBeTruthy();
+    });
+
+    const pauseCallCountBeforeClick = mockAudioPlayer.pause.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "暂停播放" }));
+
+    await waitFor(() => {
+      expect(mockAudioPlayer.pause.mock.calls.length).toBeGreaterThan(pauseCallCountBeforeClick);
+      expect(screen.getByText("已暂停")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "下一段" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("1")).toBeTruthy();
+      expect(screen.getByText("S1")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByDisplayValue("0"), {
+      target: { value: "24" }
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "定位到当前输入位置" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockAudioPlayer.seekTo).toHaveBeenCalledWith(24);
+      expect(screen.getByDisplayValue("24")).toBeTruthy();
+    });
+  });
+
   test("listening screen can retry failed playback restore and retry queue sync", async () => {
     const createPracticeSession = vi.fn().mockResolvedValue({
       session_id: "listening-retry-actions-1",
@@ -2905,7 +3137,7 @@ describe("mobile route smoke", () => {
 
     await waitFor(() => {
       expect(getPlaybackState).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("server_sync_status: 已加载播放状态")).toBeTruthy();
+      expect(screen.getByText("server_sync_status: 前台恢复后已同步播放状态")).toBeTruthy();
       expect(screen.getByDisplayValue("1.15")).toBeTruthy();
       expect(screen.getByDisplayValue("2")).toBeTruthy();
       expect(screen.getByDisplayValue("27")).toBeTruthy();
@@ -5446,6 +5678,123 @@ describe("mobile route smoke", () => {
     });
   });
 
+  test("speaking screen can capture native speech and auto-send final transcript", async () => {
+    const createSpeakingSession = vi.fn().mockResolvedValue({
+      session_id: "speaking-voice-1",
+      status: "created",
+      task_type: "core_training",
+      resume_token: "resume-speaking-voice-1",
+      resume_until: "2026-04-05T12:30:00.000Z",
+      current_part: 1,
+      topic: "Describe a recent IELTS preparation experience.",
+      turns: 0,
+      created_at: "2026-04-05T12:00:00.000Z",
+      updated_at: "2026-04-05T12:00:00.000Z"
+    });
+
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      static OPEN = 1;
+      static CLOSED = 3;
+      readyState: number = MockWebSocket.OPEN;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: ((event: { code: number }) => void) | null = null;
+      send = vi.fn();
+      close = vi.fn(() => {
+        this.readyState = MockWebSocket.CLOSED;
+        this.onclose?.({ code: 1000 });
+      });
+
+      constructor(url: string) {
+        expect(url).toBe(
+          "ws://127.0.0.1:8787/v1/realtime/speaking?session_id=speaking-voice-1&resume_token=resume-speaking-voice-1"
+        );
+        MockWebSocket.instances.push(this);
+        setTimeout(() => {
+          this.onopen?.();
+        }, 0);
+      }
+    }
+
+    vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+    mockedUseAppSession.mockReturnValue(
+      createSessionContext({
+        apiClient: {
+          createSpeakingSession
+        }
+      })
+    );
+
+    render(<SpeakingScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "创建口语会话" }));
+    });
+
+    await waitFor(() => {
+      expect(createSpeakingSession).toHaveBeenCalledTimes(1);
+      expect(screen.getByText((content) => content.includes("session_id: speaking-voice-1"))).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "连接实时会话" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("已连接")).toBeTruthy();
+    });
+
+    const startVoiceCaptureButton = screen.getByRole("button", { name: "开始语音输入" });
+    await waitFor(() => {
+      expect(startVoiceCaptureButton.hasAttribute("disabled")).toBe(false);
+    });
+
+    await act(async () => {
+      fireEvent.click(startVoiceCaptureButton);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockedSpeechRecognition.start).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      mockedSpeechRecognition.__emitMockEvent("start", null);
+      mockedSpeechRecognition.__emitMockEvent("audiostart", {
+        uri: "file:///tmp/speaking-voice-1.wav"
+      });
+      mockedSpeechRecognition.__emitMockEvent("result", {
+        isFinal: true,
+        results: [
+          {
+            transcript: "I practice speaking every day to improve my fluency.",
+            confidence: 0.91,
+            segments: []
+          }
+        ]
+      });
+      mockedSpeechRecognition.__emitMockEvent("audioend", {
+        uri: "file:///tmp/speaking-voice-1.wav"
+      });
+      mockedSpeechRecognition.__emitMockEvent("end", null);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("I practice speaking every day to improve my fluency.")).toBeTruthy();
+      expect(MockWebSocket.instances[0]?.send).toHaveBeenCalledWith(
+        JSON.stringify({
+          type: "partial_transcript",
+          text: "I practice speaking every day to improve my fluency.",
+          part_no: 1
+        })
+      );
+      expect(screen.getByText((content) => content.includes("voice_delivery: 已自动发送 voice transcript"))).toBeTruthy();
+      expect(screen.getByText((content) => content.includes("voice_audio_uri: file:///tmp/speaking-voice-1.wav"))).toBeTruthy();
+    });
+  });
+
   test("speaking screen offers a system settings shortcut after microphone permission is denied", async () => {
     vi.mocked(Audio.getRecordingPermissionsAsync).mockResolvedValueOnce({
       status: "denied" as Awaited<ReturnType<typeof Audio.getRecordingPermissionsAsync>>["status"],
@@ -6184,6 +6533,12 @@ describe("mobile route smoke", () => {
   });
 
   test("writing screen can load templates, insert one, refresh adoption, reload evaluation and archives", async () => {
+    const analyticsBatch = vi.fn().mockResolvedValue({
+      accepted_count: 1,
+      rejected_count: 0,
+      core_coverage_percent: 60,
+      field_completeness_percent: 100
+    });
     const evaluateWriting = vi.fn().mockResolvedValue({
       evaluation_id: "writing-eval-template-1",
       task_type: "task2",
@@ -6310,7 +6665,8 @@ describe("mobile route smoke", () => {
           getWritingArchives,
           getWritingTemplates,
           insertWritingTemplate,
-          getWritingTemplateAdoption
+          getWritingTemplateAdoption,
+          analyticsBatch
         }
       })
     );
@@ -6363,6 +6719,20 @@ describe("mobile route smoke", () => {
       expect(screen.getByText("server_sync_status: 写作批改完成，overall=6")).toBeTruthy();
       expect(screen.getByDisplayValue("writing-eval-template-1")).toBeTruthy();
       expect(screen.getByText("suggestion_count: 1")).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(analyticsBatch).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              event_type: "writing_evaluated",
+              skill: "writing",
+              platform: expect.stringMatching(/^(ios|android)$/)
+            })
+          ]
+        })
+      );
     });
 
     fireEvent.click(screen.getAllByText("加载批改结果")[0]);
