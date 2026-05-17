@@ -38,9 +38,29 @@ name: Android account smoke
 - tapOn:
     id: register.email
 - inputText: ${REGISTER_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: register.password
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.password
 - inputText: ${REGISTER_PASSWORD}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: register.confirmPassword
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.confirmPassword
 - inputText: ${REGISTER_PASSWORD}
@@ -50,6 +70,10 @@ name: Android account smoke
       id: register.submit
     direction: DOWN
     timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.submit
 - extendedWaitUntil:
@@ -58,6 +82,16 @@ name: Android account smoke
 - tapOn:
     id: login.identifier
 - inputText: ${REGISTER_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login.password
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: login.password
 - inputText: ${REGISTER_PASSWORD}
@@ -67,6 +101,10 @@ name: Android account smoke
       id: login.submit
     direction: DOWN
     timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: login.submit
 - extendedWaitUntil:
@@ -75,15 +113,14 @@ name: Android account smoke
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
-      id: home.account
+      text: 进入账户中心
     direction: DOWN
     timeout: 25000
-    speed: 60
-    waitToSettleTimeoutMs: 800
-    visibilityPercentage: 20
-    centerElement: true
-- tapOn:
-    id: home.account
+    speed: 35
+    waitToSettleTimeoutMs: 1200
+    visibilityPercentage: 1
+    centerElement: false
+- tapOn: 进入账户中心
 - extendedWaitUntil:
     visible: 账户中心已进入移动端
     timeout: 15000

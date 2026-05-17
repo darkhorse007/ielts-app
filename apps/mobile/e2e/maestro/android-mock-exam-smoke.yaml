@@ -38,9 +38,29 @@ name: Android mock exam smoke
 - tapOn:
     id: register.email
 - inputText: ${REGISTER_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: register.password
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.password
 - inputText: ${REGISTER_PASSWORD}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: register.confirmPassword
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.confirmPassword
 - inputText: ${REGISTER_PASSWORD}
@@ -50,6 +70,10 @@ name: Android mock exam smoke
       id: register.submit
     direction: DOWN
     timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: register.submit
 - extendedWaitUntil:
@@ -58,6 +82,16 @@ name: Android mock exam smoke
 - tapOn:
     id: login.identifier
 - inputText: ${REGISTER_EMAIL}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: login.password
+    direction: DOWN
+    timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: login.password
 - inputText: ${REGISTER_PASSWORD}
@@ -67,6 +101,10 @@ name: Android mock exam smoke
       id: login.submit
     direction: DOWN
     timeout: 15000
+    speed: 50
+    waitToSettleTimeoutMs: 800
+    visibilityPercentage: 20
+    centerElement: true
 - tapOn:
     id: login.submit
 - extendedWaitUntil:
@@ -75,15 +113,14 @@ name: Android mock exam smoke
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
-      id: home.mockExam
+      text: 进入模考
     direction: DOWN
     timeout: 25000
-    speed: 60
-    waitToSettleTimeoutMs: 800
-    visibilityPercentage: 20
-    centerElement: true
-- tapOn:
-    id: home.mockExam
+    speed: 35
+    waitToSettleTimeoutMs: 1200
+    visibilityPercentage: 1
+    centerElement: false
+- tapOn: 进入模考
 - extendedWaitUntil:
     visible: 模考与报告已进入移动端
     timeout: 15000

@@ -382,12 +382,19 @@ run_maestro_flow() {
   local flow_file="$1"
   local register_email="$2"
   local attempt=1
+  local flow_register_email=""
 
   while [[ "$attempt" -le "$FLOW_RETRY_COUNT" ]]; do
+    if [[ "$attempt" -eq 1 ]]; then
+      flow_register_email="$register_email"
+    else
+      flow_register_email="${register_email%@*}+retry${attempt}@${register_email#*@}"
+    fi
+
     launch_expo_go_app
     if maestro --platform=android --device="$DEVICE_SERIAL" test "$flow_file" \
       -e APP_URL="$APP_URL" \
-      -e REGISTER_EMAIL="$register_email" \
+      -e REGISTER_EMAIL="$flow_register_email" \
       -e REGISTER_PASSWORD="$REGISTER_PASSWORD"; then
       return 0
     fi

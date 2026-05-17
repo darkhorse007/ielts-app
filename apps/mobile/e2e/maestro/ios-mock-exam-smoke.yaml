@@ -82,13 +82,10 @@ name: iOS mock exam smoke
 - extendedWaitUntil:
     visible: 自托管移动端骨架已落地
     timeout: 20000
-- scrollUntilVisible:
-    element:
-      id: home.mockExam
-    direction: DOWN
+- extendedWaitUntil:
+    visible: 进入模考
     timeout: 15000
-- tapOn:
-    id: home.mockExam
+- tapOn: 进入模考
 - extendedWaitUntil:
     visible: 模考与报告已进入移动端
     timeout: 15000

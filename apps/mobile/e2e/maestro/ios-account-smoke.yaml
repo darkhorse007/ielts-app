@@ -82,13 +82,10 @@ name: iOS account smoke
 - extendedWaitUntil:
     visible: 自托管移动端骨架已落地
     timeout: 20000
-- scrollUntilVisible:
-    element:
-      id: home.account
-    direction: DOWN
+- extendedWaitUntil:
+    visible: 进入账户中心
     timeout: 15000
-- tapOn:
-    id: home.account
+- tapOn: 进入账户中心
 - extendedWaitUntil:
     visible: 账户中心已进入移动端
     timeout: 15000
