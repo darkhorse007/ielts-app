@@ -8,11 +8,13 @@
 2. `docs/backlog/Story-Catalog-P0.md`: 首发版本必须交付的故事与验收标准。
 3. `docs/backlog/Story-Catalog-P1.md`: 上线后增强项故事与验收标准。
 4. `docs/backlog/Sprint-Plan-12-Weeks.md`: 12 周迭代计划与发布门禁。
+5. `docs/backlog/Self-Hosted-Completion-Followups-2026-04-10.md`: 基于 `self-hosted` 当前代码快照的补洞 backlog，仅用于承接 2026-04-10 完成度审计后的剩余闭环项。
 
 ## 3. 命名规范
 1. Epic 编号: `E01` - `E11`。
 2. Story 编号: `US-xxxx`，前缀数字与 Epic 保持分组对应。
-3. 优先级:
+3. `self-hosted` 审计补洞项使用预留区间 `US-11301+`，避免与历史 tracking / release Story 冲突。
+4. 优先级:
 - `P0`: 首发阻断项，必须上线。
 - `P1`: 增强项，可在不影响首发的前提下延后。
 

@@ -46,6 +46,24 @@ npm run smoke:e2e:mobile-ios-local
 npm run smoke:e2e:mobile-android-local
 ```
 
+### 4.4 2026-04-11 本地执行记录
+1. `npm run test:mobile` 已通过:
+   - `5` 个 test files
+   - `119` 个 tests
+2. `npm run smoke:e2e:mobile-ios-local` 未通过:
+   - 环境: `iPhone 16 Pro` / `iOS 18.3` / Expo Go `55.0.27` / Maestro `2.3.0`
+   - 现象: 未进入 `登录移动端工作台`，停在启动页 bundle 构建阶段
+   - 失败日志: `iOSDriverTimeoutException`
+3. `npm run smoke:e2e:mobile-android-local` 未通过:
+   - 环境: `Pixel_8_Pro_API_TiramisuPrivacySandbox` / Expo Go `55.0.5` / Maestro `2.3.0`
+   - 现象: App 直接进入红屏错误页
+   - Metro 日志: `Cannot find native module 'ExpoSpeechRecognition'`
+4. 结论:
+   - 当前 route-level regression 正常
+   - 当前 Expo Go 设备 smoke 路径已被 speaking 的原生语音识别依赖阻断
+5. 推断:
+   - 后续本地设备 smoke 应优先迁移到 development build / dev client，再重新执行 `npm run smoke:quality-gate:mobile-local`
+
 ## 5. EAS 项目绑定
 仓库默认未提交 `extra.eas.projectId`。首次接入时先在 `apps/mobile` 目录完成 EAS 绑定：
 
@@ -134,3 +152,6 @@ npm run smoke:reminder-push:local
 2. 对应平台的 preview 或 production build 成功产出。
 3. 至少 1 台 iOS 与 1 台 Android 设备完成主链路验收。
 4. 若启用提醒推送，push smoke 与通知点击恢复已验证。
+
+补充:
+1. 2026-04-11 的最新执行证据见 `docs/engineering/Self-Hosted-Delivery-Evidence-2026-04-11.md`。

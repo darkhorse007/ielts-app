@@ -13,6 +13,9 @@
 8. 自托管部署指南: `docs/engineering/Self-Hosted-Deployment-Guide.md`
 9. Mobile 交付 runbook: `docs/engineering/Mobile-Delivery-Runbook.md`
 10. 数据存储与 Postgres 表结构: `docs/engineering/Database-Schema-Draft.md`
+11. 当前代码完成度审计: `docs/engineering/Codebase-Completion-Audit-2026-04-10.md`
+12. self-hosted 补洞 backlog: `docs/backlog/Self-Hosted-Completion-Followups-2026-04-10.md`
+13. self-hosted gap-closure 执行计划: `docs/engineering/Self-Hosted-Gap-Closure-Execution-Plan-2026-04-10.md`
 
 ## 2. 当前代码范围
 `self-hosted` 分支当前代码实现包含 Web 客户端、Fastify 服务端，以及一个初始的 `apps/mobile` React Native + Expo 骨架。当前可运行代码只保留 IELTS 备考核心能力：
@@ -39,7 +42,7 @@
 仓库内仍保留部分历史材料，主要用于追踪和复盘，不代表 `self-hosted` 当前能力边界：
 
 1. `docs/tracking/`
-2. `docs/backlog/`
+2. `docs/backlog/`（但 `docs/backlog/Self-Hosted-Completion-Followups-2026-04-10.md` 为当前审计补充）
 3. `docs/engineering/S1-Implementation-Report.md` 到 `S8-Implementation-Report.md`
 
 如果历史材料与当前代码冲突，以“当前有效文档”和代码实现为准。
@@ -52,10 +55,13 @@
 5. 然后读 `docs/architecture/Technical-Architecture.md`
 6. 如需推进移动端建设，再读 `docs/architecture/Mobile-Technology-Selection.md`
 7. 如需了解剩余落地路径，读 `docs/engineering/Self-Hosted-Learner-Delivery-Roadmap.md`
-8. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
-9. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
-10. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
-11. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
-12. 如需生成移动端原生构建或设备验收，读 `docs/engineering/Mobile-Delivery-Runbook.md`
-13. 如需给安装包预置默认 self-hosted 实例，可在构建前创建 `apps/mobile/.env.local`，填写 `EXPO_PUBLIC_API_BASE_URL`；`EXPO_PUBLIC_WS_BASE_URL` 可省略并由脚本自动推导
-14. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
+8. 如需理解当前代码快照的逐项完成度，读 `docs/engineering/Codebase-Completion-Audit-2026-04-10.md`
+9. 如需查看剩余补洞项，读 `docs/backlog/Self-Hosted-Completion-Followups-2026-04-10.md`
+10. 如需直接进入执行拆解，读 `docs/engineering/Self-Hosted-Gap-Closure-Execution-Plan-2026-04-10.md`
+11. 部署前读 `docs/engineering/Self-Hosted-Deployment-Guide.md`
+12. 如需执行移动端完整本地质量门禁，可运行 `npm run smoke:quality-gate:mobile-local`
+13. 如需执行移动端本地 iOS smoke，可运行 `npm run smoke:e2e:mobile-ios-local`
+14. 如需执行移动端本地 Android smoke，可运行 `npm run smoke:e2e:mobile-android-local`
+15. 如需生成移动端原生构建或设备验收，读 `docs/engineering/Mobile-Delivery-Runbook.md`
+16. 如需给安装包预置默认 self-hosted 实例，可在构建前创建 `apps/mobile/.env.local`，填写 `EXPO_PUBLIC_API_BASE_URL`；`EXPO_PUBLIC_WS_BASE_URL` 可省略并由脚本自动推导
+17. 如需落 Postgres，再读 `docs/engineering/Database-Schema-Draft.md`
