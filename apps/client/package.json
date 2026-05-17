@@ -16,6 +16,7 @@
     "test:e2e:frontend-full": "npx playwright test e2e/self-hosted-core-api.spec.mjs e2e/learner-main-flow.spec.mjs e2e/practice-writing-mock-flow.spec.mjs"
   },
   "dependencies": {
+    "@ielts/shared-client": "0.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.3"

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "node -e \"process.exit(0)\"",
-    "test": "node -e \"process.exit(0)\""
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run tests"
   },
   "exports": {
     ".": "./src/index.ts",
