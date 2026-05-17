@@ -6,6 +6,11 @@ import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
 import type { SpeakingRolePlayScenariosResponse, SpeakingSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { openAppSettingsAsync } from "../src/lib/native-settings";
+import {
+  ExpoSpeechRecognitionModule,
+  getSpeechRecognitionUnsupportedReason,
+  useSpeechRecognitionEvent
+} from "../src/lib/speech-recognition";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
 import { useAppSession } from "../src/state/app-session";
 import { useStudyLoop } from "../src/state/study-loop";
@@ -236,6 +241,23 @@ const formatIsoDateTime = (value?: string | null): string => {
   });
 };
 
+const formatTranscriptPreview = (value: string): string => {
+  const normalized = value.trim();
+  if (normalized.length <= 48) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 45)}...`;
+};
+
+const formatVoiceVolume = (value: number | null): string => {
+  if (value === null) {
+    return "-";
+  }
+
+  return value.toFixed(1);
+};
+
 type SpeakingRetryAction =
   | "create_session"
   | "load_role_play_scenarios"
@@ -299,8 +321,11 @@ const toRequestErrorMessage = (error: unknown, fallback: string): string => {
 export default function SpeakingScreen() {
   const { instanceConfig, session: authSession, runWithAuthorizedClient } = useAppSession();
   const { recordActivity } = useStudyLoop();
+  const speechRecognitionUnsupportedReason = getSpeechRecognitionUnsupportedReason();
   const socketRef = useRef<WebSocket | null>(null);
   const shouldReconnectRef = useRef(false);
+  const voiceCaptureResumeRef = useRef(false);
+  const voiceCaptureActiveRef = useRef(false);
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
   const pendingRestoreReconnectRef = useRef(false);
@@ -329,6 +354,21 @@ export default function SpeakingScreen() {
   const [microphonePermissionStatus, setMicrophonePermissionStatus] = useState("未决定");
   const [microphoneSettingsRequired, setMicrophoneSettingsRequired] = useState(false);
   const [requestingMicrophonePermission, setRequestingMicrophonePermission] = useState(false);
+  const [speechPermissionStatus, setSpeechPermissionStatus] = useState(
+    speechRecognitionUnsupportedReason ? "运行环境不支持" : "未决定"
+  );
+  const [speechSettingsRequired, setSpeechSettingsRequired] = useState(false);
+  const [requestingSpeechPermission, setRequestingSpeechPermission] = useState(false);
+  const [speechRecognitionAvailable, setSpeechRecognitionAvailable] = useState(
+    ExpoSpeechRecognitionModule.isRecognitionAvailable()
+  );
+  const [voiceCaptureActive, setVoiceCaptureActive] = useState(false);
+  const [voiceCaptureStatus, setVoiceCaptureStatus] = useState("未开始");
+  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState("");
+  const [voiceFinalTranscript, setVoiceFinalTranscript] = useState("");
+  const [voiceAudioUri, setVoiceAudioUri] = useState<string | null>(null);
+  const [voiceVolume, setVoiceVolume] = useState<number | null>(null);
+  const [voiceDeliveryDetail, setVoiceDeliveryDetail] = useState("-");
   const [loading, setLoading] = useState(false);
   const [serverSyncDetail, setServerSyncDetail] = useState("-");
   const [serverSyncAt, setServerSyncAt] = useState<string | null>(null);
@@ -372,9 +412,46 @@ export default function SpeakingScreen() {
     existing.close();
   };
 
+  const resetVoiceCaptureState = (options?: { clearResumeIntent?: boolean }): void => {
+    if (options?.clearResumeIntent ?? true) {
+      voiceCaptureResumeRef.current = false;
+    }
+
+    setVoiceCaptureActive(false);
+    setVoiceCaptureStatus("未开始");
+    setVoiceInterimTranscript("");
+    setVoiceFinalTranscript("");
+    setVoiceAudioUri(null);
+    setVoiceVolume(null);
+    setVoiceDeliveryDetail("-");
+  };
+
+  const abortVoiceCapture = useEffectEvent((reason: string, options?: { preserveResumeIntent?: boolean }) => {
+    if (!options?.preserveResumeIntent) {
+      voiceCaptureResumeRef.current = false;
+    }
+
+    try {
+      ExpoSpeechRecognitionModule.abort();
+    } catch {
+      // Best-effort cleanup when the recognizer is already inactive.
+    }
+
+    setVoiceCaptureActive(false);
+    setVoiceCaptureStatus(reason);
+    setVoiceVolume(null);
+  });
+
   const resetCheckpointState = (): void => {
+    try {
+      ExpoSpeechRecognitionModule.abort();
+    } catch {
+      // Best-effort cleanup only.
+    }
+
     shouldReconnectRef.current = false;
     pendingRestoreReconnectRef.current = false;
+    resetVoiceCaptureState();
     setTaskType(defaultTaskType);
     setScenarioType(defaultScenarioType);
     setTopic(defaultTopic);
@@ -416,13 +493,26 @@ export default function SpeakingScreen() {
     setCheckpointStatus(`已自动保存 ${formatCheckpointTime(snapshot.updatedAt)}`);
   });
 
-  useEffect(() => closeSocket, []);
+  useEffect(() => {
+    return () => {
+      try {
+        ExpoSpeechRecognitionModule.abort();
+      } catch {
+        // Best-effort cleanup only.
+      }
+      closeSocket();
+    };
+  }, []);
 
   useEffect(() => {
     if (!instanceConfig || !authSession) {
       closeSocket();
     }
   }, [authSession, instanceConfig]);
+
+  useEffect(() => {
+    voiceCaptureActiveRef.current = voiceCaptureActive;
+  }, [voiceCaptureActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -517,6 +607,28 @@ export default function SpeakingScreen() {
     }
   };
 
+  const syncSpeechRecognitionPermission = async (): Promise<boolean> => {
+    try {
+      const recognitionAvailable = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+      setSpeechRecognitionAvailable(recognitionAvailable);
+      if (!recognitionAvailable) {
+        setSpeechPermissionStatus(speechRecognitionUnsupportedReason ? "运行环境不支持" : "不可用");
+        setSpeechSettingsRequired(false);
+        return false;
+      }
+
+      const permission = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+      setSpeechPermissionStatus(toPermissionLabel(permission.status));
+      setSpeechSettingsRequired(!permission.granted && permission.canAskAgain === false);
+      return permission.granted && recognitionAvailable;
+    } catch {
+      setSpeechPermissionStatus("检查失败");
+      setSpeechRecognitionAvailable(false);
+      setSpeechSettingsRequired(false);
+      return false;
+    }
+  };
+
   const prepareSpeakingAudioSession = async (): Promise<void> => {
     try {
       await setAudioModeAsync({
@@ -559,6 +671,46 @@ export default function SpeakingScreen() {
     }
   };
 
+  const ensureVoiceCapturePermission = async (): Promise<boolean> => {
+    const microphoneReady = await ensureMicrophonePermission();
+    if (!microphoneReady) {
+      return false;
+    }
+
+    const recognitionAvailable = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+    setSpeechRecognitionAvailable(recognitionAvailable);
+    if (!recognitionAvailable) {
+      setVoiceCaptureStatus(speechRecognitionUnsupportedReason ? "当前运行环境不支持语音识别" : "当前设备不支持语音识别");
+      setError(speechRecognitionUnsupportedReason ?? "当前设备不支持语音识别服务，无法开始原生语音输入");
+      return false;
+    }
+
+    const alreadyGranted = await syncSpeechRecognitionPermission();
+    if (alreadyGranted) {
+      return true;
+    }
+
+    setRequestingSpeechPermission(true);
+    try {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      setSpeechPermissionStatus(toPermissionLabel(permission.status));
+      setSpeechSettingsRequired(!permission.granted && permission.canAskAgain === false);
+      if (!permission.granted) {
+        setError("语音识别权限未授予，无法开始原生语音输入");
+        return false;
+      }
+
+      setError(null);
+      setStatusMessage("语音识别权限已授权");
+      return true;
+    } catch (permissionError) {
+      setError(permissionError instanceof Error ? permissionError.message : "申请语音识别权限失败");
+      return false;
+    } finally {
+      setRequestingSpeechPermission(false);
+    }
+  };
+
   const openMicrophoneSettings = async (): Promise<void> => {
     const opened = await openAppSettingsAsync();
     if (opened) {
@@ -572,6 +724,7 @@ export default function SpeakingScreen() {
 
   useEffect(() => {
     void syncMicrophonePermission();
+    void syncSpeechRecognitionPermission();
   }, []);
 
   useEffect(() => {
@@ -583,6 +736,13 @@ export default function SpeakingScreen() {
 
       if (!movedToBackground) {
         return;
+      }
+
+      if (voiceCaptureActiveRef.current) {
+        voiceCaptureResumeRef.current = true;
+        abortVoiceCapture("应用切到后台，已暂停原生语音输入", {
+          preserveResumeIntent: true
+        });
       }
 
       if (socketRef.current && isSocketOpen(socketRef.current)) {
@@ -598,6 +758,191 @@ export default function SpeakingScreen() {
       subscription.remove();
     };
   }, []);
+
+  const sendTranscriptText = useEffectEvent((text: string, options?: { source?: "manual" | "voice" }): boolean => {
+    const normalized = text.trim();
+    if (!normalized) {
+      setError("转写文本不能为空");
+      return false;
+    }
+
+    setTranscript(normalized);
+    if (options?.source === "voice") {
+      setVoiceFinalTranscript(normalized);
+    }
+
+    const socket = socketRef.current;
+    if (!socket || !isSocketOpen(socket)) {
+      if (options?.source === "voice") {
+        setVoiceDeliveryDetail("已保留 voice transcript，等待连接后发送");
+        setVoiceCaptureStatus("已识别语音，等待实时连接");
+        setError(null);
+        return false;
+      }
+
+      setError("请先连接实时会话");
+      return false;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "partial_transcript",
+        text: normalized,
+        part_no: currentPart
+      })
+    );
+    setStatusMessage(options?.source === "voice" ? "已自动发送语音转写" : "已发送转写文本");
+    setServerSyncDetail(
+      `session ${sessionState?.session_id ?? "-"} / part ${currentPart} / source ${options?.source ?? "manual"} / preview ${formatTranscriptPreview(normalized)}`
+    );
+    setServerSyncAt(new Date().toISOString());
+    setLastFailedAction(null);
+    setVoiceDeliveryDetail(options?.source === "voice" ? "已自动发送 voice transcript" : "最近一次发送来自手工转写");
+    setError(null);
+    return true;
+  });
+
+  const startVoiceCapture = async (options?: { skipPermissionCheck?: boolean; autoResumed?: boolean }): Promise<void> => {
+    if (!sessionState?.session_id || !resumeToken) {
+      setError("请先创建口语会话");
+      return;
+    }
+
+    if (!isSocketOpen(socketRef.current)) {
+      setError("请先连接实时会话");
+      return;
+    }
+
+    if (!options?.skipPermissionCheck) {
+      const granted = await ensureVoiceCapturePermission();
+      if (!granted) {
+        voiceCaptureResumeRef.current = false;
+        return;
+      }
+    }
+
+    try {
+      setVoiceInterimTranscript("");
+      setVoiceFinalTranscript("");
+      setVoiceAudioUri(null);
+      setVoiceVolume(null);
+      setVoiceDeliveryDetail("-");
+      setVoiceCaptureStatus(options?.autoResumed ? "正在恢复语音输入" : "正在启动语音输入");
+      setStatusMessage(options?.autoResumed ? "正在恢复原生语音输入" : "正在启动原生语音输入");
+      const contextualStrings = Array.from(
+        new Set(
+          ["IELTS", "speaking", ...topic.split(/[^A-Za-z]+/).filter((item) => item.length >= 4).slice(0, 6)].map((item) =>
+            item.trim()
+          )
+        )
+      ).filter(Boolean);
+
+      ExpoSpeechRecognitionModule.start({
+        lang: "en-US",
+        interimResults: true,
+        continuous: false,
+        addsPunctuation: true,
+        iosTaskHint: "dictation",
+        iosVoiceProcessingEnabled: true,
+        contextualStrings,
+        androidIntentOptions: {
+          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 1500,
+          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 1000
+        },
+        recordingOptions: {
+          persist: true,
+          outputFileName: `speaking-${Date.now()}.wav`
+        },
+        volumeChangeEventOptions: {
+          enabled: true,
+          intervalMillis: 250
+        }
+      });
+      setError(null);
+    } catch (startError) {
+      const message = startError instanceof Error ? startError.message : "启动原生语音输入失败";
+      voiceCaptureResumeRef.current = false;
+      setVoiceCaptureActive(false);
+      setVoiceCaptureStatus("启动语音输入失败");
+      setError(message);
+    }
+  };
+
+  const stopVoiceCapture = (): void => {
+    if (!voiceCaptureActive) {
+      return;
+    }
+
+    try {
+      ExpoSpeechRecognitionModule.stop();
+      setVoiceCaptureStatus("正在结束语音输入");
+      setError(null);
+    } catch (stopError) {
+      const message = stopError instanceof Error ? stopError.message : "停止语音输入失败";
+      setError(message);
+    }
+  };
+
+  const handleSpeechRecognitionStart = useEffectEvent(() => {
+    setVoiceCaptureActive(true);
+    setVoiceCaptureStatus("录音中，正在识别");
+    setError(null);
+  });
+
+  const handleSpeechRecognitionAudioStart = useEffectEvent((event: { uri: string | null }) => {
+    setVoiceCaptureStatus("已开始原生录音");
+    setVoiceAudioUri(event.uri);
+  });
+
+  const handleSpeechRecognitionResult = useEffectEvent((event: { isFinal: boolean; results: Array<{ transcript: string }> }) => {
+    const transcriptText = event.results[0]?.transcript?.trim() ?? "";
+    if (!transcriptText) {
+      return;
+    }
+
+    setTranscript(transcriptText);
+    if (event.isFinal) {
+      setVoiceInterimTranscript("");
+      setVoiceFinalTranscript(transcriptText);
+      setVoiceCaptureStatus("已识别最终结果");
+      sendTranscriptText(transcriptText, {
+        source: "voice"
+      });
+      return;
+    }
+
+    setVoiceInterimTranscript(transcriptText);
+    setVoiceCaptureStatus("正在识别语音");
+  });
+
+  const handleSpeechRecognitionError = useEffectEvent((event: { error: string; message: string }) => {
+    voiceCaptureResumeRef.current = false;
+    setVoiceCaptureActive(false);
+    setVoiceCaptureStatus(`语音识别失败: ${event.error}`);
+    setError(event.message);
+  });
+
+  const handleSpeechRecognitionEnd = useEffectEvent(() => {
+    setVoiceCaptureActive(false);
+    setVoiceVolume(null);
+    setVoiceCaptureStatus((current) => (current === "会话结束，已停止原生语音输入" ? current : "语音输入已结束"));
+  });
+
+  const handleSpeechRecognitionAudioEnd = useEffectEvent((event: { uri: string | null }) => {
+    setVoiceAudioUri(event.uri);
+  });
+
+  const handleSpeechRecognitionVolumeChange = useEffectEvent((event: { value: number }) => {
+    setVoiceVolume(event.value);
+  });
+
+  useSpeechRecognitionEvent("start", handleSpeechRecognitionStart);
+  useSpeechRecognitionEvent("audiostart", handleSpeechRecognitionAudioStart);
+  useSpeechRecognitionEvent("result", handleSpeechRecognitionResult);
+  useSpeechRecognitionEvent("error", handleSpeechRecognitionError);
+  useSpeechRecognitionEvent("end", handleSpeechRecognitionEnd);
+  useSpeechRecognitionEvent("audioend", handleSpeechRecognitionAudioEnd);
+  useSpeechRecognitionEvent("volumechange", handleSpeechRecognitionVolumeChange);
 
   const resetLiveFeedback = (): void => {
     setSuggestions([]);
@@ -718,6 +1063,7 @@ export default function SpeakingScreen() {
   };
 
   const createSession = async (): Promise<void> => {
+    abortVoiceCapture("会话已重建，已停止原生语音输入");
     closeSocket();
     shouldReconnectRef.current = false;
     setLoading(true);
@@ -943,6 +1289,8 @@ export default function SpeakingScreen() {
 
         if (payload.type === "session_end") {
           shouldReconnectRef.current = false;
+          resetVoiceCaptureState();
+          setVoiceCaptureStatus("会话结束，已停止原生语音输入");
           setConnectionStatus("已结束");
           markSyncSuccess(
             "会话结束",
@@ -997,6 +1345,9 @@ export default function SpeakingScreen() {
         }
         socketRef.current = null;
         setConnectionStatus((current) => (current === "已结束" ? "已结束" : "已断开"));
+        if (voiceCaptureActiveRef.current) {
+          abortVoiceCapture("实时连接断开，已停止原生语音输入");
+        }
       };
     } catch (connectError) {
       shouldReconnectRef.current = false;
@@ -1049,21 +1400,9 @@ export default function SpeakingScreen() {
   };
 
   const sendTranscript = (): void => {
-    const socket = socketRef.current;
-    if (!socket || !isSocketOpen(socket)) {
-      setError("请先连接实时会话");
-      return;
-    }
-
-    socket.send(
-      JSON.stringify({
-        type: "partial_transcript",
-        text: transcript,
-        part_no: currentPart
-      })
-    );
-    setStatusMessage("已发送转写文本");
-    setError(null);
+    sendTranscriptText(transcript, {
+      source: "manual"
+    });
   };
 
   const sendHeartbeat = (): void => {
@@ -1083,6 +1422,7 @@ export default function SpeakingScreen() {
   };
 
   const endSession = async (): Promise<void> => {
+    abortVoiceCapture("会话结束，已停止原生语音输入");
     const socket = socketRef.current;
     if (socket && isSocketOpen(socket)) {
       shouldReconnectRef.current = false;
@@ -1145,6 +1485,7 @@ export default function SpeakingScreen() {
       return;
     }
 
+    abortVoiceCapture("重答会话已创建，已停止原生语音输入");
     closeSocket();
     shouldReconnectRef.current = false;
     setLoading(true);
@@ -1370,6 +1711,7 @@ export default function SpeakingScreen() {
   useAppForegroundEffect(
     async () => {
       void syncMicrophonePermission();
+      void syncSpeechRecognitionPermission();
       void setIsAudioActiveAsync(true).catch(() => undefined);
 
       if (loading || !sessionState?.session_id) {
@@ -1382,12 +1724,21 @@ export default function SpeakingScreen() {
       });
 
       if (!response || !shouldReconnectRef.current || response.status === "ended") {
+        voiceCaptureResumeRef.current = false;
         return;
       }
 
       await connect({
         skipPermissionCheck: true
       });
+
+      if (voiceCaptureResumeRef.current) {
+        await startVoiceCapture({
+          skipPermissionCheck: true,
+          autoResumed: true
+        });
+        voiceCaptureResumeRef.current = false;
+      }
     },
     {
       enabled: Boolean(sessionState?.session_id)
@@ -1494,10 +1845,17 @@ export default function SpeakingScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>麦克风权限</Text>
         <ButtonRow>
           <StatusPill label={microphonePermissionStatus} tone={microphonePermissionStatus === "已授权" ? "success" : "neutral"} />
-          <StatusPill label={requestingMicrophonePermission ? "申请中" : "待命"} tone="accent" />
+          <StatusPill
+            label={`语音识别${speechPermissionStatus}`}
+            tone={speechPermissionStatus === "已授权" ? "success" : "neutral"}
+          />
+        </ButtonRow>
+        <ButtonRow>
+          <StatusPill label={speechRecognitionAvailable ? "识别服务可用" : "识别服务不可用"} tone={speechRecognitionAvailable ? "success" : "accent"} />
+          <StatusPill label={requestingMicrophonePermission || requestingSpeechPermission ? "申请中" : "待命"} tone="accent" />
         </ButtonRow>
         <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>
-          实时口语进入连接前会先校验麦克风权限。应用切到后台后会关闭实时连接，并在恢复前台时尝试同步会话状态。
+          实时口语进入连接前会先校验麦克风权限；开始原生语音输入前会额外校验语音识别服务。应用切到后台后会关闭实时连接，并在恢复前台时尝试同步会话状态。
         </Text>
         <ButtonRow>
           <PrimaryButton
@@ -1505,18 +1863,28 @@ export default function SpeakingScreen() {
             onPress={() => void ensureMicrophonePermission()}
             disabled={requestingMicrophonePermission}
           />
-          {microphoneSettingsRequired ? (
+          <SecondaryButton
+            label={speechRecognitionUnsupportedReason ? "运行环境不支持" : requestingSpeechPermission ? "申请中..." : "授权语音识别"}
+            onPress={() => void ensureVoiceCapturePermission()}
+            disabled={requestingSpeechPermission || Boolean(speechRecognitionUnsupportedReason)}
+          />
+        </ButtonRow>
+        {speechRecognitionUnsupportedReason ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>{speechRecognitionUnsupportedReason}</Text>
+        ) : null}
+        {microphoneSettingsRequired || speechSettingsRequired ? (
+          <ButtonRow>
             <SecondaryButton
               label="打开系统麦克风设置"
               onPress={() => void openMicrophoneSettings()}
-              disabled={requestingMicrophonePermission}
+              disabled={requestingMicrophonePermission || requestingSpeechPermission}
               testID="speaking.microphoneOpenSettings"
             />
-          ) : null}
-        </ButtonRow>
-        {microphoneSettingsRequired ? (
+          </ButtonRow>
+        ) : null}
+        {microphoneSettingsRequired || speechSettingsRequired ? (
           <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-            系统已阻止麦克风权限，请前往系统设置开启后再连接实时口语。
+            系统已阻止麦克风或语音识别权限，请前往系统设置开启后再连接实时口语。
           </Text>
         ) : null}
       </InfoCard>
@@ -1604,6 +1972,30 @@ export default function SpeakingScreen() {
         </ButtonRow>
       </InfoCard>
 
+      <InfoCard tone={voiceCaptureActive ? "accent" : "default"}>
+        <Text style={{ color: colors.textMuted, fontSize: 12 }}>原生语音输入</Text>
+        <ButtonRow>
+          <StatusPill label={voiceCaptureActive ? "录音中" : "待命"} tone={voiceCaptureActive ? "accent" : "neutral"} />
+          <StatusPill label={voiceCaptureStatus} tone={voiceCaptureActive ? "accent" : "neutral"} />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>voice_interim: {voiceInterimTranscript || "-"}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>voice_final: {voiceFinalTranscript || "-"}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>voice_audio_uri: {voiceAudioUri ?? "-"}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>voice_volume: {formatVoiceVolume(voiceVolume)}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>voice_delivery: {voiceDeliveryDetail}</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+          原生语音输入会把真实麦克风采集交给系统识别生成 transcript；在实时连接已建立时，最终结果会自动发送到当前 speaking session。
+        </Text>
+        <ButtonRow>
+          <PrimaryButton
+            label={voiceCaptureActive ? "语音输入中..." : "开始语音输入"}
+            onPress={() => void startVoiceCapture()}
+            disabled={voiceCaptureActive || !sessionState || !isSocketOpen(socketRef.current) || !speechRecognitionAvailable}
+          />
+          <SecondaryButton label="停止语音输入" onPress={stopVoiceCapture} disabled={!voiceCaptureActive} />
+        </ButtonRow>
+      </InfoCard>
+
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>实时转写</Text>
         <TextField
@@ -1615,6 +2007,9 @@ export default function SpeakingScreen() {
           numberOfLines={5}
           textAlignVertical="top"
         />
+        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+          原生语音识别会自动填充该字段；如识别结果需要修正，仍可在此手工编辑后重新发送。
+        </Text>
         <ButtonRow>
           <PrimaryButton label="发送转写" onPress={sendTranscript} disabled={!isSocketOpen(socketRef.current)} />
           <SecondaryButton label="同题再答" onPress={() => void createRetrySession()} disabled={loading || !sessionState} />

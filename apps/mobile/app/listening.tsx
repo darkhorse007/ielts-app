@@ -1,7 +1,17 @@
 import { Redirect, router } from "expo-router";
+import { setAudioModeAsync, setIsAudioActiveAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { AppState, Pressable, Text, View } from "react-native";
+import coreSegment0 from "../assets/audio/listening/core/segment-0.m4a";
+import coreSegment1 from "../assets/audio/listening/core/segment-1.m4a";
+import coreSegment2 from "../assets/audio/listening/core/segment-2.m4a";
+import coreSegment3 from "../assets/audio/listening/core/segment-3.m4a";
+import dictationSegment0 from "../assets/audio/listening/dictation/segment-0.m4a";
+import dictationSegment1 from "../assets/audio/listening/dictation/segment-1.m4a";
+import dictationSegment2 from "../assets/audio/listening/dictation/segment-2.m4a";
+import dictationSegment3 from "../assets/audio/listening/dictation/segment-3.m4a";
 import { ApiNetworkError, ApiRequestError } from "../src/lib/api-client";
+import { trackMobileAnalyticsEvent } from "../src/lib/analytics";
 import type { PlaybackStateResponse, PracticeSessionResponse } from "../src/lib/api-types";
 import { useAppForegroundEffect } from "../src/hooks/use-app-foreground-effect";
 import { buildScopedStorageKey, clearStoredJson, loadStoredJson, saveStoredJson } from "../src/lib/storage";
@@ -30,6 +40,10 @@ const defaultTaskType: ListeningTaskType = "core_training";
 const defaultPlaybackRate = "1";
 const defaultSegmentIndex = "0";
 const defaultPositionSeconds = "0";
+const listeningSegmentSources: Record<ListeningTaskType, [string | number, string | number, string | number, string | number]> = {
+  core_training: [coreSegment0, coreSegment1, coreSegment2, coreSegment3],
+  dictation: [dictationSegment0, dictationSegment1, dictationSegment2, dictationSegment3]
+};
 
 const isDefaultListeningSnapshot = (snapshot: ListeningSnapshot): boolean =>
   snapshot.taskType === defaultTaskType &&
@@ -102,6 +116,57 @@ const formatIsoDateTime = (value?: string | null): string => {
   });
 };
 
+const clampSegmentIndex = (value: number, maxIndex: number): number => Math.min(Math.max(Math.trunc(value), 0), Math.max(maxIndex, 0));
+
+const clampPlaybackRateForPlayer = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.min(Math.max(value, 0.5), 2);
+};
+
+const formatPlaybackInput = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0";
+  }
+
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+const formatPlaybackProgress = (value: number): string => `${formatPlaybackInput(value)}s`;
+
+const toNativePlayerStatusLabel = (status: {
+  isLoaded: boolean;
+  isBuffering: boolean;
+  didJustFinish: boolean;
+  playing: boolean;
+  currentTime: number;
+}): string => {
+  if (!status.isLoaded) {
+    return "未装载";
+  }
+
+  if (status.isBuffering) {
+    return "缓冲中";
+  }
+
+  if (status.didJustFinish) {
+    return "已播完";
+  }
+
+  if (status.playing) {
+    return "播放中";
+  }
+
+  if (status.currentTime > 0) {
+    return "已暂停";
+  }
+
+  return "待播放";
+};
+
 type ListeningRetryAction =
   | "create_session"
   | "submit"
@@ -144,6 +209,9 @@ export default function ListeningScreen() {
   const { recordActivity } = useStudyLoop();
   const snapshotSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextSnapshotPersistRef = useRef(false);
+  const playbackResumeRef = useRef(false);
+  const playerCurrentTimeRef = useRef(0);
+  const playerPlayingRef = useRef(false);
   const [taskType, setTaskType] = useState<ListeningTaskType>(defaultTaskType);
   const [session, setSession] = useState<PracticeSessionResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -161,12 +229,22 @@ export default function ListeningScreen() {
   const [replayWrongOnly, setReplayWrongOnly] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
   const [lastPlaybackSnapshot, setLastPlaybackSnapshot] = useState<PlaybackStateResponse | null>(null);
-
-  if (!authSession) {
-    return <Redirect href="/login" />;
-  }
-
-  const snapshotStorageKey = buildScopedStorageKey("listening", "draft", "v1", authSession.userId);
+  const activeListeningTaskType: ListeningTaskType = session?.task_type === "dictation" ? "dictation" : taskType;
+  const bundleSegmentMaxIndex = listeningSegmentSources[activeListeningTaskType].length - 1;
+  const maxSessionSegmentIndex = session
+    ? session.questions.reduce((current, question) => Math.max(current, question.audio_segment_index ?? 0), 0)
+    : bundleSegmentMaxIndex;
+  const maxPlayableSegmentIndex = Math.max(maxSessionSegmentIndex, bundleSegmentMaxIndex);
+  const resolvedSegmentIndex = clampSegmentIndex(asNumber(segmentIndex, 0), maxPlayableSegmentIndex);
+  const currentSegmentSource = session ? listeningSegmentSources[activeListeningTaskType][resolvedSegmentIndex] : null;
+  const currentSegmentQuestion =
+    session?.questions.find((question) => (question.audio_segment_index ?? 0) === resolvedSegmentIndex) ?? null;
+  const player = useAudioPlayer(null, {
+    updateInterval: 250,
+    keepAudioSessionActive: true
+  });
+  const nativePlaybackStatus = useAudioPlayerStatus(player);
+  const snapshotStorageKey = authSession ? buildScopedStorageKey("listening", "draft", "v1", authSession.userId) : null;
 
   const markSyncSuccess = (statusText: string, detail: string): void => {
     setStatusMessage(statusText);
@@ -201,6 +279,10 @@ export default function ListeningScreen() {
   };
 
   const persistSnapshot = useEffectEvent(async (snapshot: ListeningSnapshot) => {
+    if (!snapshotStorageKey) {
+      return;
+    }
+
     if (isDefaultListeningSnapshot(snapshot)) {
       await clearStoredJson(snapshotStorageKey);
       setCheckpointStatus("已启用自动保存");
@@ -220,6 +302,14 @@ export default function ListeningScreen() {
     if (snapshotSaveTimeoutRef.current) {
       clearTimeout(snapshotSaveTimeoutRef.current);
       snapshotSaveTimeoutRef.current = null;
+    }
+
+    if (!snapshotStorageKey) {
+      setCheckpointStatus("登录后启用自动保存");
+      setCheckpointReady(true);
+      return () => {
+        cancelled = true;
+      };
     }
 
     void (async () => {
@@ -310,6 +400,98 @@ export default function ListeningScreen() {
     taskType
   ]);
 
+  useEffect(() => {
+    playerCurrentTimeRef.current = nativePlaybackStatus.currentTime;
+    playerPlayingRef.current = nativePlaybackStatus.playing;
+  }, [nativePlaybackStatus.currentTime, nativePlaybackStatus.playing]);
+
+  useEffect(() => {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false
+    }).catch(() => undefined);
+
+    return () => {
+      try {
+        player.pause();
+      } catch {
+        // Best-effort cleanup only.
+      }
+      void setIsAudioActiveAsync(false).catch(() => undefined);
+    };
+  }, [player]);
+
+  useEffect(() => {
+    if (!currentSegmentSource) {
+      return;
+    }
+
+    try {
+      player.pause();
+      player.replace(currentSegmentSource);
+      player.setPlaybackRate(clampPlaybackRateForPlayer(asNumber(playbackRate, 1)));
+    } catch {
+      // Best-effort source replacement only.
+    }
+
+    void player.seekTo(Math.max(0, asNumber(positionSeconds, 0))).catch(() => undefined);
+  }, [currentSegmentSource, player]);
+
+  useEffect(() => {
+    try {
+      player.setPlaybackRate(clampPlaybackRateForPlayer(asNumber(playbackRate, 1)));
+    } catch {
+      // Best-effort rate sync only.
+    }
+  }, [player, playbackRate]);
+
+  useEffect(() => {
+    if (!nativePlaybackStatus.didJustFinish) {
+      return;
+    }
+
+    setPositionSeconds(formatPlaybackInput(nativePlaybackStatus.duration));
+    setStatusMessage("当前音频段播放完成");
+  }, [nativePlaybackStatus.didJustFinish, nativePlaybackStatus.duration]);
+
+  useEffect(() => {
+    if (!nativePlaybackStatus.mediaServicesDidReset) {
+      return;
+    }
+
+    setError("系统音频服务已重置，请重新加载当前段后再播放");
+  }, [nativePlaybackStatus.mediaServicesDidReset]);
+
+  useEffect(() => {
+    let currentState = AppState.currentState ?? "active";
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const movedToBackground = currentState === "active" && nextState !== "active";
+      currentState = nextState;
+
+      if (!movedToBackground) {
+        return;
+      }
+
+      if (playerPlayingRef.current) {
+        playbackResumeRef.current = true;
+        try {
+          player.pause();
+        } catch {
+          // Best-effort pause only.
+        }
+        setPositionSeconds(formatPlaybackInput(playerCurrentTimeRef.current));
+        setStatusMessage("应用切到后台，已暂停真实播放器");
+      }
+
+      void setIsAudioActiveAsync(false).catch(() => undefined);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [player]);
+
   const updateAnswer = (questionId: string, value: string): void => {
     setAnswers((current) => ({
       ...current,
@@ -317,7 +499,82 @@ export default function ListeningScreen() {
     }));
   };
 
+  const playCurrentSegment = async (): Promise<void> => {
+    if (!session || !currentSegmentSource) {
+      setError("请先创建听力训练");
+      return;
+    }
+
+    const requestedPosition = Math.max(0, asNumber(positionSeconds, playerCurrentTimeRef.current));
+
+    try {
+      await setIsAudioActiveAsync(true);
+      await player.seekTo(requestedPosition);
+      player.setPlaybackRate(clampPlaybackRateForPlayer(asNumber(playbackRate, 1)));
+      player.play();
+      playbackResumeRef.current = false;
+      setStatusMessage("真实播放器已开始播放");
+      setError(null);
+    } catch (playError) {
+      setError(playError instanceof Error ? playError.message : "启动真实播放器失败");
+    }
+  };
+
+  const pauseCurrentSegment = (): void => {
+    try {
+      player.pause();
+      setPositionSeconds(formatPlaybackInput(playerCurrentTimeRef.current));
+      setStatusMessage("真实播放器已暂停");
+      setError(null);
+    } catch (pauseError) {
+      setError(pauseError instanceof Error ? pauseError.message : "暂停真实播放器失败");
+    }
+  };
+
+  const seekCurrentSegment = async (): Promise<void> => {
+    if (!session) {
+      setError("请先创建听力训练");
+      return;
+    }
+
+    const requestedPosition = Math.max(0, asNumber(positionSeconds, 0));
+
+    try {
+      await player.seekTo(requestedPosition);
+      setPositionSeconds(formatPlaybackInput(requestedPosition));
+      setStatusMessage("已定位到指定播放位置");
+      setError(null);
+    } catch (seekError) {
+      setError(seekError instanceof Error ? seekError.message : "定位播放位置失败");
+    }
+  };
+
+  const jumpSegment = (direction: -1 | 1): void => {
+    if (!session) {
+      setError("请先创建听力训练");
+      return;
+    }
+
+    const nextSegmentIndex = clampSegmentIndex(resolvedSegmentIndex + direction, maxPlayableSegmentIndex);
+    setSegmentIndex(String(nextSegmentIndex));
+    setPositionSeconds("0");
+    setStatusMessage(`已切换到音频段 S${nextSegmentIndex}`);
+    setError(null);
+  };
+
+  const syncPlayerProgressToDraft = (): void => {
+    setPositionSeconds(formatPlaybackInput(playerCurrentTimeRef.current));
+    setStatusMessage("已同步真实播放器进度");
+    setError(null);
+  };
+
   const createSession = async (): Promise<void> => {
+    try {
+      player.pause();
+    } catch {
+      // Best-effort cleanup only.
+    }
+
     setLoading(true);
     try {
       setStatusMessage("正在创建听力训练");
@@ -337,6 +594,7 @@ export default function ListeningScreen() {
       setSegmentIndex("0");
       setPositionSeconds("0");
       setReplayWrongOnly(false);
+      playbackResumeRef.current = false;
       markSyncSuccess(
         response.task_type === "dictation"
           ? `已创建听写训练，句量 ${response.questions.length}`
@@ -382,6 +640,19 @@ export default function ListeningScreen() {
         summary: `听力提交 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}，accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`,
         route: "/listening"
       });
+      void trackMobileAnalyticsEvent(runWithAuthorizedClient, {
+        eventType: "practice_submitted",
+        skill: "listening",
+        createdAt: response.submission?.submitted_at,
+        metadata: {
+          sessionId: response.session_id,
+          taskType: response.task_type,
+          questionCount: response.questions.length,
+          correctCount: response.submission?.score_breakdown.correct_count ?? 0,
+          totalQuestions: response.submission?.score_breakdown.total_questions ?? 0,
+          accuracy: response.submission?.score_breakdown.accuracy ?? 0
+        }
+      });
       markSyncSuccess(
         `提交完成，正确 ${response.submission?.score_breakdown.correct_count ?? 0}/${response.submission?.score_breakdown.total_questions ?? 0}`,
         `session ${response.session_id} / accuracy ${Math.round((response.submission?.score_breakdown.accuracy ?? 0) * 100)}%`
@@ -402,15 +673,20 @@ export default function ListeningScreen() {
       return;
     }
 
+    const effectiveSegmentIndex = resolvedSegmentIndex;
+    const effectivePositionSeconds = playerPlayingRef.current ? playerCurrentTimeRef.current : Math.max(0, asNumber(positionSeconds, 0));
+
+    setSegmentIndex(String(effectiveSegmentIndex));
+    setPositionSeconds(formatPlaybackInput(effectivePositionSeconds));
     setLoading(true);
     try {
       setStatusMessage("正在保存播放状态");
-      setServerSyncDetail(`session ${session.session_id} / segment ${segmentIndex} / position ${positionSeconds}s`);
+      setServerSyncDetail(`session ${session.session_id} / segment ${effectiveSegmentIndex} / position ${formatPlaybackProgress(effectivePositionSeconds)}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.updatePlaybackState(accessToken, session.session_id, {
           playback_rate: asNumber(playbackRate, 1),
-          segment_index: asNumber(segmentIndex, 0),
-          position_seconds: asNumber(positionSeconds, 0),
+          segment_index: effectiveSegmentIndex,
+          position_seconds: effectivePositionSeconds,
           replay_wrong_only: replayWrongOnly
         })
       );
@@ -431,15 +707,17 @@ export default function ListeningScreen() {
     }
   };
 
-  const loadPlayback = async (): Promise<void> => {
+  const loadPlayback = async (options?: { skipLoading?: boolean; restoreForeground?: boolean }): Promise<PlaybackStateResponse | null> => {
     if (!session) {
       setError("请先创建听力训练");
-      return;
+      return null;
     }
 
-    setLoading(true);
+    if (!options?.skipLoading) {
+      setLoading(true);
+    }
     try {
-      setStatusMessage("正在加载播放状态");
+      setStatusMessage(options?.restoreForeground ? "正在恢复播放状态" : "正在加载播放状态");
       setServerSyncDetail(`session ${session.session_id}`);
       const response = await runWithAuthorizedClient((apiClient, accessToken) =>
         apiClient.getPlaybackState(accessToken, session.session_id)
@@ -448,16 +726,26 @@ export default function ListeningScreen() {
       applyPlaybackState(response, setPlaybackRate, setSegmentIndex, setPositionSeconds, setReplayWrongOnly);
       setLastPlaybackSnapshot(response);
       markSyncSuccess(
-        response.recovered ? "已加载并恢复播放状态" : "已加载播放状态",
+        response.recovered
+          ? options?.restoreForeground
+            ? "前台恢复后已恢复播放状态"
+            : "已加载并恢复播放状态"
+          : options?.restoreForeground
+            ? "前台恢复后已同步播放状态"
+            : "已加载播放状态",
         `playback_rate ${response.playback_rate} / segment ${response.segment_index} / recovered ${response.recovered ? "yes" : "no"}`
       );
       setError(null);
+      return response;
     } catch (loadError) {
       const message = toRequestErrorMessage(loadError, "加载播放状态失败");
       markSyncFailure("load_playback", message);
       setError(message);
+      return null;
     } finally {
-      setLoading(false);
+      if (!options?.skipLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -495,7 +783,15 @@ export default function ListeningScreen() {
       snapshotSaveTimeoutRef.current = null;
     }
 
-    await clearStoredJson(snapshotStorageKey);
+    if (snapshotStorageKey) {
+      await clearStoredJson(snapshotStorageKey);
+    }
+    try {
+      player.pause();
+    } catch {
+      // Best-effort cleanup only.
+    }
+    playbackResumeRef.current = false;
     skipNextSnapshotPersistRef.current = true;
     resetSnapshotState();
     setCheckpointReady(true);
@@ -530,18 +826,31 @@ export default function ListeningScreen() {
       if (loading || !session?.session_id) {
         return;
       }
-      await loadPlayback();
+
+      void setIsAudioActiveAsync(true).catch(() => undefined);
+      const response = await loadPlayback({
+        restoreForeground: true,
+        skipLoading: true
+      });
+      if (playbackResumeRef.current && response) {
+        setStatusMessage("已恢复最近播放状态，可继续播放");
+      }
+      playbackResumeRef.current = false;
     },
     {
       enabled: Boolean(session?.session_id)
     }
   );
 
+  if (!authSession) {
+    return <Redirect href="/login" />;
+  }
+
   return (
     <AppScreen
       eyebrow="Listening"
       title="听力训练已进入移动端"
-      subtitle="当前已接上 listening session、答案提交、播放状态保存/恢复，以及错题加入 retry queue。句级听写也会回显拼写与 chunk 级反馈。"
+      subtitle="当前已接上 listening session、原生音频播放器、播放状态保存/恢复，以及错题加入 retry queue。句级听写也会回显拼写与 chunk 级反馈。"
     >
       <InfoCard tone="accent">
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>训练形态</Text>
@@ -665,6 +974,22 @@ export default function ListeningScreen() {
 
       <InfoCard>
         <Text style={{ color: colors.textMuted, fontSize: 12 }}>播放状态</Text>
+        <ButtonRow>
+          <StatusPill label={toNativePlayerStatusLabel(nativePlaybackStatus)} tone={nativePlaybackStatus.playing ? "success" : "neutral"} />
+          <StatusPill label={`S${resolvedSegmentIndex}`} tone={session ? "accent" : "neutral"} />
+        </ButtonRow>
+        <Text style={{ color: colors.textPrimary, fontSize: 14 }}>
+          native_current_time: {formatPlaybackProgress(nativePlaybackStatus.currentTime)}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          native_duration: {formatPlaybackProgress(nativePlaybackStatus.duration)}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+          native_playback_rate: {nativePlaybackStatus.playbackRate.toFixed(2)}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>
+          segment_prompt: {currentSegmentQuestion?.prompt ?? "当前 session 尚未装载可播放段落"}
+        </Text>
         <TextField
           label="播放倍速"
           value={playbackRate}
@@ -701,9 +1026,28 @@ export default function ListeningScreen() {
           </Text>
         </Pressable>
         <ButtonRow>
+          <PrimaryButton label={nativePlaybackStatus.playing ? "播放中..." : "播放当前段"} onPress={() => void playCurrentSegment()} disabled={loading || !session} />
+          <SecondaryButton label="暂停播放" onPress={pauseCurrentSegment} disabled={!session || !nativePlaybackStatus.playing} />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton label="定位到当前输入位置" onPress={() => void seekCurrentSegment()} disabled={loading || !session} />
+          <SecondaryButton label="同步当前进度" onPress={syncPlayerProgressToDraft} disabled={!session} />
+        </ButtonRow>
+        <ButtonRow>
+          <PrimaryButton label="上一段" onPress={() => jumpSegment(-1)} disabled={!session || resolvedSegmentIndex <= 0} />
+          <SecondaryButton
+            label="下一段"
+            onPress={() => jumpSegment(1)}
+            disabled={!session || resolvedSegmentIndex >= maxPlayableSegmentIndex}
+          />
+        </ButtonRow>
+        <ButtonRow>
           <PrimaryButton label="保存播放状态" onPress={() => void savePlayback()} disabled={loading || !session} />
           <SecondaryButton label="加载播放状态" onPress={() => void loadPlayback()} disabled={loading || !session} />
         </ButtonRow>
+        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+          真实播放器会使用移动端内置 listening 样例音频；切到后台时会暂停播放，并在回前台时拉取最近一次 playback 状态用于继续学习。
+        </Text>
         <Text style={{ color: colors.textMuted, fontSize: 13 }}>
           last_replayed_question_id: {lastPlaybackSnapshot?.last_replayed_question_id ?? "-"}
         </Text>

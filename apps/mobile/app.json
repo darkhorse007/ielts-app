@@ -29,6 +29,13 @@
         {
           "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for speaking practice and pronunciation feedback."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to use the microphone for live speaking answers.",
+          "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to convert your live speaking answers into transcripts."
+        }
       ]
     ],
     "ios": {
