@@ -16,6 +16,7 @@
 11. 当前代码完成度审计: `docs/engineering/Codebase-Completion-Audit-2026-04-10.md`
 12. self-hosted 补洞 backlog: `docs/backlog/Self-Hosted-Completion-Followups-2026-04-10.md`
 13. self-hosted gap-closure 执行计划: `docs/engineering/Self-Hosted-Gap-Closure-Execution-Plan-2026-04-10.md`
+14. 口语 AI 技术演进路线: `docs/engineering/Speaking-AI-Technology-Evolution-Roadmap.md`
 
 ## 2. 当前代码范围
 `self-hosted` 分支当前代码实现包含 Web 客户端、Fastify 服务端，以及一个初始的 `apps/mobile` React Native + Expo 骨架。当前可运行代码只保留 IELTS 备考核心能力：
